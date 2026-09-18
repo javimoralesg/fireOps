@@ -1,0 +1,436 @@
+{
+  "id": "accidente-ferroviario-atocha",
+  "nombre": "Descarrilamiento de un Cercanías a la entrada de Atocha con viajeros atrapados",
+  "tipo": "accidente_ferroviario",
+  "descripcion": "El primer coche de un tren de Cercanías descarrila a baja velocidad al entrar en Atocha. Hay tres viajeros atrapados por las piernas, 1 herido grave y 23 leves. Bomberos no entra hasta que Adif confirma que la catenaria está sin tensión. Se suspende la circulación, se llenan el vestíbulo y el Metro, y hay que abrir un corredor para las ambulancias en la glorieta. Circula una foto histórica de Montparnasse con «20 muertos».",
+  "objetivoDemo": "Riesgos encadenados (catenaria, atrapados, aglomeración), coordinación entre Adif, Metro, SAMUR y Bomberos, gestión de una aglomeración derivada de la emergencia (cierre de accesos al Metro y corredor sanitario) y un bulo evidente, una foto de 1895, con una cifra de víctimas inventada.",
+  "centro": {
+    "lat": 40.40597,
+    "lon": -3.68877,
+    "nombre": "Estación de Atocha (Cercanías)"
+  },
+  "duracionSeg": 780,
+  "eventos": [
+    {
+      "id": "fer-01-e01",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: «el Cercanías acaba de descarrilar entrando en Atocha»",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Entrada a Atocha-Cercanías",
+        "osmId": "node/7499028215"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.40597,
+          "lon": -3.68877,
+          "precisionM": 150
+        },
+        "ubicacion": "Entrada a Atocha-Cercanías",
+        "texto": "Llamada 112: «el Cercanías acaba de descarrilar entrando en Atocha»\nTranscripción (01:08), con gritos de fondo. —¡Estoy en un Cercanías que acaba de descarrilar entrando en Atocha! Ha dado un golpe muy fuerte, hay gente en el suelo y el vagón de delante está inclinado… —¿Hay fuego o humo? —No, humo no… huele a quemado un poco, a frenos. —¿Está herido? —Me he dado en la cabeza, pero estoy bien. —No bajen a las vías: puede haber tensión en la catenaria.",
+        "autor": "Viajero del tren",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e01",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Despachar Bomberos, SAMUR (activación de múltiples víctimas) y Policía, y pedir a Adif el corte de tensión en la catenaria y la suspensión de la circulación."
+      }
+    },
+    {
+      "id": "fer-01-e02",
+      "offsetSeg": 30,
+      "canal": "red_social",
+      "titulo": "Red social: «el tren se ha salido de la vía entrando en Atocha»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Atocha",
+        "osmId": "node/7499028215"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40597,
+          "lon": -3.68877,
+          "precisionM": 200
+        },
+        "ubicacion": "Atocha",
+        "texto": "Red social: «el tren se ha salido de la vía entrando en Atocha»\nel tren se ha salido de la vía entrando en Atocha!!! en mi vagón estamos todos bien pero el de delante está torcido y hay gente herida 😰🙏",
+        "autor": "@viajera_c5",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e02",
+        "canal": "red_social"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Sumar como confirmación."
+      }
+    },
+    {
+      "id": "fer-01-e03",
+      "offsetSeg": 60,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: viajero avisa del descarrilamiento de Atocha",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Atocha-Cercanías",
+        "osmId": "node/7499028215"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.40597,
+          "lon": -3.68877,
+          "precisionM": 200
+        },
+        "ubicacion": "Atocha-Cercanías",
+        "texto": "Llamada 112: viajero avisa del descarrilamiento de Atocha\nTranscripción (00:33). —El tren en el que voy se ha salido de las vías en Atocha… —Ya lo sabemos y los servicios están llegando. ¿Está usted herido? —No, solo el susto. —Quédese en el tren hasta que el personal le indique.",
+        "autor": "Viajero del tren",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e03",
+        "canal": "llamada_112"
+      },
+      "duplicaDe": "fer-01-e01",
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "fer-01-e04",
+      "offsetSeg": 90,
+      "canal": "aviso_oficial",
+      "titulo": "Adif: circulación de Cercanías suspendida en Atocha por una incidencia en la entrada",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Madrid-Puerta de Atocha-Almudena Grandes",
+        "osmId": "node/7499028216"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40568,
+          "lon": -3.69002,
+          "precisionM": 60
+        },
+        "ubicacion": "Estación de Madrid-Puerta de Atocha-Almudena Grandes",
+        "texto": "Adif: circulación de Cercanías suspendida en Atocha por una incidencia en la entrada\nAviso publicado por la cuenta oficial de Adif: por una incidencia en la entrada a la estación de Atocha-Cercanías, la circulación está suspendida en la estación. Se ha cortado la tensión en la zona afectada. Se trabaja en un plan de transporte alternativo.",
+        "autor": "Cuenta oficial de Adif",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e04",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "alta",
+        "foco": "Plan de transporte alternativo: lanzaderas de autobús y refuerzo de la L1 de Metro, con control de aforo."
+      }
+    },
+    {
+      "id": "fer-01-e05",
+      "offsetSeg": 120,
+      "canal": "efectivo",
+      "titulo": "Bomberos: descarrila el primer coche; 3 atrapados; se confirma catenaria sin tensión antes de entrar",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Atocha-Cercanías",
+        "osmId": "node/7499028215"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40597,
+          "lon": -3.68877,
+          "precisionM": 40
+        },
+        "ubicacion": "Atocha-Cercanías",
+        "texto": "Bomberos: descarrila el primer coche; 3 atrapados; se confirma catenaria sin tensión antes de entrar\nJefe de dotación: «Primer coche descarrilado e inclinado unos 15° contra el muro, a baja velocidad. No hay fuego. Tres viajeros atrapados por las piernas entre asientos deformados. Esperamos a que Adif confirme por escrito la catenaria sin tensión y puesta a tierra antes de subir. El resto de los coches se desaloja por el andén.»",
+        "autor": "Jefe de dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e05",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Confirmar con Adif la catenaria sin tensión y puesta a tierra, poner un puesto sanitario avanzado en la Glorieta de Atocha y reservar un carril para las ambulancias."
+      }
+    },
+    {
+      "id": "fer-01-e06",
+      "offsetSeg": 160,
+      "canal": "red_social",
+      "titulo": "Red social: «TREN ESTRELLADO en Atocha, ha atravesado la pared, 20 MUERTOS»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Atocha (sin geolocalizar)",
+        "osmId": "node/7499028216"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40568,
+          "lon": -3.69002,
+          "precisionM": 500
+        },
+        "ubicacion": "Atocha (sin geolocalizar)",
+        "texto": "Red social: «TREN ESTRELLADO en Atocha, ha atravesado la pared, 20 MUERTOS»\n🚨 TREN ESTRELLADO en Atocha, ha atravesado la pared de la estación, se habla de 20 MUERTOS. Que Dios nos pille confesados",
+        "autor": "@lavozdelbarrio_",
+        "imagenUrl": "/dataset/img/descarrilamiento-montparnasse-1895.jpg",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e06",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "La foto es el famoso accidente de la estación de Montparnasse (París) del 22-10-1895, una fotografía en blanco y negro con una locomotora de vapor (Wikimedia Commons, dominio público). En Atocha el tren descarriló a baja velocidad dentro de la estación, sin atravesar ninguna pared (e05), y SAMUR informa de 1 herido grave y 23 leves (e08), no de muertos."
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Proponer un desmentido urgente con el balance de SAMUR y pedir que no se difundan imágenes sin verificar."
+      }
+    },
+    {
+      "id": "fer-01-e07",
+      "offsetSeg": 200,
+      "canal": "app",
+      "titulo": "App ciudadana: Atocha colapsada, la gente baja en masa al Metro",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Estación de Atocha (Metro L1)",
+        "osmId": "node/5299314576"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40697,
+          "lon": -3.6886,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Atocha (Metro L1)",
+        "texto": "App ciudadana: Atocha colapsada, la gente baja en masa al Metro\nAviso desde la app (GPS ±60 m): «El vestíbulo de Atocha está a reventar, no dejan pasar a Cercanías y todo el mundo está bajando a la vez al Metro. En las escaleras hay empujones.»",
+        "autor": "Viajera en el vestíbulo",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "fer-01-e07",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Controlar los accesos a la L1 en Atocha para que no se llenen de más los andenes, dar avisos por megafonía y derivar viajeros hacia Estación del Arte y las lanzaderas."
+      }
+    },
+    {
+      "id": "fer-01-e08",
+      "offsetSeg": 250,
+      "canal": "efectivo",
+      "titulo": "SAMUR: 1 herido grave y 23 leves; puesto sanitario avanzado en la Glorieta de Atocha",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Glorieta de Atocha (Plaza del Emperador Carlos V)",
+        "osmId": "way/4811724"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40803,
+          "lon": -3.69255,
+          "precisionM": 60
+        },
+        "ubicacion": "Glorieta de Atocha (Plaza del Emperador Carlos V)",
+        "texto": "SAMUR: 1 herido grave y 23 leves; puesto sanitario avanzado en la Glorieta de Atocha\nMando sanitario de SAMUR: «Triaje: 1 herido grave (traumatismo torácico) y 23 leves. Puesto sanitario avanzado montado en la Glorieta de Atocha. El grave sale hacia el Gregorio Marañón (2,1 km).»",
+        "autor": "Mando sanitario · SAMUR-Protección Civil",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e08",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Preavisar a urgencias del Gregorio Marañón y repartir a los leves entre otros hospitales si hace falta."
+      }
+    },
+    {
+      "id": "fer-01-e09",
+      "offsetSeg": 300,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: cierre temporal del acceso a la L1 en Atocha por aglomeración",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Atocha (Metro L1)",
+        "osmId": "node/5299314576"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40697,
+          "lon": -3.6886,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Atocha (Metro L1)",
+        "texto": "Metro de Madrid: cierre temporal del acceso a la L1 en Atocha por aglomeración\nAviso publicado por la cuenta oficial de Metro de Madrid: se cierra temporalmente el acceso a la Línea 1 en la estación de Atocha por aglomeración. Se recomienda usar Estación del Arte. Los trenes efectúan parada solo para salida de viajeros.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "fer-01-e09",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Incluirlo en el aviso a la población y mandar agentes a guiar a los viajeros hacia Estación del Arte."
+      }
+    },
+    {
+      "id": "fer-01-e10",
+      "offsetSeg": 350,
+      "canal": "camara",
+      "titulo": "Cámara de la Glorieta de Atocha: ambulancias bloqueadas por taxis en doble fila",
+      "fuente": "CamaraTrafico",
+      "lugar": {
+        "nombre": "Glorieta de Atocha (Plaza del Emperador Carlos V)",
+        "osmId": "way/4811724"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "fotograma",
+        "posicion": {
+          "lat": 40.40803,
+          "lon": -3.69255,
+          "precisionM": 60
+        },
+        "ubicacion": "Glorieta de Atocha (Plaza del Emperador Carlos V)",
+        "texto": "Cámara de la Glorieta de Atocha: ambulancias bloqueadas por taxis en doble fila\nFotograma de la cámara municipal de tráfico en la Glorieta de Atocha: dos ambulancias detenidas por taxis en doble fila frente a la estación; el tráfico de la glorieta está casi parado.",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e10",
+        "canal": "camara"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "media",
+        "foco": "Abrir un corredor para las ambulancias por el Paseo de la Infanta Isabel y prohibir que los taxis paren en la glorieta mientras dure la emergencia."
+      }
+    },
+    {
+      "id": "fer-01-e11",
+      "offsetSeg": 420,
+      "canal": "red_social",
+      "titulo": "Red social: «¿el AVE a Sevilla va con retraso?»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Atocha",
+        "osmId": "node/7499028216"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40568,
+          "lon": -3.69002,
+          "precisionM": 400
+        },
+        "ubicacion": "Atocha",
+        "texto": "Red social: «¿el AVE a Sevilla va con retraso?»\nalguien sabe si el AVE a Sevilla de las 19h sale o va con retraso?? no me contesta nadie en la app",
+        "autor": "@viajero_frecuente",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e11",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido (el AVE sale de otra zona de la estación)."
+      }
+    },
+    {
+      "id": "fer-01-e12",
+      "offsetSeg": 480,
+      "canal": "efectivo",
+      "titulo": "Bomberos: liberados los 3 atrapados; el tren queda asegurado",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Atocha-Cercanías",
+        "osmId": "node/7499028215"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40597,
+          "lon": -3.68877,
+          "precisionM": 40
+        },
+        "ubicacion": "Atocha-Cercanías",
+        "texto": "Bomberos: liberados los 3 atrapados; el tren queda asegurado\nJefe de dotación: «Liberados los tres atrapados; SAMUR los traslada con lesiones en las piernas. El coche descarrilado queda calzado y asegurado. Tren eléctrico, sin combustible, sin riesgo de incendio.»",
+        "autor": "Jefe de dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e12",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "media",
+        "foco": "Registrar; se puede reabrir el acceso al Metro de Atocha con control de aforo."
+      }
+    },
+    {
+      "id": "fer-01-e13",
+      "offsetSeg": 660,
+      "canal": "aviso_oficial",
+      "titulo": "Adif: circulación restablecida en las vías no afectadas; Cercanías al 60 %",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Madrid-Puerta de Atocha-Almudena Grandes",
+        "osmId": "node/7499028216"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40568,
+          "lon": -3.69002,
+          "precisionM": 60
+        },
+        "ubicacion": "Estación de Madrid-Puerta de Atocha-Almudena Grandes",
+        "texto": "Adif: circulación restablecida en las vías no afectadas; Cercanías al 60 %\nAviso publicado por la cuenta oficial de Adif: se restablece la circulación de Cercanías en las vías no afectadas de Atocha, con un servicio aproximado del 60 %. Las lanzaderas de autobús siguen funcionando.",
+        "autor": "Cuenta oficial de Adif",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "fer-01-e13",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Desescalada: desmontar el puesto sanitario avanzado, mantener las lanzaderas y comunicar la situación a los viajeros."
+      }
+    }
+  ]
+}

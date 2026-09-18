@@ -1,0 +1,389 @@
+{
+  "id": "fuga-gas-chamberi",
+  "nombre": "Rotura de una tubería de gas en C/ de Trafalgar con una escuela infantil a 70 m",
+  "tipo": "fuga_gas",
+  "descripcion": "Durante unas obras, una retroexcavadora rompe una tubería de gas en C/ de Trafalgar 20. La fuga se oye desde la calle y el explosímetro de Bomberos marca el 28 % del límite inferior de explosividad en un portal. La Escuela Infantil Mafalda (70 m) evacúa hacia la Plaza de Olavide, que está dentro del radio de riesgo. La distribuidora corta el sector y 340 viviendas se quedan sin gas. Circula un bulo de explosión con heridos.",
+  "objetivoDemo": "Riesgo de explosión sin fuego visible: perímetro y control de fuentes de ignición, corrección de un punto de reunión mal elegido (el sistema propone otro fuera del radio), seguimiento con sensor (porcentaje del límite de explosividad) y desmentido de una explosión inventada.",
+  "centro": {
+    "lat": 40.43215,
+    "lon": -3.70058,
+    "nombre": "C/ de Trafalgar 20, Chamberí"
+  },
+  "duracionSeg": 600,
+  "eventos": [
+    {
+      "id": "gas-01-e01",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: olor muy fuerte a gas en C/ de Trafalgar, junto a unas obras",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "C/ de Trafalgar, «por el número veinte»",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 80
+        },
+        "ubicacion": "C/ de Trafalgar, «por el número veinte»",
+        "texto": "Llamada 112: olor muy fuerte a gas en C/ de Trafalgar, junto a unas obras\nTranscripción (00:44). —Huele muchísimo a gas en la calle Trafalgar, están haciendo obras en la acera y se oye como un silbido… —¿A qué altura? —Por el número veinte, cerca de la plaza de Olavide. Los obreros se han ido corriendo. —No encienda nada, ni el móvil cerca de la fuga ni timbres. Aléjese.",
+        "autor": "Vecina de Trafalgar",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e01",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Despachar Bomberos y Policía Municipal, avisar urgentemente a la distribuidora de gas y cortar el tráfico en C/ de Trafalgar."
+      }
+    },
+    {
+      "id": "gas-01-e02",
+      "offsetSeg": 30,
+      "canal": "red_social",
+      "titulo": "Red social: «olor a gas FORTÍSIMO en Trafalgar esquina Olavide»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Trafalgar con Plaza de Olavide",
+        "osmId": "way/992735167"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.43277,
+          "lon": -3.70103,
+          "precisionM": 100
+        },
+        "ubicacion": "Trafalgar con Plaza de Olavide",
+        "texto": "Red social: «olor a gas FORTÍSIMO en Trafalgar esquina Olavide»\nOlor a gas FORTÍSIMO en Trafalgar esquina Olavide, los obreros han salido corriendo y se oye silbar la tubería 😰 no paséis por aquí",
+        "autor": "@chamberi_vecinos",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e02",
+        "canal": "red_social"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Sumar como confirmación."
+      }
+    },
+    {
+      "id": "gas-01-e03",
+      "offsetSeg": 60,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: rotura de tubería de gas por una retroexcavadora; fuga audible",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Trafalgar 20",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 15
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Trafalgar 20",
+        "texto": "Policía Municipal: rotura de tubería de gas por una retroexcavadora; fuga audible\nPatrulla de Policía Municipal: «Una retroexcavadora ha roto una tubería de gas en la acera de Trafalgar 20. Se oye la fuga. Cortamos la calle entre Olavide y Eloy Gonzalo y alejamos a los viandantes. Hay una escuela infantil en la acera de enfrente.»",
+        "autor": "Patrulla · Policía Municipal de Madrid",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e03",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "critica",
+        "foco": "Evacuar preventivamente los portales 14 a 26 de Trafalgar y la Escuela Infantil Mafalda (70 m), prohibir fuentes de ignición (timbres, interruptores, vehículos) y pedir a la distribuidora que corte el sector."
+      }
+    },
+    {
+      "id": "gas-01-e04",
+      "offsetSeg": 90,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: vecino avisa del olor a gas en Trafalgar",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "C/ de Trafalgar",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 100
+        },
+        "ubicacion": "C/ de Trafalgar",
+        "texto": "Llamada 112: vecino avisa del olor a gas en Trafalgar\nTranscripción (00:18). —Llamo por el olor a gas de Trafalgar… —Ya estamos allí. Si está en casa, no toque interruptores y salga por la escalera. —Vale, vale.",
+        "autor": "Vecino de Trafalgar",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e04",
+        "canal": "llamada_112"
+      },
+      "duplicaDe": "gas-01-e01",
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "gas-01-e05",
+      "offsetSeg": 120,
+      "canal": "sensor",
+      "titulo": "Explosímetro de Bomberos: 28 % del límite inferior de explosividad en el portal de Trafalgar 20",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Trafalgar 20",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 15
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Trafalgar 20",
+        "texto": "Explosímetro de Bomberos: 28 % del límite inferior de explosividad en el portal de Trafalgar 20\nExplosímetro del equipo de Bomberos en el portal de C/ de Trafalgar 20: 28 % del límite inferior de explosividad (LIE) de metano. En la calle, a 10 m de la zanja: 9 %.",
+        "autor": "Explosímetro per-bomberos-exp-04",
+        "sensor": {
+          "magnitud": "LIE_metano",
+          "valor": 28,
+          "unidad": "%"
+        },
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e05",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "critica",
+        "foco": "Mantener la evacuación y ventilar el portal de forma natural (abrir puertas, sin ventiladores eléctricos)."
+      }
+    },
+    {
+      "id": "gas-01-e06",
+      "offsetSeg": 150,
+      "canal": "app",
+      "titulo": "App ciudadana: la escuela infantil saca a los niños hacia la Plaza de Olavide",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Escuela Infantil Mafalda (Chamberí)",
+        "osmId": "node/266170898"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43187,
+          "lon": -3.7013,
+          "precisionM": 20
+        },
+        "ubicacion": "Escuela Infantil Mafalda (Chamberí)",
+        "texto": "App ciudadana: la escuela infantil saca a los niños hacia la Plaza de Olavide\nAviso desde la app de una educadora: «Escuela infantil de Trafalgar. Estamos sacando a los 35 niños y vamos todos a la plaza de Olavide, que es lo que tenemos en el plan. ¿Está bien?»",
+        "autor": "Educadora de la escuela infantil",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e06",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Corregir el punto de reunión: la Plaza de Olavide está a 80 m de la fuga. Llevar a los niños a C/ de Eloy Gonzalo, en dirección a Iglesia, a más de 250 m."
+      }
+    },
+    {
+      "id": "gas-01-e07",
+      "offsetSeg": 190,
+      "canal": "red_social",
+      "titulo": "Red social: «EXPLOSIÓN DE GAS en Chamberí, varios heridos y un edificio derrumbado»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Chamberí (sin geolocalizar)",
+        "osmId": "way/992735167"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.43277,
+          "lon": -3.70103,
+          "precisionM": 400
+        },
+        "ubicacion": "Chamberí (sin geolocalizar)",
+        "texto": "Red social: «EXPLOSIÓN DE GAS en Chamberí, varios heridos y un edificio derrumbado»\n⚠️ ÚLTIMA HORA: EXPLOSIÓN DE GAS en Chamberí, varios heridos y un edificio derrumbado en Olavide. Más información en breve",
+        "autor": "@madridalminuto",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e07",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "No ha habido ninguna explosión: hay una fuga controlada por Bomberos con medición continua (e05, e09) y ningún efectivo habla de heridos ni de daños en edificios. La cuenta publica titulares sin fuente ni imágenes y mezcla la fuga de Trafalgar con un derrumbe que no existe."
+      },
+      "esperado": {
+        "categoria": "derrumbe",
+        "gravedad": "baja",
+        "foco": "Desmentido: hay una fuga de gas controlada, sin explosión ni heridos; seguir las indicaciones de la Policía."
+      }
+    },
+    {
+      "id": "gas-01-e08",
+      "offsetSeg": 230,
+      "canal": "aviso_oficial",
+      "titulo": "Distribuidora de gas: cierre de la válvula del sector; 340 viviendas sin suministro",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Trafalgar 20",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 15
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Trafalgar 20",
+        "texto": "Distribuidora de gas: cierre de la válvula del sector; 340 viviendas sin suministro\nAviso publicado por la cuenta oficial de la distribuidora de gas natural de la zona: se ha cerrado la válvula del sector para aislar la fuga de C/ de Trafalgar. Unas 340 viviendas de Trafalgar y del entorno de Olavide se quedan sin gas mientras dure la reparación.",
+        "autor": "Cuenta oficial de la distribuidora de gas de la zona",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e08",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Registrar e informar a los vecinos del corte y de cuánto durará aproximadamente."
+      }
+    },
+    {
+      "id": "gas-01-e09",
+      "offsetSeg": 300,
+      "canal": "sensor",
+      "titulo": "Explosímetro: 3 % del límite inferior de explosividad y bajando",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Trafalgar 20",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 15
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Trafalgar 20",
+        "texto": "Explosímetro: 3 % del límite inferior de explosividad y bajando\nExplosímetro en el portal de Trafalgar 20: 3 % del LIE y bajando. En la calle, 0 %.",
+        "autor": "Explosímetro per-bomberos-exp-04",
+        "sensor": {
+          "magnitud": "LIE_metano",
+          "valor": 3,
+          "unidad": "%"
+        },
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e09",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Registrar la mejora; mantener la evacuación hasta que el portal marque 0 % de forma estable."
+      }
+    },
+    {
+      "id": "gas-01-e10",
+      "offsetSeg": 330,
+      "canal": "red_social",
+      "titulo": "Red social: oferta en una librería de Olavide",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Plaza de Olavide",
+        "osmId": "way/992735167"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.43277,
+          "lon": -3.70103,
+          "precisionM": 200
+        },
+        "ubicacion": "Plaza de Olavide",
+        "texto": "Red social: oferta en una librería de Olavide\nla librería de la plaza de Olavide tiene 2x1 en novela negra hoy 📚🕵️ planazo de tarde",
+        "autor": "@lector_de_olavide",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e10",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "gas-01-e11",
+      "offsetSeg": 450,
+      "canal": "efectivo",
+      "titulo": "Bomberos: fuga eliminada, portales ventilados; los vecinos pueden volver",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Trafalgar 20",
+        "direccion": "Calle de Trafalgar 20, 28010 Madrid (Chamberí)",
+        "osmId": "node/9169688091"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43215,
+          "lon": -3.70058,
+          "precisionM": 15
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Trafalgar 20",
+        "texto": "Bomberos: fuga eliminada, portales ventilados; los vecinos pueden volver\nJefe de dotación: «La distribuidora ha pinzado la tubería. Portales ventilados, 0 % del LIE en todas las mediciones. Los vecinos pueden volver, pero sin gas hasta que termine la reparación. La escuela infantil puede reabrir.»",
+        "autor": "Jefe de dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "gas-01-e11",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "baja",
+        "foco": "Levantar la evacuación y el corte de Trafalgar y comunicar el fin del riesgo y el corte de gas pendiente."
+      }
+    }
+  ]
+}

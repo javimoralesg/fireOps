@@ -1,0 +1,383 @@
+{
+  "id": "incendio-urbano-lavapies",
+  "nombre": "Incendio en un ático de Lavapiés con una vecina atrapada en el balcón",
+  "tipo": "incendio_urbano",
+  "descripcion": "Arde la cocina de un ático en C/ de Argumosa 11. Una mujer mayor queda atrapada en el balcón porque la escalera está llena de humo. Los coches mal aparcados impiden el paso de la autoescala por una calle estrecha y el humo, empujado por un viento suave del SE, llega a una escuela infantil municipal. En redes circula la foto de un edificio entero en llamas que es de otro país.",
+  "objetivoDemo": "Priorizar a una persona en peligro sobre el resto, resolver un bloqueo logístico (grúa y acceso alternativo para la autoescala), detectar una foto reciclada por los detalles de la imagen y proteger a una escuela infantil cuando el viento lleva el humo hacia ella.",
+  "centro": {
+    "lat": 40.4083,
+    "lon": -3.69919,
+    "nombre": "C/ de Argumosa 11, Lavapiés"
+  },
+  "duracionSeg": 600,
+  "eventos": [
+    {
+      "id": "inc-urb-01-e01",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: humo en un ático de Argumosa y una señora en el balcón",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "C/ de Argumosa, «el once o el trece»",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 120
+        },
+        "ubicacion": "C/ de Argumosa, «el once o el trece»",
+        "texto": "Llamada 112: humo en un ático de Argumosa y una señora en el balcón\nTranscripción (00:52). —¡Sale humo de un piso de arriba del todo, del ático, en la calle Argumosa! —¿Qué número? —El once o el trece, no lo veo bien… enfrente de una terraza. Hay una señora mayor asomada al balcón gritando, ¡no puede salir! —¿Ve llamas? —Por la ventana de al lado, sí, algo naranja. —Los bomberos van para allá. Dígale que no salte y que cierre la puerta del balcón detrás de ella.",
+        "autor": "Llamante anónima (vecina de enfrente)",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e01",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "critica",
+        "foco": "Despachar Bomberos con autoescala y SAMUR a C/ de Argumosa 11-13, con prioridad de rescate."
+      }
+    },
+    {
+      "id": "inc-urb-01-e02",
+      "offsetSeg": 30,
+      "canal": "red_social",
+      "titulo": "Red social: «fuego en un ático de Argumosa, hay una señora en el balcón»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Publicación geoetiquetada en Lavapiés",
+        "osmId": "relation/17301434"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40883,
+          "lon": -3.70114,
+          "precisionM": 200
+        },
+        "ubicacion": "Publicación geoetiquetada en Lavapiés",
+        "texto": "Red social: «fuego en un ático de Argumosa, hay una señora en el balcón»\nFuego en un ático de Argumosa!! hay una señora mayor en el balcón y la escalera llena de humo, llamad al 112 YA 🙏🙏 #Lavapiés",
+        "autor": "@lavapies_vecinal",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e02",
+        "canal": "red_social"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "critica",
+        "foco": "Sumar como confirmación del foco abierto."
+      }
+    },
+    {
+      "id": "inc-urb-01-e03",
+      "offsetSeg": 55,
+      "canal": "app",
+      "titulo": "App ciudadana: Argumosa 11, 4.º, vecina atrapada y escalera sin salida",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Argumosa 11",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 20
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Argumosa 11",
+        "texto": "App ciudadana: Argumosa 11, 4.º, vecina atrapada y escalera sin salida\nAviso desde la app (GPS ±20 m): «Argumosa 11, cuarto piso, el ático. Sale humo por la ventana de la cocina y la vecina de 80 y tantos años está en el balcón. La escalera está llena de humo, no se puede subir. Los demás vecinos estamos bajando.»",
+        "autor": "Vecino del edificio",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e03",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "critica",
+        "foco": "Fijar el foco en C/ de Argumosa 11 (precisión 20 m); rescate desde el exterior con autoescala."
+      }
+    },
+    {
+      "id": "inc-urb-01-e04",
+      "offsetSeg": 80,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: aviso por el humo del ático de Argumosa",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Terraza frente a C/ de Argumosa 11",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 100
+        },
+        "ubicacion": "Terraza frente a C/ de Argumosa 11",
+        "texto": "Llamada 112: aviso por el humo del ático de Argumosa\nTranscripción (00:24). —Es por el fuego de Argumosa, el de la señora del balcón… —Sí, ya tenemos el aviso, los bomberos están llegando. ¿Está usted en el edificio? —No, estoy en la terraza de enfrente. —Aléjese del portal, por favor.",
+        "autor": "Llamante anónimo (terraza de enfrente)",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e04",
+        "canal": "llamada_112"
+      },
+      "duplicaDe": "inc-urb-01-e01",
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "critica",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "inc-urb-01-e05",
+      "offsetSeg": 110,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: coches mal aparcados impiden el paso de la autoescala",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Plaza de Lavapiés",
+        "osmId": "relation/17301434"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40883,
+          "lon": -3.70114,
+          "precisionM": 50
+        },
+        "ubicacion": "Plaza de Lavapiés",
+        "texto": "Policía Municipal: coches mal aparcados impiden el paso de la autoescala\nPatrulla de Policía Municipal: «En C/ de Argumosa hay dos furgonetas de reparto en doble fila y coches aparcados en la curva; la autoescala no puede girar desde la Plaza de Lavapiés. Pedimos grúa urgente. La calle del Doctor Fourquet está despejada.»",
+        "autor": "Patrulla · Policía Municipal de Madrid",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e05",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Grúa municipal urgente y acceso alternativo de la autoescala por C/ del Doctor Fourquet; cortar C/ de Argumosa entre Doctor Fourquet y la Plaza de Lavapiés."
+      }
+    },
+    {
+      "id": "inc-urb-01-e06",
+      "offsetSeg": 150,
+      "canal": "red_social",
+      "titulo": "Red social: «ARDE UN EDIFICIO ENTERO EN LAVAPIÉS»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Lavapiés (publicación sin geolocalizar)",
+        "osmId": "relation/17301434"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40883,
+          "lon": -3.70114,
+          "precisionM": 400
+        },
+        "ubicacion": "Lavapiés (publicación sin geolocalizar)",
+        "texto": "Red social: «ARDE UN EDIFICIO ENTERO EN LAVAPIÉS»\nARDE UN EDIFICIO ENTERO EN LAVAPIÉS 🔥🔥 varias plantas en llamas y los bomberos sin poder entrar, esto es brutal. Pasadlo",
+        "autor": "@noticias_centro_mad",
+        "imagenUrl": "/dataset/img/humo-edificio-viviendas-2016.jpg",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e06",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "La foto es de un incendio en un bloque de pisos de London (Ontario, Canadá) del 9-7-2016 (Wikimedia Commons, CC BY-SA 2.0). En la imagen se lee «Command No. 2 – Fire» y «Londoners» en el vehículo de bomberos, y el edificio es una torre de hormigón de unas diez plantas, nada que ver con una corrala de cuatro alturas de Lavapiés. El fuego real está confinado en un solo piso (e07)."
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "baja",
+        "foco": "Marcar como sospechoso y proponer un desmentido breve: el fuego afecta a una vivienda y está en manos de Bomberos."
+      }
+    },
+    {
+      "id": "inc-urb-01-e07",
+      "offsetSeg": 190,
+      "canal": "efectivo",
+      "titulo": "Bomberos: rescatada con autoescala la vecina del balcón; fuego confinado en el ático",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Argumosa 11",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 20
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Argumosa 11",
+        "texto": "Bomberos: rescatada con autoescala la vecina del balcón; fuego confinado en el ático\nJefe de dotación: «Autoescala por Doctor Fourquet. Rescatada una mujer de 84 años desde el balcón del cuarto piso: consciente, con inhalación de humo moderada, la atiende SAMUR. El fuego está confinado en la vivienda del ático (cocina y salón). Hemos desalojado el edificio: 11 vecinos, todos fuera.»",
+        "autor": "Jefe de dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e07",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "alta",
+        "foco": "Registrar el rescate. SAMUR valora el traslado de la mujer rescatada al Hospital Gregorio Marañón y Samur Social atiende a los vecinos desalojados."
+      }
+    },
+    {
+      "id": "inc-urb-01-e08",
+      "offsetSeg": 230,
+      "canal": "sensor",
+      "titulo": "Viento del SE (123°) a 12 km/h: el humo va hacia la escuela infantil El Olivar",
+      "fuente": "OpenMeteo",
+      "lugar": {
+        "nombre": "Punto de rejilla meteorológica de Embajadores",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 500
+        },
+        "ubicacion": "Punto de rejilla meteorológica de Embajadores",
+        "texto": "Viento del SE (123°) a 12 km/h: el humo va hacia la escuela infantil El Olivar\nModelo meteorológico en el punto de rejilla de Embajadores: viento de 123° (SE) a 12 km/h. El humo del ático se desplaza hacia el ONO (303°), sobre la Escuela infantil municipal El Olivar (250 m) y la estación de Metro de Lavapiés.",
+        "sensor": {
+          "magnitud": "direccion_viento",
+          "valor": 123,
+          "unidad": "grados"
+        },
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e08",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Confinar la Escuela infantil El Olivar (ventanas cerradas y niños en aulas interiores) y avisar a Metro por posible entrada de humo en los accesos de Lavapiés."
+      }
+    },
+    {
+      "id": "inc-urb-01-e09",
+      "offsetSeg": 280,
+      "canal": "red_social",
+      "titulo": "Red social: turista pregunta si hay un festival",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Lavapiés",
+        "osmId": "node/5303173543"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.40845,
+          "lon": -3.70066,
+          "precisionM": 300
+        },
+        "ubicacion": "Lavapiés",
+        "texto": "Red social: turista pregunta si hay un festival\nIs there some kind of festival in Lavapiés today?? so many fire trucks and people on the street lol 🚒🎉",
+        "autor": "@wanderlust_ana",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e09",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "inc-urb-01-e10",
+      "offsetSeg": 320,
+      "canal": "app",
+      "titulo": "Escuela infantil El Olivar: huele a humo en el patio, niños dentro",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Escuela infantil municipal El Olivar",
+        "osmId": "way/332582762"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.40953,
+          "lon": -3.70165,
+          "precisionM": 30
+        },
+        "ubicacion": "Escuela infantil municipal El Olivar",
+        "texto": "Escuela infantil El Olivar: huele a humo en el patio, niños dentro\nAviso desde la app de una educadora: «Escuela infantil El Olivar. Huele mucho a humo en el patio y hemos metido a los 40 niños dentro. Hemos cerrado ventanas. ¿Tenemos que salir?»",
+        "autor": "Personal de la escuela infantil",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e10",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "humo",
+        "gravedad": "media",
+        "foco": "Responder: mantener el confinamiento, no salir. Se levanta cuando Bomberos dé el incendio por extinguido."
+      }
+    },
+    {
+      "id": "inc-urb-01-e11",
+      "offsetSeg": 450,
+      "canal": "efectivo",
+      "titulo": "Bomberos: incendio extinguido; revisión del forjado del ático",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Edificio de viviendas, C/ de Argumosa 11",
+        "direccion": "Calle de Argumosa 11, 28012 Madrid (Lavapiés)",
+        "osmId": "node/8701012166"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4083,
+          "lon": -3.69919,
+          "precisionM": 20
+        },
+        "ubicacion": "Edificio de viviendas, C/ de Argumosa 11",
+        "texto": "Bomberos: incendio extinguido; revisión del forjado del ático\nJefe de dotación: «Incendio extinguido. Ventilamos la escalera. El forjado de la cocina del ático está dañado: pedimos revisión técnica municipal antes de que vuelvan los vecinos del cuarto y del tercero. El resto del edificio puede volver en 30 minutos.»",
+        "autor": "Jefe de dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "inc-urb-01-e11",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "baja",
+        "foco": "Levantar el confinamiento de la escuela infantil, pedir a Samur Social el realojo temporal de dos familias y mantener cortada C/ de Argumosa hasta la revisión técnica."
+      }
+    }
+  ]
+}

@@ -1,0 +1,1132 @@
+{
+  "id": "sueltos",
+  "nombre": "Eventos sueltos",
+  "eventos": [
+    {
+      "id": "suelto-01",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: columna de humo en el Monte de El Pardo, cerca de Mingorrubio",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Monte de El Pardo, pasado Mingorrubio",
+        "osmId": "node/10693808774"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.53296,
+          "lon": -3.78097,
+          "precisionM": 500
+        },
+        "ubicacion": "Monte de El Pardo, pasado Mingorrubio",
+        "texto": "Llamada 112: columna de humo en el Monte de El Pardo, cerca de Mingorrubio\nTranscripción (00:41). —Se ve una columna de humo en el monte de El Pardo, pasado Mingorrubio, hacia la presa. Es blanca pero cada vez más grande. —¿Ve llamas? —No, desde aquí solo humo. —Gracias, lo comprobamos.",
+        "autor": "Vecino de Mingorrubio",
+        "tipoEmergencia": "incendio_forestal",
+        "simulacro": true,
+        "datasetId": "suelto-01",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "humo",
+        "gravedad": "alta",
+        "foco": "Mandar la unidad forestal para confirmar y avisar a Patrimonio Nacional (gestor del Monte de El Pardo)."
+      }
+    },
+    {
+      "id": "suelto-02",
+      "offsetSeg": 0,
+      "canal": "sensor",
+      "titulo": "Riesgo de incendio muy alto en El Pardo: humedad del 12 % y viento de 30 km/h",
+      "fuente": "OpenMeteo",
+      "lugar": {
+        "nombre": "Punto de rejilla meteorológica de El Pardo",
+        "osmId": "relation/19975809"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.52055,
+          "lon": -3.77807,
+          "precisionM": 500
+        },
+        "ubicacion": "Punto de rejilla meteorológica de El Pardo",
+        "texto": "Riesgo de incendio muy alto en El Pardo: humedad del 12 % y viento de 30 km/h\nModelo meteorológico en El Pardo: 37 °C, humedad relativa del 12 % y viento del SO a 30 km/h. Índice de riesgo de incendio forestal muy alto.",
+        "sensor": {
+          "magnitud": "humedad_relativa",
+          "valor": 12,
+          "unidad": "%"
+        },
+        "tipoEmergencia": "incendio_forestal",
+        "simulacro": true,
+        "datasetId": "suelto-02",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Preaviso de riesgo muy alto: dejar retenes en situación de alerta y prohibir las quemas."
+      }
+    },
+    {
+      "id": "suelto-03",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «cierran Barajas por el humo del incendio de El Pardo»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Aeropuerto de Barajas (sin geolocalizar)",
+        "osmId": "way/167025457"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.49523,
+          "lon": -3.57337,
+          "precisionM": 500
+        },
+        "ubicacion": "Aeropuerto de Barajas (sin geolocalizar)",
+        "texto": "Red social: «cierran Barajas por el humo del incendio de El Pardo»\nCIERRAN BARAJAS por el humo del incendio de El Pardo ✈️🔥 todos los vuelos cancelados, no vayáis al aeropuerto",
+        "autor": "@viajeros_mad",
+        "tipoEmergencia": "incendio_forestal",
+        "simulacro": true,
+        "datasetId": "suelto-03",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "El aeropuerto está a unos 20 km al este de El Pardo y, con viento del SO, el humo va hacia el NE, no hacia Barajas. El gestor del aeropuerto no ha publicado ningún cierre y los datos de vuelos muestran despegues normales. No hay imagen ni fuente."
+      },
+      "esperado": {
+        "categoria": "humo",
+        "gravedad": "baja",
+        "foco": "Desmentido: el aeropuerto funciona con normalidad."
+      }
+    },
+    {
+      "id": "suelto-04",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: contenedor ardiendo junto a un portal en Villa de Vallecas",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Villa de Vallecas",
+        "osmId": "relation/349485"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.37396,
+          "lon": -3.61216,
+          "precisionM": 400
+        },
+        "ubicacion": "Villa de Vallecas",
+        "texto": "Llamada 112: contenedor ardiendo junto a un portal en Villa de Vallecas\nTranscripción (00:30). —Está ardiendo un contenedor de basura justo al lado de un portal, aquí en Villa de Vallecas. El humo entra en el portal. —¿Hay coches cerca? —Uno aparcado al lado. —Van los bomberos.",
+        "autor": "Vecina de Villa de Vallecas",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "suelto-04",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "media",
+        "foco": "Mandar una dotación de Bomberos; incidencia menor."
+      }
+    },
+    {
+      "id": "suelto-05",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: fuego de vegetación junto a la vía del tren en Getafe",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Getafe, junto a la vía del tren",
+        "osmId": "relation/345003"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.30706,
+          "lon": -3.73318,
+          "precisionM": 500
+        },
+        "ubicacion": "Getafe, junto a la vía del tren",
+        "texto": "Red social: fuego de vegetación junto a la vía del tren en Getafe\nfuego en los matorrales al lado de la vía del tren en Getafe, se ve bastante humo desde el Cercanías 🔥🚆",
+        "autor": "@getafense_",
+        "tipoEmergencia": "incendio_forestal",
+        "simulacro": true,
+        "datasetId": "suelto-05",
+        "canal": "red_social"
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "media",
+        "foco": "Pasar el aviso a los Bomberos de la Comunidad y a Adif por si hay que cortar la circulación."
+      }
+    },
+    {
+      "id": "suelto-06",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "AEMET: aviso amarillo por tormentas en la zona metropolitana",
+      "fuente": "AEMET",
+      "lugar": {
+        "nombre": "Zona de aviso: Metropolitana y Henares",
+        "osmId": "relation/13616929"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41495,
+          "lon": -3.68328,
+          "precisionM": 500
+        },
+        "ubicacion": "Zona de aviso: Metropolitana y Henares",
+        "texto": "AEMET: aviso amarillo por tormentas en la zona metropolitana\nAviso de AEMET de nivel amarillo por tormentas en Metropolitana y Henares: precipitaciones de 15 mm en una hora, rachas fuertes y granizo ocasional por la tarde.",
+        "autor": "AEMET",
+        "tipoEmergencia": "inundacion",
+        "simulacro": true,
+        "datasetId": "suelto-06",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "inundacion",
+        "gravedad": "baja",
+        "foco": "Registrar y revisar las rejillas de los pasos inferiores con riesgo."
+      }
+    },
+    {
+      "id": "suelto-07",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: sótano inundado en C/ de Serrano por una tubería rota",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "C/ de Serrano 50",
+        "osmId": "node/4576234323"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.42745,
+          "lon": -3.68728,
+          "precisionM": 20
+        },
+        "ubicacion": "C/ de Serrano 50",
+        "texto": "App ciudadana: sótano inundado en C/ de Serrano por una tubería rota\nAviso desde la app (GPS ±20 m): «En el sótano de mi edificio, Serrano 50, hay un palmo de agua por una tubería rota. El cuarto de contadores está mojado.»",
+        "autor": "Portero de la finca",
+        "tipoEmergencia": "inundacion",
+        "simulacro": true,
+        "datasetId": "suelto-07",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "inundacion",
+        "gravedad": "media",
+        "foco": "Mandar una dotación de Bomberos por el riesgo eléctrico del cuarto de contadores y avisar a Canal de Isabel II."
+      }
+    },
+    {
+      "id": "suelto-08",
+      "offsetSeg": 0,
+      "canal": "sensor",
+      "titulo": "Rachas de 78 km/h en Ciudad Universitaria",
+      "fuente": "OpenMeteo",
+      "lugar": {
+        "nombre": "Punto de rejilla meteorológica de Ciudad Universitaria",
+        "osmId": "node/5305486979"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.4438,
+          "lon": -3.72642,
+          "precisionM": 500
+        },
+        "ubicacion": "Punto de rejilla meteorológica de Ciudad Universitaria",
+        "texto": "Rachas de 78 km/h en Ciudad Universitaria\nModelo meteorológico en Ciudad Universitaria: rachas de viento del O de hasta 78 km/h en la próxima hora. Riesgo de caída de ramas y árboles.",
+        "sensor": {
+          "magnitud": "racha_maxima",
+          "valor": 78,
+          "unidad": "km/h"
+        },
+        "tipoEmergencia": "derrumbe",
+        "simulacro": true,
+        "datasetId": "suelto-08",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Recomendar el cierre del Retiro, la Casa de Campo y los parques históricos durante el episodio de viento."
+      }
+    },
+    {
+      "id": "suelto-09",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: aceras heladas y caídas en la Plaza de Cervantes de Alcalá",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Plaza de Cervantes (Alcalá de Henares)",
+        "osmId": "way/23352471"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.48282,
+          "lon": -3.36445,
+          "precisionM": 60
+        },
+        "ubicacion": "Plaza de Cervantes (Alcalá de Henares)",
+        "texto": "App ciudadana: aceras heladas y caídas en la Plaza de Cervantes de Alcalá\nAviso desde la app (GPS ±60 m): «La Plaza de Cervantes está helada. Se han caído dos personas mayores en 10 minutos; a una se la han llevado en ambulancia.»",
+        "autor": "Vecino de Alcalá de Henares",
+        "tipoEmergencia": "nevada",
+        "simulacro": true,
+        "datasetId": "suelto-09",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "media",
+        "foco": "Pedir al ayuntamiento de Alcalá que eche sal en las aceras del centro."
+      }
+    },
+    {
+      "id": "suelto-10",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «Madrid amanece nevado hoy, 18 de septiembre»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Plaza de Cibeles (sin geolocalizar)",
+        "osmId": "way/27396510"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41942,
+          "lon": -3.69254,
+          "precisionM": 300
+        },
+        "ubicacion": "Plaza de Cibeles (sin geolocalizar)",
+        "texto": "Red social: «Madrid amanece nevado hoy, 18 de septiembre»\nNO ME LO PUEDO CREER ❄️❄️ Madrid ha amanecido nevado HOY 18 de septiembre, mirad Cibeles!!! el cambio climático está loco",
+        "autor": "@madrid_curioso",
+        "imagenUrl": "/dataset/img/nieve-cibeles-filomena-2021.jpg",
+        "tipoEmergencia": "nevada",
+        "simulacro": true,
+        "datasetId": "suelto-10",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "La foto es de Cibeles el 9-1-2021, durante la borrasca Filomena (Wikimedia Commons, CC BY-SA 4.0, autor Benjamín Núñez González). En septiembre, la observación de AEMET en el Retiro da más de 20 °C, sin precipitación. La misma foto ya se ha usado en otros bulos."
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "nula",
+        "foco": "Marcar como bulo. Por su bajo impacto, basta con registrarlo, sin desmentido formal."
+      }
+    },
+    {
+      "id": "suelto-11",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "AEMET: aviso amarillo por temperaturas máximas de 38 °C",
+      "fuente": "AEMET",
+      "lugar": {
+        "nombre": "Zona de aviso: Metropolitana y Henares",
+        "osmId": "relation/13616929"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41495,
+          "lon": -3.68328,
+          "precisionM": 500
+        },
+        "ubicacion": "Zona de aviso: Metropolitana y Henares",
+        "texto": "AEMET: aviso amarillo por temperaturas máximas de 38 °C\nAviso de AEMET de nivel amarillo por temperaturas máximas de 38 °C en Metropolitana y Henares, entre las 13:00 y las 20:00.",
+        "autor": "AEMET",
+        "tipoEmergencia": "ola_calor",
+        "simulacro": true,
+        "datasetId": "suelto-11",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "baja",
+        "foco": "Registrar y difundir las recomendaciones por calor."
+      }
+    },
+    {
+      "id": "suelto-12",
+      "offsetSeg": 0,
+      "canal": "sensor",
+      "titulo": "Calidad del aire en Plaza Elíptica: NO₂ de 212 µg/m³",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Plaza Elíptica (estación de calidad del aire y Metro L6)",
+        "osmId": "node/5305486989"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.38536,
+          "lon": -3.71787,
+          "precisionM": 60
+        },
+        "ubicacion": "Plaza Elíptica (estación de calidad del aire y Metro L6)",
+        "texto": "Calidad del aire en Plaza Elíptica: NO₂ de 212 µg/m³\nEstación de calidad del aire de Plaza Elíptica: dióxido de nitrógeno (NO₂) de 212 µg/m³ como media horaria. Se supera el umbral de aviso del protocolo municipal por contaminación.",
+        "autor": "Sensor per-aire-eliptica",
+        "sensor": {
+          "magnitud": "NO2",
+          "valor": 212,
+          "unidad": "µg/m³"
+        },
+        "tipoEmergencia": "ola_calor",
+        "simulacro": true,
+        "datasetId": "suelto-12",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Proponer activar el escenario correspondiente del protocolo de contaminación (limitar la velocidad en la M-30 y avisar a la población sensible)."
+      }
+    },
+    {
+      "id": "suelto-13",
+      "offsetSeg": 0,
+      "canal": "camara",
+      "titulo": "Cámara del Paseo de Extremadura: alcance entre dos turismos, sin heridos aparentes",
+      "fuente": "CamaraTrafico",
+      "lugar": {
+        "nombre": "Paseo de Extremadura (Puerta del Ángel)",
+        "osmId": "way/1525871397"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "fotograma",
+        "posicion": {
+          "lat": 40.41017,
+          "lon": -3.73803,
+          "precisionM": 100
+        },
+        "ubicacion": "Paseo de Extremadura (Puerta del Ángel)",
+        "texto": "Cámara del Paseo de Extremadura: alcance entre dos turismos, sin heridos aparentes\nFotograma de la cámara municipal de tráfico en el Paseo de Extremadura: dos turismos detenidos tras un alcance en el carril derecho; los conductores están fuera, hablando. Retención leve.",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "suelto-13",
+        "canal": "camara"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Mandar a Policía Municipal para el atestado; no hace falta SAMUR si nadie lo pide."
+      }
+    },
+    {
+      "id": "suelto-14",
+      "offsetSeg": 0,
+      "canal": "sensor",
+      "titulo": "Sensor de tráfico: carga del 100 % en la entrada de la A-6 por Moncloa (hora punta)",
+      "fuente": "MadridTrafico",
+      "lugar": {
+        "nombre": "Entrada de la A-6 por Moncloa",
+        "osmId": "node/5305486979"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.4438,
+          "lon": -3.72642,
+          "precisionM": 300
+        },
+        "ubicacion": "Entrada de la A-6 por Moncloa",
+        "texto": "Sensor de tráfico: carga del 100 % en la entrada de la A-6 por Moncloa (hora punta)\nPunto de medida de tráfico del Ayuntamiento en la entrada de la A-6 por Moncloa: carga del 100 % y velocidad media de 18 km/h. Congestión habitual de hora punta; no hay incidencias registradas.",
+        "sensor": {
+          "magnitud": "carga_trafico",
+          "valor": 100,
+          "unidad": "%"
+        },
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "suelto-14",
+        "canal": "sensor"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar: es la congestión recurrente, no una emergencia."
+      }
+    },
+    {
+      "id": "suelto-15",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "Adif: incidencia en la catenaria en Príncipe Pío; retrasos en Cercanías",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Príncipe Pío (Metro y Cercanías)",
+        "osmId": "node/5304749212"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.42096,
+          "lon": -3.71933,
+          "precisionM": 40
+        },
+        "ubicacion": "Estación de Príncipe Pío (Metro y Cercanías)",
+        "texto": "Adif: incidencia en la catenaria en Príncipe Pío; retrasos en Cercanías\nAviso publicado por la cuenta oficial de Adif: por una incidencia en la catenaria cerca de Madrid-Príncipe Pío, los trenes de Cercanías con paso por la estación llevan retrasos de 15 a 20 minutos.",
+        "autor": "Cuenta oficial de Adif",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "suelto-15",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Registrar."
+      }
+    },
+    {
+      "id": "suelto-16",
+      "offsetSeg": 0,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: un tren de Cercanías arrolla un jabalí en Móstoles; sin heridos",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Móstoles, entrada de la vía de Cercanías",
+        "osmId": "relation/340288"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.32385,
+          "lon": -3.86492,
+          "precisionM": 500
+        },
+        "ubicacion": "Móstoles, entrada de la vía de Cercanías",
+        "texto": "Policía Municipal: un tren de Cercanías arrolla un jabalí en Móstoles; sin heridos\nPatrulla de Policía Municipal: «Un tren de Cercanías ha arrollado un jabalí a la entrada de Móstoles. No hay heridos. El tren sigue tras la revisión del maquinista; retraso de 10 minutos.»",
+        "autor": "Patrulla · Policía Municipal",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "suelto-16",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Registrar."
+      }
+    },
+    {
+      "id": "suelto-17",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: niño de 6 años perdido en el Retiro",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Parque del Retiro, junto al estanque",
+        "osmId": "relation/13616929"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.41495,
+          "lon": -3.68328,
+          "precisionM": 300
+        },
+        "ubicacion": "Parque del Retiro, junto al estanque",
+        "texto": "Llamada 112: niño de 6 años perdido en el Retiro\nTranscripción (01:05), muy nerviosa. —¡He perdido a mi hijo en el Retiro! Tiene 6 años, lleva una camiseta roja y pantalón azul… estábamos al lado del estanque, en las barcas… ¡hace 15 minutos! —Quédese donde está, avisamos a la Policía Municipal y a los vigilantes del parque.",
+        "autor": "Madre del menor",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "suelto-17",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "alta",
+        "foco": "Avisar a la Policía Municipal y a los vigilantes del Retiro con la descripción y controlar las puertas del parque."
+      }
+    },
+    {
+      "id": "suelto-18",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: niño con camiseta roja llorando solo junto a la Puerta de Alcalá del Retiro",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Retiro, salida hacia la Puerta de Alcalá",
+        "osmId": "relation/13616929"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41495,
+          "lon": -3.68328,
+          "precisionM": 150
+        },
+        "ubicacion": "Retiro, salida hacia la Puerta de Alcalá",
+        "texto": "App ciudadana: niño con camiseta roja llorando solo junto a la Puerta de Alcalá del Retiro\nAviso desde la app (GPS ±100 m): «Hay un niño pequeño con camiseta roja llorando solo en la salida del Retiro que da a la Puerta de Alcalá. Me quedo con él.»",
+        "autor": "Viandante",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "suelto-18",
+        "canal": "app"
+      },
+      "duplicaDe": "suelto-17",
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "alta",
+        "foco": "Unir con el aviso del niño perdido: probablemente es el mismo. Mandar a la patrulla más cercana y avisar a la madre."
+      }
+    },
+    {
+      "id": "suelto-19",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: persona mayor caída en la calle que no puede levantarse",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "C/ de Serrano 50",
+        "osmId": "node/4576234323"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.42745,
+          "lon": -3.68728,
+          "precisionM": 20
+        },
+        "ubicacion": "C/ de Serrano 50",
+        "texto": "App ciudadana: persona mayor caída en la calle que no puede levantarse\nAviso desde la app (GPS ±20 m): «Un señor mayor se ha caído en la acera de Serrano 50 y no puede levantarse. Está consciente y dice que le duele la cadera.»",
+        "autor": "Viandante",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "suelto-19",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "media",
+        "foco": "SAMUR (soporte vital básico) a Serrano 50."
+      }
+    },
+    {
+      "id": "suelto-20",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: colas y empujones en la entrada del Palacio de los Deportes",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Palacio de los Deportes, acceso de C/ de Jorge Juan",
+        "osmId": "way/15808330"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.42386,
+          "lon": -3.67179,
+          "precisionM": 150
+        },
+        "ubicacion": "Palacio de los Deportes, acceso de C/ de Jorge Juan",
+        "texto": "Red social: colas y empujones en la entrada del Palacio de los Deportes\nla entrada del concierto en el Palacio de los Deportes es un caos, empujones en la puerta de Jorge Juan y nadie organiza nada 😤",
+        "autor": "@fan_de_conciertos",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "suelto-20",
+        "canal": "red_social"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "media",
+        "foco": "Pedir a la seguridad del recinto que abra más puertas y mandar una patrulla a la calle Jorge Juan."
+      }
+    },
+    {
+      "id": "suelto-21",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: aviso telefónico de bomba en IFEMA durante una feria",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Recinto ferial de IFEMA",
+        "osmId": "way/34050269"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.46637,
+          "lon": -3.61721,
+          "precisionM": 200
+        },
+        "ubicacion": "Recinto ferial de IFEMA",
+        "texto": "Llamada 112: aviso telefónico de bomba en IFEMA durante una feria\nTranscripción (00:52). —Llamo de seguridad de IFEMA. Han llamado a la centralita diciendo que hay una bomba en el pabellón 7. Voz de hombre, colgó enseguida. Hay unas 12.000 personas en la feria. —Activamos el protocolo. No evacúen de forma desordenada; esperen a la Policía.",
+        "autor": "Jefe de seguridad del recinto",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "suelto-21",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Protocolo de amenaza: la Policía valora la credibilidad, desalojo ordenado y por fases del pabellón 7 y revisión con unidad canina, sin megafonía alarmista."
+      }
+    },
+    {
+      "id": "suelto-22",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: mancha de gasoil y peces muertos en el Manzanares, en Madrid Río",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Parque Madrid Río (Arganzuela)",
+        "osmId": "way/171007753"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4006,
+          "lon": -3.72075,
+          "precisionM": 300
+        },
+        "ubicacion": "Parque Madrid Río (Arganzuela)",
+        "texto": "App ciudadana: mancha de gasoil y peces muertos en el Manzanares, en Madrid Río\nAviso desde la app (GPS ±100 m): «Hay una mancha brillante de gasoil en el Manzanares, a la altura de Madrid Río, y varios peces muertos en la orilla. Huele a combustible.»",
+        "autor": "Paseante de Madrid Río",
+        "tipoEmergencia": "vertido_quimico",
+        "simulacro": true,
+        "datasetId": "suelto-22",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "vertido",
+        "gravedad": "media",
+        "foco": "Avisar a Canal de Isabel II y al servicio municipal de medio ambiente para localizar el origen y poner barreras absorbentes."
+      }
+    },
+    {
+      "id": "suelto-23",
+      "offsetSeg": 0,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: olor a gas en un portal de la Plaza de Cervantes (Alcalá de Henares)",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Plaza de Cervantes (Alcalá de Henares)",
+        "osmId": "way/23352471"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.48282,
+          "lon": -3.36445,
+          "precisionM": 60
+        },
+        "ubicacion": "Plaza de Cervantes (Alcalá de Henares)",
+        "texto": "Llamada 112: olor a gas en un portal de la Plaza de Cervantes (Alcalá de Henares)\nTranscripción (00:35). —Huele a gas en el portal de mi casa, en la Plaza de Cervantes. Es un olor fuerte en la escalera. —No toque el timbre ni los interruptores, abra la puerta de la calle y salga. Mandamos a los bomberos.",
+        "autor": "Vecino de Alcalá de Henares",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "suelto-23",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Mandar Bomberos de la Comunidad con explosímetro y avisar a la distribuidora de gas."
+      }
+    },
+    {
+      "id": "suelto-24",
+      "offsetSeg": 0,
+      "canal": "efectivo",
+      "titulo": "Bomberos: desprendimiento de cascotes de una fachada en Gran Vía 30",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Gran Vía 30",
+        "osmId": "node/3367997382"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.42026,
+          "lon": -3.70278,
+          "precisionM": 20
+        },
+        "ubicacion": "Gran Vía 30",
+        "texto": "Bomberos: desprendimiento de cascotes de una fachada en Gran Vía 30\nDotación de Bomberos: «Se han desprendido trozos de la moldura de la fachada de Gran Vía 30 sobre la acera. No hay heridos. Acordonamos 10 m de acera y saneamos con la autoescala.»",
+        "autor": "Dotación · Bomberos Ayuntamiento de Madrid",
+        "tipoEmergencia": "derrumbe",
+        "simulacro": true,
+        "datasetId": "suelto-24",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "derrumbe",
+        "gravedad": "media",
+        "foco": "Registrar; desviar a los peatones mientras se sanea la fachada."
+      }
+    },
+    {
+      "id": "suelto-25",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "i-DE: corte de suministro programado en Getafe por mantenimiento",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Getafe centro",
+        "osmId": "relation/345003"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.30706,
+          "lon": -3.73318,
+          "precisionM": 500
+        },
+        "ubicacion": "Getafe centro",
+        "texto": "i-DE: corte de suministro programado en Getafe por mantenimiento\nAviso publicado por la cuenta oficial de i-DE: corte de suministro programado mañana de 08:00 a 12:00 en varias calles del centro de Getafe por trabajos de mantenimiento en la red.",
+        "autor": "Cuenta oficial de i-DE (distribuidora eléctrica)",
+        "tipoEmergencia": "apagon",
+        "simulacro": true,
+        "datasetId": "suelto-25",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "corte_electrico",
+        "gravedad": "baja",
+        "foco": "Comprobar si en la zona hay personas que dependen de equipos eléctricos (oxígeno) y avisarlas."
+      }
+    },
+    {
+      "id": "suelto-26",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: farolas apagadas en toda la calle en Móstoles",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Móstoles centro",
+        "osmId": "relation/340288"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.32385,
+          "lon": -3.86492,
+          "precisionM": 300
+        },
+        "ubicacion": "Móstoles centro",
+        "texto": "App ciudadana: farolas apagadas en toda la calle en Móstoles\nAviso desde la app (GPS ±300 m): «Llevamos dos noches con todas las farolas de la calle apagadas en Móstoles centro. Está todo oscurísimo.»",
+        "autor": "Vecina de Móstoles",
+        "tipoEmergencia": "apagon",
+        "simulacro": true,
+        "datasetId": "suelto-26",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "corte_electrico",
+        "gravedad": "baja",
+        "foco": "Pasar el aviso al servicio de alumbrado del municipio; no es una emergencia."
+      }
+    },
+    {
+      "id": "suelto-27",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "Canal de Isabel II: corte de agua programado en Chamberí por obras",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Plaza de Olavide",
+        "osmId": "way/992735167"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43277,
+          "lon": -3.70103,
+          "precisionM": 50
+        },
+        "ubicacion": "Plaza de Olavide",
+        "texto": "Canal de Isabel II: corte de agua programado en Chamberí por obras\nAviso publicado por la cuenta oficial de Canal de Isabel II: corte de agua programado mañana de 08:00 a 14:00 en el entorno de la Plaza de Olavide por la renovación de una tubería.",
+        "autor": "Cuenta oficial de Canal de Isabel II",
+        "tipoEmergencia": "inundacion",
+        "simulacro": true,
+        "datasetId": "suelto-27",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "baja",
+        "foco": "Registrar."
+      }
+    },
+    {
+      "id": "suelto-28",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «el agua del grifo está contaminada en todo Madrid, no bebáis»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Madrid (sin geolocalizar)",
+        "osmId": "node/5303173541"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.42345,
+          "lon": -3.71088,
+          "precisionM": 500
+        },
+        "ubicacion": "Madrid (sin geolocalizar)",
+        "texto": "Red social: «el agua del grifo está contaminada en todo Madrid, no bebáis»\nURGENTE: el agua del grifo está CONTAMINADA en todo Madrid, lo dice un amigo que trabaja en el Canal. NO BEBÁIS y comprad agua embotellada ya 🚱🚱 pásalo",
+        "autor": "@info_vecinal_mad",
+        "tipoEmergencia": "vertido_quimico",
+        "simulacro": true,
+        "datasetId": "suelto-28",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "Canal de Isabel II no ha publicado ningún aviso sobre la calidad del agua y sus análisis diarios son públicos. La única fuente es «un amigo que trabaja en el Canal» y el texto sigue el patrón de las cadenas de mensajería (urgencia, «pásalo», «comprad ya»). Puede provocar compras de pánico."
+      },
+      "esperado": {
+        "categoria": "vertido",
+        "gravedad": "media",
+        "foco": "Desmentido citando a Canal de Isabel II: el agua del grifo es apta para el consumo."
+      }
+    },
+    {
+      "id": "suelto-29",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «el Gobierno prepara un apagón general de 3 días este fin de semana»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Madrid (sin geolocalizar)",
+        "osmId": "relation/7424032"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41686,
+          "lon": -3.70388,
+          "precisionM": 500
+        },
+        "ubicacion": "Madrid (sin geolocalizar)",
+        "texto": "Red social: «el Gobierno prepara un apagón general de 3 días este fin de semana»\nMe lo han pasado por el grupo del trabajo: este fin de semana habrá un APAGÓN GENERAL de 3 días en toda España. Comprad velas, pilas y comida!!! 🕯️🔋",
+        "autor": "@cadena_de_whats",
+        "tipoEmergencia": "apagon",
+        "simulacro": true,
+        "datasetId": "suelto-29",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "Ni REE ni las distribuidoras han anunciado nada parecido: un apagón general no se «programa» con días de antelación. El mensaje viene de una cadena de mensajería sin fuente e incita a comprar de forma compulsiva."
+      },
+      "esperado": {
+        "categoria": "corte_electrico",
+        "gravedad": "media",
+        "foco": "Desmentido breve citando a REE."
+      }
+    },
+    {
+      "id": "suelto-30",
+      "offsetSeg": 0,
+      "canal": "sensor",
+      "titulo": "IGN: microsismo de magnitud 1,6 mbLg en Torrejón de Ardoz, no sentido",
+      "fuente": "IGN",
+      "lugar": {
+        "nombre": "Torrejón de Ardoz (epicentro estimado)",
+        "osmId": "relation/343606"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.45878,
+          "lon": -3.47933,
+          "precisionM": 500
+        },
+        "ubicacion": "Torrejón de Ardoz (epicentro estimado)",
+        "texto": "IGN: microsismo de magnitud 1,6 mbLg en Torrejón de Ardoz, no sentido\nRed Sísmica Nacional (IGN): terremoto de magnitud 1,6 (mbLg) cerca de Torrejón de Ardoz, a 5 km de profundidad. No sentido por la población.",
+        "autor": "IGN · Red Sísmica Nacional",
+        "sensor": {
+          "magnitud": "magnitud_mbLg",
+          "valor": 1.6,
+          "unidad": "mbLg"
+        },
+        "tipoEmergencia": "terremoto",
+        "simulacro": true,
+        "datasetId": "suelto-30",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Registrar sin acción."
+      }
+    },
+    {
+      "id": "suelto-31",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «¿a qué hora cierra el Retiro hoy?»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Parque del Retiro",
+        "osmId": "relation/13616929"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41495,
+          "lon": -3.68328,
+          "precisionM": 400
+        },
+        "ubicacion": "Parque del Retiro",
+        "texto": "Red social: «¿a qué hora cierra el Retiro hoy?»\nalguien sabe a q hora cierra hoy el Retiro? quiero ir a correr al atardecer 🏃‍♀️🌅",
+        "autor": "@runner_retiro",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "suelto-31",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "suelto-32",
+      "offsetSeg": 0,
+      "canal": "red_social",
+      "titulo": "Red social: «creo que huele raro en mi calle, no sé»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Barrio de Salamanca (sin precisar)",
+        "osmId": "node/4576234323"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.42745,
+          "lon": -3.68728,
+          "precisionM": 400
+        },
+        "ubicacion": "Barrio de Salamanca (sin precisar)",
+        "texto": "Red social: «creo que huele raro en mi calle, no sé»\ncreo que huele raro en mi calle?? no sé si es gas o es el bar de abajo friendo 🤔",
+        "autor": "@dudas_de_serrano",
+        "tipoEmergencia": "fuga_gas",
+        "simulacro": true,
+        "datasetId": "suelto-32",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar salvo que lleguen más avisos de olor a gas en la misma zona."
+      }
+    },
+    {
+      "id": "suelto-33",
+      "offsetSeg": 0,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: sin novedad en el Templo de Debod tras un aviso de humo",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Templo de Debod",
+        "osmId": "way/549109296"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.42407,
+          "lon": -3.71761,
+          "precisionM": 60
+        },
+        "ubicacion": "Templo de Debod",
+        "texto": "Policía Municipal: sin novedad en el Templo de Debod tras un aviso de humo\nPatrulla de Policía Municipal: «Revisado el entorno del Templo de Debod tras un aviso de humo: era el vapor de un puesto de comida autorizado. Sin novedad.»",
+        "autor": "Patrulla · Policía Municipal de Madrid",
+        "tipoEmergencia": "incendio_urbano",
+        "simulacro": true,
+        "datasetId": "suelto-33",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Cerrar el aviso sin acción."
+      }
+    },
+    {
+      "id": "suelto-34",
+      "offsetSeg": 0,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: retrasos en L6 por una incidencia técnica entre Moncloa y Ciudad Universitaria",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Ciudad Universitaria",
+        "osmId": "node/5305486979"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4438,
+          "lon": -3.72642,
+          "precisionM": 150
+        },
+        "ubicacion": "Ciudad Universitaria",
+        "texto": "Metro de Madrid: retrasos en L6 por una incidencia técnica entre Moncloa y Ciudad Universitaria\nAviso publicado por la cuenta oficial de Metro de Madrid: circulación lenta en Línea 6 entre Moncloa y Ciudad Universitaria por una incidencia técnica en un tren. Tiempo estimado de resolución: 15 minutos.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "accidente_ferroviario",
+        "simulacro": true,
+        "datasetId": "suelto-34",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Registrar sin acción."
+      }
+    }
+  ]
+}

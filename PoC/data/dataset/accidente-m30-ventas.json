@@ -1,0 +1,412 @@
+{
+  "id": "accidente-m30-ventas",
+  "nombre": "Choque en cadena con un microbús volcado en la M-30 bajo el Puente de Ventas",
+  "tipo": "accidente_trafico",
+  "descripcion": "Cinco turismos y un microbús de empresa con 14 ocupantes chocan en cadena en la M-30 sentido sur, bajo el Puente de Ventas. Hay dos atrapados, gasoil en la calzada y humo en un vehículo. Se activa un incidente de múltiples víctimas, se corta la M-30 y los heridos graves se reparten entre La Princesa (1,3 km) y el Gregorio Marañón (1,6 km). La retención llega a 6 km.",
+  "objetivoDemo": "Incidente de múltiples víctimas: triaje y reparto de heridos entre hospitales cercanos, corte y desvío apoyados en sensores de tráfico reales, riesgo añadido (humo y gasoil) y un bulo que exagera el balance con una foto de otro país.",
+  "centro": {
+    "lat": 40.43131,
+    "lon": -3.6607,
+    "nombre": "M-30 sentido sur, Puente de Ventas"
+  },
+  "duracionSeg": 600,
+  "eventos": [
+    {
+      "id": "acc-tra-01-e01",
+      "offsetSeg": 0,
+      "canal": "camara",
+      "titulo": "Cámara M-30 Puente de Ventas: vehículos detenidos en los tres carriles sentido sur",
+      "fuente": "CamaraTrafico",
+      "lugar": {
+        "nombre": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "fotograma",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 100
+        },
+        "ubicacion": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "texto": "Cámara M-30 Puente de Ventas: vehículos detenidos en los tres carriles sentido sur\nFotograma de la cámara municipal de tráfico de la M-30 en el Puente de Ventas: varios vehículos detenidos y cruzados en los tres carriles sentido sur; se distingue un vehículo grande tumbado de lado.",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e01",
+        "canal": "camara"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "alta",
+        "foco": "Abrir incidencia de accidente múltiple y pedir confirmación por voz o a un efectivo."
+      }
+    },
+    {
+      "id": "acc-tra-01-e02",
+      "offsetSeg": 20,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: choque en cadena en la M-30 con un microbús volcado",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "M-30 bajo el Puente de Ventas",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 150
+        },
+        "ubicacion": "M-30 bajo el Puente de Ventas",
+        "texto": "Llamada 112: choque en cadena en la M-30 con un microbús volcado\nTranscripción (01:02), con cláxones de fondo. —¡Acaba de haber un choque en cadena en la M-30, debajo del puente de Ventas! Hay un microbús volcado de lado y gente dentro gritando… —¿Cuántos vehículos? —No sé, cuatro o cinco coches y el bus… uno echa humo. —¿Está usted herido? —No, yo he frenado a tiempo. —No se acerque al que echa humo; van bomberos, SAMUR y policía.",
+        "autor": "Conductor implicado (sin heridas)",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e02",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Despachar SAMUR (varias unidades), Bomberos y Policía Municipal y cortar la M-30 sentido sur en Ventas."
+      }
+    },
+    {
+      "id": "acc-tra-01-e03",
+      "offsetSeg": 45,
+      "canal": "sensor",
+      "titulo": "Sensor de tráfico M-30 (Ventas, sentido sur): 4 km/h y ocupación del 96 %",
+      "fuente": "MadridTrafico",
+      "lugar": {
+        "nombre": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 100
+        },
+        "ubicacion": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "texto": "Sensor de tráfico M-30 (Ventas, sentido sur): 4 km/h y ocupación del 96 %\nPunto de medida de tráfico del Ayuntamiento en la M-30, Ventas, sentido sur: velocidad media de 4 km/h, ocupación del 96 % e intensidad desplomada. Nivel de servicio: congestión.",
+        "sensor": {
+          "magnitud": "velocidad_media",
+          "valor": 4,
+          "unidad": "km/h"
+        },
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e03",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "alta",
+        "foco": "Confirmar el bloqueo y preparar el desvío por la C/ de Alcalá y la Avenida de los Toreros."
+      }
+    },
+    {
+      "id": "acc-tra-01-e04",
+      "offsetSeg": 70,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: conductor avisa del accidente de Ventas",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "M-30 sentido sur, cola a la altura de Donostiarra",
+        "osmId": "way/147042913"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.4348,
+          "lon": -3.65774,
+          "precisionM": 300
+        },
+        "ubicacion": "M-30 sentido sur, cola a la altura de Donostiarra",
+        "texto": "Llamada 112: conductor avisa del accidente de Ventas\nTranscripción (00:22). —Hay un accidente gordo en la M-30 por Ventas, un autobús volcado… —Ya nos consta, están llegando los servicios. ¿Hay algún herido a su lado? —No, estoy más atrás, en la cola. —Gracias, no salga del vehículo.",
+        "autor": "Conductor en la retención",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e04",
+        "canal": "llamada_112"
+      },
+      "duplicaDe": "acc-tra-01-e02",
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "acc-tra-01-e05",
+      "offsetSeg": 100,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: 5 turismos y un microbús con 14 ocupantes; 2 atrapados y gasoil en la calzada",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 100
+        },
+        "ubicacion": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "texto": "Policía Municipal: 5 turismos y un microbús con 14 ocupantes; 2 atrapados y gasoil en la calzada\nPrimera patrulla en el lugar: «Cinco turismos y un microbús de una empresa con 14 ocupantes, volcado sobre el lateral. Hay dos personas atrapadas en un turismo empotrado bajo el microbús. Gasoil derramado en unos 30 m de calzada. Cortamos la M-30 sentido sur en la entrada de Ventas.»",
+        "autor": "Patrulla de tráfico · Policía Municipal de Madrid",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e05",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Activar un incidente de múltiples víctimas: SAMUR con varias unidades de soporte vital avanzado y básico, triaje en la calzada y Bomberos para excarcelar. Cortar la M-30 sentido sur en Ventas y desviar por la C/ de Alcalá y la Avenida de los Toreros."
+      }
+    },
+    {
+      "id": "acc-tra-01-e06",
+      "offsetSeg": 140,
+      "canal": "red_social",
+      "titulo": "Red social: «KILÓMETROS de cola en la M-30, dicen que hay 6 muertos»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "M-30 (sin geolocalizar)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 500
+        },
+        "ubicacion": "M-30 (sin geolocalizar)",
+        "texto": "Red social: «KILÓMETROS de cola en la M-30, dicen que hay 6 muertos»\nBRUTAL lo de la M-30 🤯🤯 KILÓMETROS de cola, dicen que hay 6 muertos. No vengáis por aquí",
+        "autor": "@el_de_la_moto_",
+        "imagenUrl": "/dataset/img/accidente-autopista-a3-2014.jpg",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e06",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "La foto es de un accidente en la autopista alemana A3, cerca de Limburg an der Lahn, del 7-9-2014 (Wikimedia Commons, CC BY-SA 4.0, autor Raimond Spekking): se lee el cartel azul «Limburg 5 km» y las matrículas son alemanas. La cifra de 6 muertos no la confirma ningún efectivo: el triaje de SAMUR (e08) da 2 heridos graves y 9 leves. El accidente es real, pero la imagen y el balance no."
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Marcar la publicación como sospechosa, aunque el accidente sea real, y proponer un desmentido del balance de víctimas con los datos de SAMUR."
+      }
+    },
+    {
+      "id": "acc-tra-01-e07",
+      "offsetSeg": 180,
+      "canal": "app",
+      "titulo": "App ciudadana: empieza a salir humo de uno de los coches del accidente",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "M-30 sentido sur, detrás del accidente",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 60
+        },
+        "ubicacion": "M-30 sentido sur, detrás del accidente",
+        "texto": "App ciudadana: empieza a salir humo de uno de los coches del accidente\nAviso desde la app (GPS ±60 m): «Estoy parado detrás del accidente. De uno de los coches, el gris, está empezando a salir humo por el capó y hay líquido en el suelo.»",
+        "autor": "Conductor en la retención",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e07",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "incendio",
+        "gravedad": "alta",
+        "foco": "Bomberos: línea de agua preventiva sobre el vehículo que humea y absorbente en el gasoil antes de seguir con la excarcelación."
+      }
+    },
+    {
+      "id": "acc-tra-01-e08",
+      "offsetSeg": 230,
+      "canal": "efectivo",
+      "titulo": "SAMUR: triaje con 2 heridos graves y 9 leves; traslados a La Princesa y al Gregorio Marañón",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 100
+        },
+        "ubicacion": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "texto": "SAMUR: triaje con 2 heridos graves y 9 leves; traslados a La Princesa y al Gregorio Marañón\nMando sanitario de SAMUR: «Triaje terminado: 2 heridos graves (uno de ellos, excarcelado) y 9 leves. Los graves salen hacia La Princesa (1,3 km) y el Gregorio Marañón (1,6 km). Los leves se atienden en el puesto sanitario avanzado.»",
+        "autor": "Mando sanitario · SAMUR-Protección Civil",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e08",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "critica",
+        "foco": "Preavisar a urgencias de La Princesa y del Gregorio Marañón y abrir un corredor para las ambulancias por la C/ de Alcalá con prioridad semafórica."
+      }
+    },
+    {
+      "id": "acc-tra-01-e09",
+      "offsetSeg": 280,
+      "canal": "sensor",
+      "titulo": "Retenciones de 6 km en la M-30 sur y carga del 92 % en la C/ de Alcalá",
+      "fuente": "MadridTrafico",
+      "lugar": {
+        "nombre": "C/ de Alcalá 250",
+        "osmId": "node/3249101213"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.43202,
+          "lon": -3.65523,
+          "precisionM": 20
+        },
+        "ubicacion": "C/ de Alcalá 250",
+        "texto": "Retenciones de 6 km en la M-30 sur y carga del 92 % en la C/ de Alcalá\nDatos de tráfico del Ayuntamiento: 6 km de retención en la M-30 sentido sur desde Costa Rica; la C/ de Alcalá entre Ventas y Quintana, con una carga del 92 %, y la A-2 de entrada, con un 85 %.",
+        "sensor": {
+          "magnitud": "carga_trafico",
+          "valor": 92,
+          "unidad": "%"
+        },
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e09",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "alta",
+        "foco": "Mensajes en los paneles de la M-30 (cortada en Ventas, usar la M-40) y regulación semafórica en la C/ de Alcalá sin quitar la prioridad a las ambulancias."
+      }
+    },
+    {
+      "id": "acc-tra-01-e10",
+      "offsetSeg": 330,
+      "canal": "aviso_oficial",
+      "titulo": "EMT: desvíos en las líneas que pasan por la C/ de Alcalá entre Ventas y Quintana",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Ventas (Metro L2 y L5)",
+        "osmId": "node/5303127359"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43106,
+          "lon": -3.66354,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Ventas (Metro L2 y L5)",
+        "texto": "EMT: desvíos en las líneas que pasan por la C/ de Alcalá entre Ventas y Quintana\nAviso publicado por la cuenta oficial de la EMT de Madrid: por un accidente en la M-30 y el desvío de tráfico, las líneas que circulan por la C/ de Alcalá entre Ventas y Quintana sufren retrasos y desvíos puntuales.",
+        "autor": "Cuenta oficial de la EMT de Madrid",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e10",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Registrar."
+      }
+    },
+    {
+      "id": "acc-tra-01-e11",
+      "offsetSeg": 360,
+      "canal": "red_social",
+      "titulo": "Red social: «¿abren hoy el gimnasio de Ventas?»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Ventas",
+        "osmId": "way/23321768"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.43233,
+          "lon": -3.66334,
+          "precisionM": 300
+        },
+        "ubicacion": "Ventas",
+        "texto": "Red social: «¿abren hoy el gimnasio de Ventas?»\nalguien sabe si hoy abren el gimnasio de al lado de las Ventas o lo han cerrado por lo del accidente?? 🏋️‍♂️",
+        "autor": "@gymrat_ventas",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e11",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "acc-tra-01-e12",
+      "offsetSeg": 480,
+      "canal": "efectivo",
+      "titulo": "M-30 reabierta en dos carriles; gasoil limpiado y microbús retirado",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "osmId": "way/29271875"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.43131,
+          "lon": -3.6607,
+          "precisionM": 100
+        },
+        "ubicacion": "M-30 a la altura del Puente de Ventas (C/ de Alcalá)",
+        "texto": "M-30 reabierta en dos carriles; gasoil limpiado y microbús retirado\nPolicía Municipal: «Retirado el microbús con la grúa pesada. Bomberos ha terminado de limpiar el gasoil. Abrimos dos carriles de la M-30 sentido sur; el tercero sigue cerrado para los atestados.»",
+        "autor": "Patrulla de tráfico · Policía Municipal de Madrid",
+        "tipoEmergencia": "accidente_trafico",
+        "simulacro": true,
+        "datasetId": "acc-tra-01-e12",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "accidente",
+        "gravedad": "baja",
+        "foco": "Desescalada: actualizar los paneles, retirar el desvío de la C/ de Alcalá cuando la carga baje del 70 % y cerrar el incidente de múltiples víctimas."
+      }
+    }
+  ]
+}

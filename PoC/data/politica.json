@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "ajustes": {},
+  "historial": [
+    {
+      "timestamp": "2026-09-18T20:03:10.546Z",
+      "rol": "director_plan",
+      "categoria": "todas",
+      "texto": "Política restablecida al catálogo por defecto"
+    },
+    {
+      "timestamp": "2026-09-18T20:03:09.842Z",
+      "rol": "director_plan",
+      "categoria": "despliegue",
+      "texto": "Despliegue de medios propios: modo → reservada, firma mínima → Dirección Técnica"
+    },
+    {
+      "timestamp": "2026-09-18T19:58:18.654Z",
+      "rol": "director_plan",
+      "categoria": "todas",
+      "texto": "Política restablecida al catálogo por defecto"
+    },
+    {
+      "timestamp": "2026-09-18T19:58:18.198Z",
+      "rol": "director_plan",
+      "categoria": "despliegue",
+      "texto": "Despliegue de medios propios: modo → reservada, firma mínima → Dirección Técnica"
+    },
+    {
+      "timestamp": "2026-09-18T19:53:06.348Z",
+      "rol": "director_plan",
+      "categoria": "todas",
+      "texto": "Política restablecida al catálogo por defecto"
+    },
+    {
+      "timestamp": "2026-09-18T19:53:06.129Z",
+      "rol": "director_plan",
+      "categoria": "confinamiento",
+      "texto": "Confinamiento de población: modo → firma humana, riesgo mínimo → 55"
+    }
+  ],
+  "actualizadaEn": "2026-09-18T20:03:10.546Z"
+}

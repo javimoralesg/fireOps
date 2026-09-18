@@ -1,0 +1,410 @@
+{
+  "id": "amenaza-paquete-sol",
+  "nombre": "Paquete sospechoso en la Puerta del Sol: desalojo y aglomeración en Preciados",
+  "tipo": "amenaza_seguridad",
+  "descripcion": "Un sábado por la tarde, una mochila abandonada junto a la boca de Metro de Sol activa el protocolo de paquete sospechoso: perímetro, desalojo de la plaza y trenes sin parada en Sol. El flujo de gente se atasca en C/ de Preciados (3,9 personas/m²) y una mujer mayor cae en Arenal. En redes circula una foto del 15M como «avalancha» y se da por «confirmada» una bomba. El TEDAX concluye que es una falsa alarma.",
+  "objetivoDemo": "Amenaza de seguridad sin víctimas cuyo riesgo real es la aglomeración que provoca el desalojo: el sistema dirige el flujo hacia vías de escape amplias (Alcalá y Carrera de San Jerónimo), no hacia calles estrechas como Preciados, desmiente la «bomba confirmada» y la foto reciclada, y levanta el dispositivo de forma gradual.",
+  "centro": {
+    "lat": 40.41686,
+    "lon": -3.70388,
+    "nombre": "Puerta del Sol"
+  },
+  "duracionSeg": 660,
+  "eventos": [
+    {
+      "id": "ame-01-e01",
+      "offsetSeg": 0,
+      "canal": "app",
+      "titulo": "App ciudadana: mochila abandonada junto a la boca de Metro de Sol desde hace media hora",
+      "fuente": "Ciudadano",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "App ciudadana: mochila abandonada junto a la boca de Metro de Sol desde hace media hora\nAviso desde la app (GPS ±30 m): «Hay una mochila negra abandonada junto a la boca del Metro de Sol, al lado de la barandilla. Lleva ahí más de media hora y no es de nadie. La gente pasa por al lado.»",
+        "autor": "Trabajador de un comercio de la plaza",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e01",
+        "canal": "app"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Mandar una patrulla a comprobarlo; no alarmar a la gente todavía."
+      }
+    },
+    {
+      "id": "ame-01-e02",
+      "offsetSeg": 40,
+      "canal": "efectivo",
+      "titulo": "Policía: paquete sospechoso; perímetro de 50 m y se pide el TEDAX",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "Policía: paquete sospechoso; perímetro de 50 m y se pide el TEDAX\nPatrulla policial en la Puerta del Sol: «Confirmado objeto sospechoso, una mochila cerrada con un cable a la vista. Perímetro inicial de 50 m y se pide el TEDAX. Empezamos a apartar a la gente de la boca de Metro.»",
+        "autor": "Patrulla · Policía (unidad de seguridad ciudadana)",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e02",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Perímetro de 100 m y desalojo ordenado de la plaza por Mayor, Alcalá y Carrera de San Jerónimo, con megafonía tranquila. Pedir a Metro y Cercanías que pasen sin parar en Sol."
+      }
+    },
+    {
+      "id": "ame-01-e03",
+      "offsetSeg": 80,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: desalojan Sol y la gente empuja hacia Preciados",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Entrada de C/ de Preciados desde Sol",
+        "osmId": "node/13158156233"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.41973,
+          "lon": -3.7065,
+          "precisionM": 100
+        },
+        "ubicacion": "Entrada de C/ de Preciados desde Sol",
+        "texto": "Llamada 112: desalojan Sol y la gente empuja hacia Preciados\nTranscripción (00:47). —Están desalojando la Puerta del Sol y la gente se está metiendo toda por Preciados, hay carritos de bebé y empujones… da miedo. —¿Está usted en Preciados? —Sí, a la entrada. —Intente salir por un lateral, sin correr. Avisamos a la policía.",
+        "autor": "Viandante",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "ame-01-e03",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Cambiar el sentido del desalojo: sacar a la gente por Alcalá y la Carrera de San Jerónimo, y cortar la entrada a Preciados desde Sol."
+      }
+    },
+    {
+      "id": "ame-01-e04",
+      "offsetSeg": 110,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: trenes de L1, L2 y L3 sin parada en Sol",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "Metro de Madrid: trenes de L1, L2 y L3 sin parada en Sol\nAviso publicado por la cuenta oficial de Metro de Madrid: por indicación policial, los trenes de las líneas 1, 2 y 3 pasan sin parar por Sol. Los accesos a la estación están cerrados. Cercanías tampoco para en Sol.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e04",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Incluir en el aviso a la población las estaciones alternativas (Callao, Ópera, Sevilla)."
+      }
+    },
+    {
+      "id": "ame-01-e05",
+      "offsetSeg": 140,
+      "canal": "sensor",
+      "titulo": "Contador de densidad en C/ de Preciados: 3,9 personas/m²",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "C/ de Preciados",
+        "osmId": "node/13158156233"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.41973,
+          "lon": -3.7065,
+          "precisionM": 60
+        },
+        "ubicacion": "C/ de Preciados",
+        "texto": "Contador de densidad en C/ de Preciados: 3,9 personas/m²\nContador de densidad por visión en C/ de Preciados: 3,9 personas/m² y subiendo; el flujo se frena en el estrechamiento. En C/ de Alcalá: 1,2 personas/m².",
+        "autor": "Sensor per-aforo-preciados",
+        "sensor": {
+          "magnitud": "densidad_personas",
+          "valor": 3.9,
+          "unidad": "personas/m²"
+        },
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "ame-01-e05",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "critica",
+        "foco": "Mandar el flujo hacia Alcalá y la Carrera de San Jerónimo (vías anchas con densidad baja), cortar Preciados y Arenal al tráfico y poner agentes en el estrechamiento."
+      }
+    },
+    {
+      "id": "ame-01-e06",
+      "offsetSeg": 170,
+      "canal": "red_social",
+      "titulo": "Red social: «AVALANCHA EN SOL, miles de atrapados, confirmado que es una BOMBA»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Puerta del Sol (sin geolocalizar)",
+        "osmId": "relation/7424032"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41686,
+          "lon": -3.70388,
+          "precisionM": 300
+        },
+        "ubicacion": "Puerta del Sol (sin geolocalizar)",
+        "texto": "Red social: «AVALANCHA EN SOL, miles de atrapados, confirmado que es una BOMBA»\nAVALANCHA EN SOL 😱😱 miles de personas atrapadas y han CONFIRMADO que es una BOMBA 💣💣 no vengáis al centro!!!",
+        "autor": "@madrid_urgente",
+        "imagenUrl": "/dataset/img/aglomeracion-sol-2011.jpg",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "ame-01-e06",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "La foto es de la acampada del 15M en la Puerta del Sol del 22-5-2011 (Wikimedia Commons, CC BY-SA 3.0, autor «NeilK»): se leen carteles de protesta («Sin casa, sin futuro, sin miedo») y se ven lonas de acampada. Nadie ha confirmado una bomba: la Policía habla de «paquete sospechoso» y el TEDAX todavía no ha intervenido (e08). El contador marca densidad alta solo en Preciados (e05), no «miles de atrapados»."
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "media",
+        "foco": "Desmentido rápido: hay un paquete sospechoso en revisión, no una bomba confirmada; seguir las indicaciones de la Policía y no acudir al centro."
+      }
+    },
+    {
+      "id": "ame-01-e07",
+      "offsetSeg": 200,
+      "canal": "red_social",
+      "titulo": "Red social: «están desalojando Sol y la gente se agolpa en Preciados»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "C/ de Preciados",
+        "osmId": "node/13158156233"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41973,
+          "lon": -3.7065,
+          "precisionM": 150
+        },
+        "ubicacion": "C/ de Preciados",
+        "texto": "Red social: «están desalojando Sol y la gente se agolpa en Preciados»\nla poli está desalojando la Puerta del Sol y la gente se agolpa en Preciados, hay mucho agobio 😰",
+        "autor": "@sol_y_sombra_",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "ame-01-e07",
+        "canal": "red_social"
+      },
+      "duplicaDe": "ame-01-e03",
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "ame-01-e08",
+      "offsetSeg": 260,
+      "canal": "efectivo",
+      "titulo": "TEDAX en el lugar: robot de inspección desplegado",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "TEDAX en el lugar: robot de inspección desplegado\nUnidad TEDAX: «En posición. Perímetro de 100 m confirmado y plaza desalojada. Desplegamos el robot para inspeccionar la mochila con rayos X.»",
+        "autor": "Unidad TEDAX",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e08",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "alta",
+        "foco": "Registrar y mantener el perímetro."
+      }
+    },
+    {
+      "id": "ame-01-e09",
+      "offsetSeg": 320,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: una mujer mayor se ha caído en C/ del Arenal con los empujones",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "C/ del Arenal 5",
+        "osmId": "node/3414972206"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.4169,
+          "lon": -3.70532,
+          "precisionM": 20
+        },
+        "ubicacion": "C/ del Arenal 5",
+        "texto": "Llamada 112: una mujer mayor se ha caído en C/ del Arenal con los empujones\nTranscripción (00:52). —Se ha caído una señora mayor en la calle Arenal con los empujones, le sangra la cabeza y la gente sigue pasando. —¿Está consciente? —Sí, pero muy asustada. —Póngase a su lado para que no la pisen; SAMUR va ya.",
+        "autor": "Viandante",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "ame-01-e09",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "alta",
+        "foco": "SAMUR a C/ del Arenal 5 con escolta policial para poder llegar entre la gente."
+      }
+    },
+    {
+      "id": "ame-01-e10",
+      "offsetSeg": 380,
+      "canal": "red_social",
+      "titulo": "Red social: foto con el Oso y el Madroño antes del desalojo",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Puerta del Sol",
+        "osmId": "relation/7424032"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.41686,
+          "lon": -3.70388,
+          "precisionM": 200
+        },
+        "ubicacion": "Puerta del Sol",
+        "texto": "Red social: foto con el Oso y el Madroño antes del desalojo\npues yo me he hecho la foto con el oso y el madroño justo antes de que cerraran la plaza 🐻🌳 prioridades",
+        "autor": "@selfie_queen_mad",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "ame-01-e10",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "ame-01-e11",
+      "offsetSeg": 450,
+      "canal": "efectivo",
+      "titulo": "TEDAX: falsa alarma; la mochila tenía ropa, un cargador y documentación",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "TEDAX: falsa alarma; la mochila tenía ropa, un cargador y documentación\nUnidad TEDAX: «Falsa alarma. La mochila contiene ropa, un cargador de móvil con cable y documentación. Se identifica a su dueño, un turista que la olvidó. Se puede levantar el perímetro.»",
+        "autor": "Unidad TEDAX",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e11",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Levantar el perímetro poco a poco (primero los accesos más anchos), reabrir Sol en el Metro y publicar el fin de la alarma y el desmentido de la bomba."
+      }
+    },
+    {
+      "id": "ame-01-e12",
+      "offsetSeg": 540,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: se restablece la parada en Sol",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "osmId": "node/5301853067"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.41694,
+          "lon": -3.70339,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Sol (Metro L1, L2 y L3; Cercanías)",
+        "texto": "Metro de Madrid: se restablece la parada en Sol\nAviso publicado por la cuenta oficial de Metro de Madrid: los trenes de las líneas 1, 2 y 3 vuelven a parar en Sol. Los accesos están abiertos.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "ame-01-e12",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "baja",
+        "foco": "Cerrar la incidencia."
+      }
+    }
+  ]
+}

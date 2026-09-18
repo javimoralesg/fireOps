@@ -1,0 +1,412 @@
+{
+  "id": "aglomeracion-bernabeu",
+  "nombre": "Avalancha a la salida de un concierto en el Bernabéu y bulo de disparos",
+  "tipo": "aglomeracion",
+  "descripcion": "Al terminar un concierto, decenas de miles de personas salen a la vez hacia Concha Espina y la Castellana. Metro cierra el acceso a Santiago Bernabéu por aforo, el contador de densidad marca 4,8 personas/m² y hay una avalancha con una joven en el suelo. Unos petardos se convierten en redes en un bulo de «disparos» que puede provocar una estampida.",
+  "objetivoDemo": "Gestión de multitudes con sensores de densidad: abrir espacio (cortar la Castellana), escalonar la salida y derivar a otras estaciones. Desmentir en segundos un bulo peligroso («disparos») cruzándolo con el efectivo en el lugar, porque en una multitud el bulo es el riesgo.",
+  "centro": {
+    "lat": 40.45304,
+    "lon": -3.6882,
+    "nombre": "Estadio Santiago Bernabéu (Concha Espina)"
+  },
+  "duracionSeg": 720,
+  "eventos": [
+    {
+      "id": "agl-01-e01",
+      "offsetSeg": 0,
+      "canal": "camara",
+      "titulo": "Cámara Castellana con Concha Espina: flujo peatonal muy denso invadiendo la calzada",
+      "fuente": "CamaraTrafico",
+      "lugar": {
+        "nombre": "Pº de la Castellana, a la altura del Bernabéu",
+        "osmId": "way/32195456"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "fotograma",
+        "posicion": {
+          "lat": 40.45418,
+          "lon": -3.69058,
+          "precisionM": 100
+        },
+        "ubicacion": "Pº de la Castellana, a la altura del Bernabéu",
+        "texto": "Cámara Castellana con Concha Espina: flujo peatonal muy denso invadiendo la calzada\nFotograma de la cámara municipal de tráfico en el Paseo de la Castellana con la Avenida de Concha Espina: la salida del estadio ocupa las aceras y los carriles laterales; los vehículos están detenidos entre la gente.",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e01",
+        "canal": "camara"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Cortar al tráfico los laterales de la Castellana y Concha Espina para dar espacio a los peatones."
+      }
+    },
+    {
+      "id": "agl-01-e02",
+      "offsetSeg": 40,
+      "canal": "sensor",
+      "titulo": "Contador de densidad en la salida de Concha Espina: 4,8 personas/m²",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Avenida de Concha Espina",
+        "osmId": "way/8014111"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.4519,
+          "lon": -3.68806,
+          "precisionM": 100
+        },
+        "ubicacion": "Avenida de Concha Espina",
+        "texto": "Contador de densidad en la salida de Concha Espina: 4,8 personas/m²\nContador de densidad por visión en la salida de Concha Espina: 4,8 personas/m² y subiendo (por encima de 4 hay riesgo de avalancha). Flujo de salida: unas 9.000 personas cada 10 minutos.",
+        "autor": "Sensor per-aforo-concha-espina",
+        "sensor": {
+          "magnitud": "densidad_personas",
+          "valor": 4.8,
+          "unidad": "personas/m²"
+        },
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e02",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "critica",
+        "foco": "Escalonar la salida por puertas (megafonía del estadio), abrir la Castellana a los peatones, cerrar temporalmente el acceso al Metro de Santiago Bernabéu y derivar a Nuevos Ministerios (850 m)."
+      }
+    },
+    {
+      "id": "agl-01-e03",
+      "offsetSeg": 80,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: cierre temporal del acceso a Santiago Bernabéu (L10) por aforo",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Santiago Bernabéu (Metro L10)",
+        "osmId": "node/5310126819"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.45237,
+          "lon": -3.69073,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Santiago Bernabéu (Metro L10)",
+        "texto": "Metro de Madrid: cierre temporal del acceso a Santiago Bernabéu (L10) por aforo\nAviso publicado por la cuenta oficial de Metro de Madrid: se cierra temporalmente el acceso a la estación de Santiago Bernabéu por aforo completo. Se recomienda usar Nuevos Ministerios, donde se refuerza el servicio.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e03",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "alta",
+        "foco": "Mandar agentes para guiar a la gente hacia Nuevos Ministerios y evitar que se acumule en la boca cerrada."
+      }
+    },
+    {
+      "id": "agl-01-e04",
+      "offsetSeg": 120,
+      "canal": "llamada_112",
+      "titulo": "Llamada 112: avalancha en Concha Espina, una chica en el suelo",
+      "fuente": "HappyRobot",
+      "lugar": {
+        "nombre": "Avenida de Concha Espina, salida del estadio",
+        "osmId": "way/8014111"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "voz",
+        "posicion": {
+          "lat": 40.4519,
+          "lon": -3.68806,
+          "precisionM": 80
+        },
+        "ubicacion": "Avenida de Concha Espina, salida del estadio",
+        "texto": "Llamada 112: avalancha en Concha Espina, una chica en el suelo\nTranscripción (00:38), con gritos. —¡Estamos en Concha Espina y hay una avalancha, se ha caído una chica y la gente pasa por encima! —¿Está consciente? —¡No lo sé, no puedo llegar! —Intente hacer hueco con los brazos a su alrededor y pida a los de al lado que paren. Van policía y SAMUR.",
+        "autor": "Asistente al concierto",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "agl-01-e04",
+        "canal": "llamada_112"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "critica",
+        "foco": "SAMUR y Policía Municipal a Concha Espina; frenar la salida de esa puerta por megafonía de inmediato."
+      }
+    },
+    {
+      "id": "agl-01-e05",
+      "offsetSeg": 150,
+      "canal": "red_social",
+      "titulo": "Red social: «avalancha en Concha Espina, una chica en el suelo»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Concha Espina",
+        "osmId": "way/8014111"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.4519,
+          "lon": -3.68806,
+          "precisionM": 150
+        },
+        "ubicacion": "Concha Espina",
+        "texto": "Red social: «avalancha en Concha Espina, una chica en el suelo»\navalancha en Concha Espina, una chica en el suelo y la gente empujando!!! 😱 parad de empujar por favor",
+        "autor": "@madridista_89",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "agl-01-e05",
+        "canal": "red_social"
+      },
+      "duplicaDe": "agl-01-e04",
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "critica",
+        "foco": "Marcar como duplicado."
+      }
+    },
+    {
+      "id": "agl-01-e06",
+      "offsetSeg": 180,
+      "canal": "red_social",
+      "titulo": "Red social: «DISPAROS en el Bernabéu, la gente corre»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Estadio Santiago Bernabéu (sin geolocalizar)",
+        "osmId": "way/1507411898"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.45304,
+          "lon": -3.6882,
+          "precisionM": 300
+        },
+        "ubicacion": "Estadio Santiago Bernabéu (sin geolocalizar)",
+        "texto": "Red social: «DISPAROS en el Bernabéu, la gente corre»\nDISPAROS en el Bernabéu!!! la gente está corriendo, CORRED, salid de ahí 🔫😱😱",
+        "autor": "@ultimahora_mad",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "agl-01-e06",
+        "canal": "red_social"
+      },
+      "bulo": {
+        "motivo": "No hay ninguna llamada al 112 que hable de disparos ni ningún efectivo que lo confirme. La Policía Municipal en el lugar (e07) identifica los estruendos como petardos lanzados por asistentes en C/ de Rafael Salgado. Mensajes así provocan estampidas: la verificación los cruza con el efectivo más cercano y con la ausencia de heridos por arma."
+      },
+      "esperado": {
+        "categoria": "otro",
+        "gravedad": "media",
+        "foco": "Desmentido inmediato por la megafonía del estadio, las pantallas y las redes: no hay disparos, eran petardos; mantener la calma y seguir las indicaciones del personal."
+      }
+    },
+    {
+      "id": "agl-01-e07",
+      "offsetSeg": 210,
+      "canal": "efectivo",
+      "titulo": "Policía Municipal: los estruendos eran petardos en Rafael Salgado; no hay armas",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "C/ de Rafael Salgado",
+        "osmId": "way/11104011"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.45422,
+          "lon": -3.68855,
+          "precisionM": 60
+        },
+        "ubicacion": "C/ de Rafael Salgado",
+        "texto": "Policía Municipal: los estruendos eran petardos en Rafael Salgado; no hay armas\nPatrulla de Policía Municipal en C/ de Rafael Salgado: «Los estruendos eran petardos que tiraban unos asistentes. Hemos identificado a dos personas. No hay armas ni heridos por esto. Pedimos que se desmienta rápido: hay gente corriendo hacia la Castellana.»",
+        "autor": "Patrulla · Policía Municipal de Madrid",
+        "tipoEmergencia": "amenaza_seguridad",
+        "simulacro": true,
+        "datasetId": "agl-01-e07",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "media",
+        "foco": "Usarlo como evidencia del desmentido y reforzar agentes en los puntos donde la gente está corriendo."
+      }
+    },
+    {
+      "id": "agl-01-e08",
+      "offsetSeg": 240,
+      "canal": "efectivo",
+      "titulo": "SAMUR: la joven de Concha Espina, estable; otros 6 atendidos por lesiones leves",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Avenida de Concha Espina",
+        "osmId": "way/8014111"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.4519,
+          "lon": -3.68806,
+          "precisionM": 100
+        },
+        "ubicacion": "Avenida de Concha Espina",
+        "texto": "SAMUR: la joven de Concha Espina, estable; otros 6 atendidos por lesiones leves\nUnidad de SAMUR en Concha Espina: «Joven de 19 años con contusiones en el tórax y una crisis de ansiedad, consciente y estable; la trasladamos para observación. Otros 6 atendidos por contusiones y lipotimias, sin traslado.»",
+        "autor": "Unidad de soporte vital básico · SAMUR-Protección Civil",
+        "tipoEmergencia": "persona_en_peligro",
+        "simulacro": true,
+        "datasetId": "agl-01-e08",
+        "canal": "efectivo"
+      },
+      "esperado": {
+        "categoria": "persona_en_peligro",
+        "gravedad": "alta",
+        "foco": "Registrar e incluirlo en el SITREP."
+      }
+    },
+    {
+      "id": "agl-01-e09",
+      "offsetSeg": 300,
+      "canal": "sensor",
+      "titulo": "Contador de densidad en Concha Espina: baja a 2,1 personas/m²",
+      "fuente": "Periferico",
+      "lugar": {
+        "nombre": "Avenida de Concha Espina",
+        "osmId": "way/8014111"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "sensor",
+        "posicion": {
+          "lat": 40.4519,
+          "lon": -3.68806,
+          "precisionM": 100
+        },
+        "ubicacion": "Avenida de Concha Espina",
+        "texto": "Contador de densidad en Concha Espina: baja a 2,1 personas/m²\nContador de densidad en la salida de Concha Espina: 2,1 personas/m², bajando, con el flujo repartido por la Castellana abierta a los peatones.",
+        "autor": "Sensor per-aforo-concha-espina",
+        "sensor": {
+          "magnitud": "densidad_personas",
+          "valor": 2.1,
+          "unidad": "personas/m²"
+        },
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e09",
+        "canal": "sensor"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "media",
+        "foco": "Registrar la mejora y mantener cortada la Castellana hasta que termine la salida."
+      }
+    },
+    {
+      "id": "agl-01-e10",
+      "offsetSeg": 360,
+      "canal": "aviso_oficial",
+      "titulo": "Metro de Madrid: reabre Santiago Bernabéu con control de acceso y trenes reforzados",
+      "fuente": "Organismo",
+      "lugar": {
+        "nombre": "Estación de Santiago Bernabéu (Metro L10)",
+        "osmId": "node/5310126819"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "texto",
+        "posicion": {
+          "lat": 40.45237,
+          "lon": -3.69073,
+          "precisionM": 30
+        },
+        "ubicacion": "Estación de Santiago Bernabéu (Metro L10)",
+        "texto": "Metro de Madrid: reabre Santiago Bernabéu con control de acceso y trenes reforzados\nAviso publicado por la cuenta oficial de Metro de Madrid: se reabre el acceso a Santiago Bernabéu con control de aforo. Se mantienen los trenes de refuerzo en L10 y en Nuevos Ministerios.",
+        "autor": "Cuenta oficial de Metro de Madrid",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e10",
+        "canal": "aviso_oficial"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "baja",
+        "foco": "Registrar."
+      }
+    },
+    {
+      "id": "agl-01-e11",
+      "offsetSeg": 420,
+      "canal": "red_social",
+      "titulo": "Red social: «el concierto ha sido BRUTAL»",
+      "fuente": "Exa",
+      "lugar": {
+        "nombre": "Estadio Santiago Bernabéu",
+        "osmId": "way/1507411898"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "publicacion",
+        "posicion": {
+          "lat": 40.45304,
+          "lon": -3.6882,
+          "precisionM": 400
+        },
+        "ubicacion": "Estadio Santiago Bernabéu",
+        "texto": "Red social: «el concierto ha sido BRUTAL»\nel concierto ha sido BRUTAL 🎤🔥🔥 la mejor noche de mi vida, qué voz",
+        "autor": "@groupie_mad",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e11",
+        "canal": "red_social"
+      },
+      "ruido": true,
+      "esperado": {
+        "categoria": "sin_novedad",
+        "gravedad": "nula",
+        "foco": "Descartar como ruido."
+      }
+    },
+    {
+      "id": "agl-01-e12",
+      "offsetSeg": 540,
+      "canal": "camara",
+      "titulo": "Cámara de la Castellana: reabierta al tráfico, flujo peatonal normal",
+      "fuente": "CamaraTrafico",
+      "lugar": {
+        "nombre": "Pº de la Castellana, a la altura del Bernabéu",
+        "osmId": "way/32195456"
+      },
+      "observacion": {
+        "perifericoId": "simulador",
+        "tipo": "fotograma",
+        "posicion": {
+          "lat": 40.45418,
+          "lon": -3.69058,
+          "precisionM": 100
+        },
+        "ubicacion": "Pº de la Castellana, a la altura del Bernabéu",
+        "texto": "Cámara de la Castellana: reabierta al tráfico, flujo peatonal normal\nFotograma de la cámara municipal de tráfico en el Paseo de la Castellana con Concha Espina: aceras con flujo normal; la Policía Municipal reabre los carriles al tráfico.",
+        "tipoEmergencia": "aglomeracion",
+        "simulacro": true,
+        "datasetId": "agl-01-e12",
+        "canal": "camara"
+      },
+      "esperado": {
+        "categoria": "aglomeracion",
+        "gravedad": "baja",
+        "foco": "Cerrar la incidencia y anotar lecciones aprendidas (salida escalonada por puertas)."
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 // Lo que se valida: lista blanca, "manda la más restrictiva", umbrales globales,
 // nivel de gravedad, alertas legales y que la IA no pueda rebajarse el riesgo.
 import { describe, expect, it } from "vitest";
-import { evaluarCompetencia } from "@/lib/dominio/politica";
+import { evaluarCompetencia, evaluarCompetenciasAcciones } from "@/lib/dominio/politica";
 import { politicaPorDefecto } from "@/lib/dominio/politica-defecto";
 import type { TipoAccion } from "@/lib/dominio/tipos";
 import { accion, decision, incendio } from "./ayudas/dominio";
@@ -46,6 +46,35 @@ describe("evaluarCompetencia · manda la acción más restrictiva", () => {
   it("el riesgo es el máximo de los riesgoMinimo de todas las acciones", () => {
     const r = evaluarCompetencia(decision([accion("abrir_ticket"), accion("solicitar_medios_aereos")]), politica());
     expect(r.riesgo).toBe(50); // solicitar_medios_aereos
+  });
+});
+
+describe("evaluarCompetenciasAcciones · contrato aditivo", () => {
+  it("mantiene separadas una acción autónoma y otra humana", () => {
+    const acciones = [
+      accion("vigilar_camara", { id: "vigilar", competencia: "autonoma", riesgo: 5 }),
+      accion("evacuar_poblacion", { id: "evacuar", competencia: "humano", riesgo: 85 }),
+    ];
+    const r = evaluarCompetenciasAcciones(decision(acciones, { riesgo: 85 }), politica());
+    expect(r.map((x) => [x.accion.id, x.competencia, x.riesgo])).toEqual([
+      ["vigilar", "autonoma", 5],
+      ["evacuar", "humano", 85],
+    ]);
+  });
+
+  it("la política eleva una competencia declarada pero nunca la rebaja", () => {
+    const r = evaluarCompetenciasAcciones(decision([
+      accion("evacuar_poblacion", { competencia: "autonoma", riesgo: 1 }),
+      accion("vigilar_camara", { id: "humana", competencia: "humano", riesgo: 1 }),
+    ]), politica());
+    expect(r[0].competencia).toBe("humano");
+    expect(r[1].competencia).toBe("humano");
+  });
+
+  it("los datos históricos sin campos por acción conservan el riesgo global", () => {
+    const r = evaluarCompetenciasAcciones(decision([accion("vigilar_camara")], { riesgo: 95 }), politica());
+    expect(r[0].competencia).toBe("humano");
+    expect(r[0].riesgo).toBe(95);
   });
 });
 

@@ -835,6 +835,7 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     competencia = evaluada.competencia;
     riesgo = evaluada.riesgo;
     motivoCompetencia = evaluada.motivo;
+    d.acciones = evaluada.acciones;
   } catch (e) {
     competencia = "humano";
     riesgo = Math.max(riesgo, 90);
@@ -844,6 +845,7 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   const ficha = estado.agentes.get(d.agenteId);
   if (ficha?.controlHumano && competencia === "autonoma") {
     competencia = "supervisada";
+    d.acciones = d.acciones.map((a) => a.competencia === "autonoma" ? { ...a, competencia: "supervisada" } : a);
     motivoCompetencia = `${motivoCompetencia}; un humano ha asumido el control de ${ficha.nombre}`;
   }
   // Ataque inicial (doctrina): la primera salida se despacha sola, como en un 112 real, y el
@@ -858,9 +860,10 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   if (esAtaqueInicial) {
     competencia = "autonoma";
     riesgo = Math.min(riesgo, 25);
+    d.acciones = d.acciones.map((a) => ({ ...a, competencia: "autonoma", riesgo: Math.min(a.riesgo ?? riesgo, 25) }));
     motivoCompetencia = "Ataque inicial: la primera salida se despacha de forma autónoma (doctrina) y el supervisor la revisa a posteriori";
   }
-  estado.actualizar(estado.decisiones, d.id, { competencia, riesgo });
+  estado.actualizar(estado.decisiones, d.id, { competencia, riesgo, acciones: d.acciones });
   d.competencia = competencia;
   d.riesgo = riesgo;
 
@@ -955,6 +958,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   }
 
   if (aprueba) {
+    // Una acción humana no bloquea a sus hermanas autónomas independientes. Las
+    // dependientes de una humana permanecen pendientes hasta su aprobación.
+    await aprobarDecision(d.id, "ia", undefined, { soloAutonomas: true });
     // supervisada o humano: espera a una persona, con la recomendación del supervisor
     const actualizada = cambiarEstadoDecision(estado, d.id, "pendiente_humano", "sistema", `Competencia ${competencia}: ${motivoCompetencia}`) ?? d;
     estado.registrarEvento("decision_propuesta", `Requiere tu decisión: ${d.titulo} (${competencia}, riesgo ${riesgo})`, {
@@ -1003,7 +1009,8 @@ function caducarPendientes(estado: Estado): void {
     }
     const esperando = (ahora - Date.parse(desde)) / 60_000;
     if (!Number.isFinite(esperando) || esperando <= limite) continue;
-    cambiarEstadoDecision(estado, d.id, "caducada", "sistema", `Sin respuesta humana tras ${Math.round(esperando)} min reales (límite ${limite})`);
+    const acciones = d.acciones.map((a) => a.estado === "pendiente" ? { ...a, estado: "cancelada" as const } : a);
+    cambiarEstadoDecision(estado, d.id, "caducada", "sistema", `Sin respuesta humana tras ${Math.round(esperando)} min reales (límite ${limite})`, { acciones });
     estado.registrarEvento("decision_denegada", `Caducada sin respuesta (${Math.round(esperando)} min reales): ${d.titulo}`, {
       agenteId: d.agenteId,
       incendioId: d.incendioId,
@@ -1119,23 +1126,24 @@ async function podarMemoria(estado: Estado): Promise<void> {
 }
 
 /** Aprueba y EJECUTA. `quien` = "ia" o "humano:<nombre>". */
-export async function aprobarDecision(id: string, quien: string, comentario?: string): Promise<Decision | undefined> {
+export async function aprobarDecision(id: string, quien: string, comentario?: string, opciones: { soloAutonomas?: boolean } = {}): Promise<Decision | undefined> {
   const estado = obtenerEstado();
   const inicial = estado.decisiones.get(id);
   if (!inicial) return undefined;
-  if (["ejecutando", "ejecutada", "denegada", "fallida"].includes(inicial.estado)) return inicial;
+  if (["ejecutando", "ejecutada", "denegada", "fallida", "caducada"].includes(inicial.estado)) return inicial;
 
-  const ahora = new Date().toISOString();
-  cambiarEstadoDecision(estado, id, "aprobada", quien, comentario, { decididaEn: ahora, decididaPor: quien, comentarioHumano: comentario ?? inicial.comentarioHumano });
-  sumarMetrica(estado, "decisionesAprobadas");
-  estado.registrarEvento("decision_aprobada", `Aprobada por ${quien}: ${inicial.titulo}`, {
-    agenteId: inicial.agenteId,
-    incendioId: inicial.incendioId,
-    nivel: "info",
-    datos: { decisionId: id, quien, comentario },
-  });
-
-  cambiarEstadoDecision(estado, id, "ejecutando", quien, `${inicial.acciones.length} acción(es) por ejecutar`);
+  if (!opciones.soloAutonomas) {
+    const ahora = new Date().toISOString();
+    cambiarEstadoDecision(estado, id, "aprobada", quien, comentario, { decididaEn: ahora, decididaPor: quien, comentarioHumano: comentario ?? inicial.comentarioHumano });
+    sumarMetrica(estado, "decisionesAprobadas");
+    estado.registrarEvento("decision_aprobada", `Aprobada por ${quien}: ${inicial.titulo}`, {
+      agenteId: inicial.agenteId,
+      incendioId: inicial.incendioId,
+      nivel: "info",
+      datos: { decisionId: id, quien, comentario },
+    });
+    cambiarEstadoDecision(estado, id, "ejecutando", quien, `${inicial.acciones.length} acción(es) por ejecutar`);
+  }
   const ctx = contextoParaSistema(inicial.agenteId);
 
   // Ejecutor real (constructor D). Si no está, cada acción falla con motivo claro.
@@ -1146,12 +1154,27 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     estado.marcarServicio("Ejecutor de acciones", false, mensajeDe(e));
   }
 
-  const idsAcciones = (estado.decisiones.get(id)?.acciones ?? []).map((a) => a.id);
-  let algunaBien = false;
+  const moduloEjecutor = ejecutor ? await import("../agentes/ejecucion/ejecutor") : undefined;
+  const accionesOrdenadas = moduloEjecutor?.ordenarPorDependencias(estado.decisiones.get(id)?.acciones ?? []) ?? (estado.decisiones.get(id)?.acciones ?? []);
+  const idsAcciones = accionesOrdenadas
+    .filter((a) => a.estado === "pendiente" && (!opciones.soloAutonomas || a.competencia === "autonoma"))
+    .map((a) => a.id);
+  let algunaBien = (estado.decisiones.get(id)?.acciones ?? []).some((a) => a.estado === "ejecutada");
   for (const accionId of idsAcciones) {
-    // Sello de auditoría de la acción: quién la autorizó y cuándo se ordenó.
-    const ordenadaEn = new Date().toISOString();
-    let accion = mutarAccion(estado, id, accionId, { autorizadaPor: quien, ordenadaEn });
+    let accion = estado.decisiones.get(id)?.acciones.find((a) => a.id === accionId);
+    if (!accion) continue;
+    const dependencias = moduloEjecutor?.comprobarDependencias(accion, estado.decisiones.get(id) ?? inicial);
+    if (dependencias && !dependencias.lista) {
+      const grafoInvalido = !(moduloEjecutor?.validarDependencias(estado.decisiones.get(id)?.acciones ?? []).valida ?? true);
+      const dependenciasTerminales = (accion.dependeDe ?? []).some((depId) => {
+        const dep = estado.decisiones.get(id)?.acciones.find((a) => a.id === depId);
+        return dep?.estado === "fallida" || dep?.estado === "cancelada";
+      });
+      if (!opciones.soloAutonomas && (grafoInvalido || dependenciasTerminales)) mutarAccion(estado, id, accionId, { estado: "cancelada" });
+      continue;
+    }
+    // Solo se autoriza cuando sus dependencias permiten ordenarla realmente.
+    accion = mutarAccion(estado, id, accionId, { autorizadaPor: quien, ordenadaEn: new Date().toISOString() });
     if (!accion) continue;
     let resultado: Accion = accion;
     if (!ejecutor || !ejecutor.soporta(accion.tipo)) {
@@ -1202,6 +1225,8 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     }
   }
 
+  if (opciones.soloAutonomas) return estado.decisiones.get(id) ?? inicial;
+
   const acciones = estado.decisiones.get(id)?.acciones ?? [];
   const estadoFinal: Decision["estado"] = acciones.length === 0 ? "ejecutada" : algunaBien ? "ejecutada" : "fallida";
   const final = cambiarEstadoDecision(estado, id, estadoFinal, quien, `${acciones.filter((a) => a.estado === "ejecutada").length} de ${acciones.length} acciones con éxito`) ?? inicial;
@@ -1228,10 +1253,12 @@ export async function denegarDecision(id: string, quien: string, comentario: str
   if (!d) return undefined;
   const motivo = (comentario ?? "").trim();
   if (!motivo) throw new Error("Al denegar hay que explicar por qué: el comentario es obligatorio");
+  const { cancelarAccionesPendientes } = await import("../agentes/ejecucion/ejecutor");
   const final = cambiarEstadoDecision(estado, id, "denegada", quien, motivo, {
     decididaEn: new Date().toISOString(),
     decididaPor: quien,
     comentarioHumano: motivo,
+    acciones: cancelarAccionesPendientes(d.acciones),
   });
   sumarMetrica(estado, "decisionesDenegadas");
   estado.registrarEvento("decision_denegada", `Denegada por ${quien}: ${d.titulo} · ${motivo}`, {

@@ -60,6 +60,76 @@ const SOPORTADAS: Accion["tipo"][] = [
   "solicitar_confirmacion",
 ];
 
+export interface ValidacionDependencias {
+  valida: boolean;
+  errores: string[];
+}
+
+/** Valida referencias y ciclos sin exigir `dependeDe` a los datos históricos. */
+export function validarDependencias(acciones: readonly Accion[]): ValidacionDependencias {
+  const ids = new Set(acciones.map((a) => a.id));
+  const errores: string[] = [];
+  if (ids.size !== acciones.length) errores.push("hay IDs de acción duplicados");
+  const visitando = new Set<string>();
+  const visitadas = new Set<string>();
+  const porId = new Map(acciones.map((a) => [a.id, a]));
+  for (const accion of acciones) {
+    for (const dependencia of accion.dependeDe ?? []) {
+      if (!ids.has(dependencia)) errores.push(`${accion.id} depende de una acción inexistente: ${dependencia}`);
+      if (dependencia === accion.id) errores.push(`${accion.id} depende de sí misma`);
+    }
+  }
+  const visitar = (id: string): void => {
+    if (visitadas.has(id) || visitando.has(id)) {
+      if (visitando.has(id)) errores.push(`ciclo de dependencias detectado en ${id}`);
+      return;
+    }
+    visitando.add(id);
+    for (const dependencia of porId.get(id)?.dependeDe ?? []) if (porId.has(dependencia)) visitar(dependencia);
+    visitando.delete(id);
+    visitadas.add(id);
+  };
+  for (const accion of acciones) visitar(accion.id);
+  return { valida: errores.length === 0, errores: [...new Set(errores)] };
+}
+
+/** Orden estable topológico. Ante un grafo inválido conserva el orden original (fail-safe en el guard posterior). */
+export function ordenarPorDependencias(acciones: readonly Accion[]): Accion[] {
+  if (!validarDependencias(acciones).valida) return [...acciones];
+  const porId = new Map(acciones.map((a) => [a.id, a]));
+  const visitadas = new Set<string>();
+  const orden: Accion[] = [];
+  const visitar = (accion: Accion): void => {
+    if (visitadas.has(accion.id)) return;
+    for (const id of accion.dependeDe ?? []) visitar(porId.get(id)!);
+    visitadas.add(accion.id);
+    orden.push(accion);
+  };
+  for (const accion of acciones) visitar(accion);
+  return orden;
+}
+
+export function comprobarDependencias(accion: Accion, decision: Decision): { lista: boolean; motivo?: string } {
+  const validacion = validarDependencias(decision.acciones);
+  if (!validacion.valida) return { lista: false, motivo: validacion.errores.join("; ") };
+  const porId = new Map(decision.acciones.map((a) => [a.id, a]));
+  for (const id of accion.dependeDe ?? []) {
+    const dependencia = porId.get(id)!;
+    if (dependencia.estado !== "ejecutada") return { lista: false, motivo: `${accion.id} espera a ${id} (${dependencia.estado})` };
+  }
+  return { lista: true };
+}
+
+/** Denegar o caducar cancela únicamente trabajo no terminado; nunca compensa ni revierte efectos. */
+export function cancelarAccionesPendientes(acciones: readonly Accion[]): Accion[] {
+  // Una acción ya en ejecución puede haber producido un efecto externo. No se
+  // finge su cancelación: terminará y, si hiciera falta, se compensará mediante
+  // otra acción explícita.
+  return acciones.map((accion) => accion.estado === "pendiente"
+    ? { ...accion, estado: "cancelada" }
+    : accion);
+}
+
 const texto = (v: unknown, porDefecto = ""): string => (typeof v === "string" && v.trim() ? v.trim() : porDefecto);
 const numero = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
@@ -518,6 +588,8 @@ export const ejecutorAcciones: EjecutorAcciones = {
    * la decisión tras cada acción, así que esto se ve en la sala en vivo.
    */
   async ejecutar(accion: Accion, decision: Decision, ctx: ContextoAgente): Promise<Accion> {
+    const dependencias = comprobarDependencias(accion, decision);
+    if (!dependencias.lista) return { ...accion, estado: "pendiente" };
     const t0 = Date.now();
     const hecha = await ejecutarUna(accion, decision, ctx);
     const duracionTotalMs = Date.now() - t0;

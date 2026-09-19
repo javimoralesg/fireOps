@@ -172,6 +172,19 @@ describe("Sala de mando", () => {
     }
   }, 240_000);
 
+  it("no muestra avisos meteorológicos en las capas del mapa", async () => {
+    if (!conPlaywright) return;
+    const pagina = await navegador!.newPage();
+    try {
+      await pagina.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+      await pagina.waitForSelector(".leaflet-container", { timeout: 60_000 });
+      await pagina.getByRole("button", { name: /capas/i }).click();
+      expect(await pagina.getByText("Avisos meteo", { exact: true }).count()).toBe(0);
+    } finally {
+      await pagina.close();
+    }
+  }, 180_000);
+
   it('"Declarar foco" + clic en el mapa + confirmar muestra el toast "Foco declarado"', async () => {
     const t0 = Date.now();
     if (!conPlaywright) {

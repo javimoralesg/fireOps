@@ -3,4 +3,6 @@ node_modules
 .env.local
 .env.*
 .next
-data/
+PoC_Def/data/aprendizaje/
+PoC_Def/data/url-publica.txt
+PoC_Def/tsconfig.tsbuildinfo

@@ -732,6 +732,70 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     estado.marcarServicio("Conocimiento (RAG)", false, mensajeDe(e));
   }
 
+  // (a bis) Revisión legal EN LÍNEA (F1c de la migración, 2026-09-19) ------
+  // Antes la hacía el agente `asesor_legal` en un tick POSTERIOR, y el enrutado
+  // de más abajo ya había decidido con su copia local de `competencia`: una
+  // decisión con alerta legal podía ejecutarse sola y el veto llegaba tarde.
+  // `revisarLegalidad` ya estaba exportada para esto y reutiliza los fundamentos
+  // que acaba de recuperar (a), así que no gasta una segunda búsqueda.
+  //
+  // EXCEPCIÓN, misma doctrina que el supervisor: un despliegue de ataque inicial
+  // no espera. Mandar medios a apagar un fuego no tiene problema de competencia
+  // —la tienen la evacuación, el confinamiento, el corte de carretera o elevar
+  // el nivel—, y bloquear la primera salida ~20 s por una revisión que casi
+  // siempre sale conforme cuesta minutos de fuego. Se revisa a posteriori.
+  const soloDespliegueInicial =
+    d.acciones.length > 0 && d.acciones.every((a) => a.tipo === "desplegar_unidad" && a.parametros?.ataqueInicial === true);
+
+  const aplicarRevision = (revision: { conforme: boolean; alertas: string[]; sinRevisar?: string }): void => {
+    if (revision.sinRevisar) {
+      estado.registrarEvento("agente", `Revisión legal de «${d.titulo}» no realizada: ${revision.sinRevisar}`, {
+        agenteId: "asesor_legal",
+        incendioId: d.incendioId,
+        nivel: "aviso",
+        datos: { decisionId: d.id },
+      });
+      return;
+    }
+    // Se escribe SIEMPRE, aunque la lista vaya vacía: así el agente asesor_legal
+    // (que filtra por `alertasLegales === undefined`) no la vuelve a revisar.
+    estado.actualizar(estado.decisiones, d.id, { alertasLegales: revision.alertas });
+    d.alertasLegales = revision.alertas;
+    if (!revision.conforme && revision.alertas.length) {
+      estado.registrarEvento("decision_escalada", `Alerta legal en «${d.titulo}»: ${revision.alertas[0]} Pasa a decisión humana.`, {
+        agenteId: "asesor_legal",
+        incendioId: d.incendioId,
+        nivel: "aviso",
+        datos: { decisionId: d.id, alertas: revision.alertas },
+      });
+    }
+  };
+
+  try {
+    const { revisarLegalidad } = await import("../agentes/planificacion/asesor-legal");
+    if (soloDespliegueInicial) {
+      // A posteriori y en su propia traza, para que su latencia se mida donde toca.
+      void sinTraza(() => ejecutarConTraza(estado, "asesor_legal", "revision_a_posteriori", () => revisarLegalidad(d)))
+        .then(aplicarRevision)
+        .catch((e) => {
+          if (!esAborto(e)) estado.marcarServicio("Asesor legal", false, mensajeDe(e));
+        });
+    } else {
+      aplicarRevision(await ejecutarConTraza(estado, "asesor_legal", "revision_en_linea", () => revisarLegalidad(d)));
+      estado.marcarServicio("Asesor legal", true, `${d.alertasLegales?.length ?? 0} alerta(s)`);
+    }
+  } catch (e) {
+    // Sin revisión legal no se bloquea la decisión: la política y el supervisor
+    // siguen mandando. Pero queda dicho, nunca se da por conforme en silencio.
+    if (!esAborto(e)) estado.marcarServicio("Asesor legal", false, mensajeDe(e));
+    estado.registrarEvento("agente", `No se pudo revisar la legalidad de «${d.titulo}»: ${mensajeDe(e)}`, {
+      agenteId: "asesor_legal",
+      incendioId: d.incendioId,
+      nivel: "aviso",
+      datos: { decisionId: d.id },
+    });
+  }
+
   // (b) Política de autonomía --------------------------------------------
   const incendio = d.incendioId ? estado.incendios.get(d.incendioId) : undefined;
   let competencia = d.competencia;

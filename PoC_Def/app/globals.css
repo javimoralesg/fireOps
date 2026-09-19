@@ -1,0 +1,349 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   ATALAYA INCENDIOS · Tokens de tema y utilidades de la sala de mando.
+   DUEÑO: constructor E. Sin dependencias externas.
+
+   Tema claro por defecto (sala a plena luz), oscuro con `prefers-color-scheme`
+   o conmutado a mano con <html data-theme="dark"|"light"> (persistido en
+   localStorage por components/marca/SelectorTema.tsx).
+
+   Contrato con C y D: los NOMBRES de los tokens no cambian, solo los valores.
+   Todos son hex opacos para que funcionen las opacidades de Tailwind
+   (bg-danger/10, border-accent/40…).
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Superficies */
+  --background: #f2f5f7;
+  --panel: #ffffff;
+  --panel-2: #f5f8fa;
+  --panel-border: #e3e9ee;
+  --panel-border-strong: #c9d3dc;
+
+  /* Texto (contraste sobre blanco: 13:1 · 6,3:1 · 4,4:1) */
+  --foreground: #16222e;
+  --muted: #5a6b7c;
+  --subtle: #6f7e8d;
+
+  /* Marca: petróleo Atalaya */
+  --brand: #14707f;
+  --brand-2: #1e97a8;
+  --accent: #14707f;
+  --accent-contraste: #ffffff;
+
+  /* Estados operativos (≥ 4,5:1 como texto sobre blanco) */
+  --danger: #c4404a;
+  --warning: #a95c0c;
+  --success: #1e7d4e;
+  --info: #2a6db3;
+
+  /* Escala de riesgo/peligro: del verde al rojo, siempre acompañada de texto */
+  --riesgo-bajo: #1e7d4e;
+  --riesgo-medio: #a95c0c;
+  --riesgo-alto: #cf5a1c;
+  --riesgo-inminente: #c4404a;
+
+  /* Fuego */
+  --fuego: #d94a2b;
+  --fuego-2: #e8863a;
+  --humo: #6b7480;
+
+  /* Cuerpos de emergencia (iconos de unidad: el color acompaña siempre al texto) */
+  --naranja: #cf6412; /* protección civil */
+  --amarillo: #9a7a06; /* maquinaria */
+
+  --radius-panel: 14px;
+  --sombra-panel: 0 1px 2px rgb(22 34 46 / 0.04), 0 10px 30px -18px rgb(20 112 127 / 0.18);
+  --sombra-flotante: 0 2px 6px rgb(22 34 46 / 0.06), 0 16px 40px -12px rgb(22 34 46 / 0.22);
+
+  --filtro-teselas: none;
+}
+
+/* Oscuro automático (salvo que el usuario haya elegido claro a mano) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --background: #0e1319;
+    --panel: #151b23;
+    --panel-2: #1c242e;
+    --panel-border: #263039;
+    --panel-border-strong: #364250;
+
+    --foreground: #e7ecf1;
+    --muted: #9aa8b6;
+    --subtle: #85919e;
+
+    --brand: #5fc6d4;
+    --brand-2: #2ea3b5;
+    --accent: #5fc6d4;
+    --accent-contraste: #0a1116;
+
+    --danger: #f28088;
+    --warning: #f2b45f;
+    --success: #62d093;
+    --info: #78bbff;
+
+    --riesgo-bajo: #62d093;
+    --riesgo-medio: #f2b45f;
+    --riesgo-alto: #f2954f;
+    --riesgo-inminente: #f28088;
+
+    --fuego: #f2704f;
+    --fuego-2: #f6a85e;
+    --humo: #b8bec6;
+
+    --naranja: #f2954f;
+    --amarillo: #e8cf63;
+
+    --sombra-panel: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+    --sombra-flotante: 0 2px 6px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+
+    --filtro-teselas: brightness(0.74) saturate(0.82) contrast(1.06);
+  }
+}
+
+/* Oscuro elegido a mano */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #0e1319;
+  --panel: #151b23;
+  --panel-2: #1c242e;
+  --panel-border: #263039;
+  --panel-border-strong: #364250;
+
+  --foreground: #e7ecf1;
+  --muted: #9aa8b6;
+  --subtle: #85919e;
+
+  --brand: #5fc6d4;
+  --brand-2: #2ea3b5;
+  --accent: #5fc6d4;
+  --accent-contraste: #0a1116;
+
+  --danger: #f28088;
+  --warning: #f2b45f;
+  --success: #62d093;
+  --info: #78bbff;
+
+  --riesgo-bajo: #62d093;
+  --riesgo-medio: #f2b45f;
+  --riesgo-alto: #f2954f;
+  --riesgo-inminente: #f28088;
+
+  --fuego: #f2704f;
+  --fuego-2: #f6a85e;
+  --humo: #b8bec6;
+
+  --naranja: #f2954f;
+  --amarillo: #e8cf63;
+
+  --sombra-panel: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --sombra-flotante: 0 2px 6px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+
+  --filtro-teselas: brightness(0.74) saturate(0.82) contrast(1.06);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-border: var(--panel-border);
+  --color-panel-border-strong: var(--panel-border-strong);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-accent: var(--accent);
+  --color-accent-contraste: var(--accent-contraste);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-fuego: var(--fuego);
+  --color-fuego-2: var(--fuego-2);
+  --color-humo: var(--humo);
+  --color-naranja: var(--naranja);
+  --color-amarillo: var(--amarillo);
+  --color-riesgo-bajo: var(--riesgo-bajo);
+  --color-riesgo-medio: var(--riesgo-medio);
+  --color-riesgo-alto: var(--riesgo-alto);
+  --color-riesgo-inminente: var(--riesgo-inminente);
+}
+
+html,
+body {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "tnum";
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Foco siempre visible y con contraste, también en oscuro. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Tipografía numérica tabular para relojes y contadores. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barra de desplazamiento discreta dentro de los paneles. */
+.scroll-fino {
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-border-strong) transparent;
+}
+.scroll-fino::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-fino::-webkit-scrollbar-thumb {
+  background: var(--panel-border-strong);
+  border-radius: 999px;
+}
+
+/* Solo para lectores de pantalla. */
+.solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Leaflet: tema del mapa con tokens (Leaflet no resuelve var() en atributos
+   SVG, así que los colores de trazos se pasan desde JS; aquí va el cromo).
+   -------------------------------------------------------------------------- */
+.leaflet-container {
+  background: var(--panel-2);
+  font-family: inherit;
+  font-size: 12px;
+}
+.leaflet-tile-pane {
+  filter: var(--filtro-teselas);
+}
+.leaflet-bar a,
+.leaflet-control-zoom a {
+  background: var(--panel);
+  color: var(--foreground);
+  border-color: var(--panel-border);
+}
+.leaflet-bar a:hover {
+  background: var(--panel-2);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--panel);
+  color: var(--foreground);
+  box-shadow: var(--sombra-flotante);
+  border-radius: 12px;
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+  line-height: 1.45;
+}
+.leaflet-tooltip {
+  background: var(--panel);
+  color: var(--foreground);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--sombra-panel);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.leaflet-tooltip-top:before {
+  border-top-color: var(--panel-border);
+}
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: var(--panel-border);
+}
+.leaflet-tooltip-left:before {
+  border-left-color: var(--panel-border);
+}
+.leaflet-tooltip-right:before {
+  border-right-color: var(--panel-border);
+}
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--subtle);
+}
+.leaflet-control-attribution a {
+  color: var(--muted);
+}
+
+/* Cursor de cruz mientras se declara un foco con el ratón. */
+.mapa-declarando,
+.mapa-declarando .leaflet-grab,
+.mapa-declarando .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
+/* Icono de unidad dibujado con divIcon (sin fondo ni borde de Leaflet). */
+.icono-atalaya {
+  background: transparent;
+  border: 0;
+}
+
+/* Latido del punto de una decisión urgente / servicio caído. */
+@keyframes atalaya-latido {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.latido {
+  animation: atalaya-latido 1.6s ease-in-out infinite;
+}
+
+/* Parpadeo rápido: el reloj de mundo cuando TODO está en pausa (§ "parar todo"). */
+@keyframes atalaya-parpadeo {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.3;
+  }
+}
+.parpadeo {
+  animation: atalaya-parpadeo 1.1s steps(1, end) infinite;
+}
+
+/* Marcadores de cámara pintados en canvas: sin cursor de mano falso. */
+.camara-espana-grupo {
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .latido,
+  .parpadeo {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

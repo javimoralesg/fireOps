@@ -1,0 +1,226 @@
+// =====================================================================
+// ATALAYA INCENDIOS · Repositorio (Supabase REST)
+// ---------------------------------------------------------------------
+// Propósito: leer/escribir el estado en Postgres sin bloquear nunca al
+// motor. Todas las funciones son TOLERANTES: si no hay cliente (faltan
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) devuelven sin hacer nada y el
+// que llama marca el servicio en rojo. La app sigue funcionando en memoria.
+// DUEÑO: constructor A. Dependencias: @supabase/supabase-js, lib/db/schema.sql.
+// =====================================================================
+
+import type {
+  Camara,
+  Comunicado,
+  Decision,
+  Ejecucion,
+  Evento,
+  Incendio,
+  Informe,
+  Observacion,
+  Poblacion,
+  TrazaCiclo,
+  Unidad,
+} from "../dominio/tipos";
+import { Estado } from "../motor/estado";
+import { obtenerClienteSupabase } from "./cliente";
+
+/** Tablas genéricas (id, ejecucion_id, incendio_id, datos jsonb, actualizado_en). */
+export type TablaEntidad =
+  | "incendios"
+  | "unidades"
+  | "poblaciones"
+  | "observaciones"
+  | "decisiones"
+  | "informes"
+  | "comunicados"
+  | "eventos"
+  | "camaras_analisis";
+
+export interface OpcionesGuardado {
+  ejecucionId: string;
+  incendioId?: string;
+}
+
+/**
+ * Trazas de ciclo: tabla propia porque llevan `agente_id` (las genéricas no).
+ * Se guardan una sola vez, cuando el ciclo se cierra.
+ */
+export async function guardarTrazas(
+  trazas: { traza: TrazaCiclo; agenteId: string; incendioId?: string }[],
+  ejecucionId: string,
+): Promise<number> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente || trazas.length === 0) return 0;
+  const filas = trazas.map(({ traza, agenteId, incendioId }) => ({
+    id: traza.id,
+    ejecucion_id: ejecucionId,
+    agente_id: agenteId,
+    incendio_id: incendioId ?? null,
+    datos: traza,
+    actualizado_en: new Date().toISOString(),
+  }));
+  const { error } = await cliente.from("trazas").upsert(filas, { onConflict: "id" });
+  if (error) throw new Error(`trazas: ${error.message}`);
+  return filas.length;
+}
+
+/** Recupera una traza ya persistida (la auditoría la busca cuando ya no está en memoria). */
+export async function buscarTrazaPersistida(trazaId: string): Promise<TrazaCiclo | undefined> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return undefined;
+  const { data, error } = await cliente.from("trazas").select("datos").eq("id", trazaId).limit(1);
+  if (error) throw new Error(`trazas: ${error.message}`);
+  return (data?.[0]?.datos as TrazaCiclo) ?? undefined;
+}
+
+/** Cuántas trazas e informes hay guardados de una ejecución (para /api/salud). */
+export async function contarPersistidos(ejecucionId: string): Promise<{ trazas: number; informes: number }> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return { trazas: 0, informes: 0 };
+  const [t, i] = await Promise.all([
+    cliente.from("trazas").select("id", { count: "exact", head: true }).eq("ejecucion_id", ejecucionId),
+    cliente.from("informes").select("id", { count: "exact", head: true }).eq("ejecucion_id", ejecucionId),
+  ]);
+  return { trazas: t.count ?? 0, informes: i.count ?? 0 };
+}
+
+export function hayPersistencia(): boolean {
+  return obtenerClienteSupabase() !== null;
+}
+
+function fila(entidad: { id: string }, opciones: OpcionesGuardado) {
+  return {
+    id: entidad.id,
+    ejecucion_id: opciones.ejecucionId,
+    incendio_id: opciones.incendioId ?? null,
+    datos: entidad,
+    actualizado_en: new Date().toISOString(),
+  };
+}
+
+/** Upsert de una entidad. Lanza si Supabase responde con error (el que llama decide). */
+export async function guardarEntidad(tabla: TablaEntidad, entidad: { id: string }, opciones: OpcionesGuardado): Promise<void> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return;
+  const { error } = await cliente.from(tabla).upsert(fila(entidad, opciones), { onConflict: "id" });
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+}
+
+/** Upsert en lote (una sola petición por tabla). */
+export async function guardarLote(tabla: TablaEntidad, entidades: { id: string }[], opciones: OpcionesGuardado): Promise<number> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente || entidades.length === 0) return 0;
+  const filas = entidades.map((e) => fila(e, { ...opciones, incendioId: (e as { incendioId?: string }).incendioId ?? opciones.incendioId }));
+  const { error } = await cliente.from(tabla).upsert(filas, { onConflict: "id" });
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+  return filas.length;
+}
+
+export async function guardarEjecucion(ejecucion: Ejecucion): Promise<void> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return;
+  const { error } = await cliente.from("ejecuciones").upsert(
+    {
+      id: ejecucion.id,
+      nombre: ejecucion.nombre,
+      inicio: ejecucion.inicio,
+      fin: ejecucion.fin ?? null,
+      estado: ejecucion.estado,
+      metricas: ejecucion.metricas,
+      comparativa: ejecucion.comparativa ?? null,
+      datos: ejecucion,
+    },
+    { onConflict: "id" },
+  );
+  if (error) throw new Error(`ejecuciones: ${error.message}`);
+}
+
+export async function listarEjecuciones(limite = 20): Promise<Ejecucion[]> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return [];
+  const { data, error } = await cliente.from("ejecuciones").select("datos").order("inicio", { ascending: false }).limit(limite);
+  if (error) throw new Error(`ejecuciones: ${error.message}`);
+  return (data ?? []).map((f) => f.datos as Ejecucion).filter(Boolean);
+}
+
+async function cargarTabla<T>(tabla: TablaEntidad, ejecucionId: string, limite = 5000): Promise<T[]> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return [];
+  const { data, error } = await cliente.from(tabla).select("datos").eq("ejecucion_id", ejecucionId).limit(limite);
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+  return (data ?? []).map((f) => f.datos as T).filter(Boolean);
+}
+
+/**
+ * Rehidrata el estado de la ejecución activa (sobrevive a un reinicio de
+ * Railway). Devuelve undefined si no hay cliente o no hay ejecución activa.
+ */
+export async function cargarEjecucionActiva(): Promise<Estado | undefined> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return undefined;
+  const { data, error } = await cliente
+    .from("ejecuciones")
+    .select("datos")
+    .eq("estado", "activa")
+    .order("inicio", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`ejecuciones: ${error.message}`);
+  const ejecucion = data?.[0]?.datos as Ejecucion | undefined;
+  if (!ejecucion?.id) return undefined;
+
+  const estado = new Estado(ejecucion);
+  const [incendios, unidades, poblaciones, observaciones, decisiones, informes, comunicados, eventos] = await Promise.all([
+    cargarTabla<Incendio>("incendios", ejecucion.id),
+    cargarTabla<Unidad>("unidades", ejecucion.id),
+    cargarTabla<Poblacion>("poblaciones", ejecucion.id),
+    cargarTabla<Observacion>("observaciones", ejecucion.id, 1000),
+    cargarTabla<Decision>("decisiones", ejecucion.id),
+    cargarTabla<Informe>("informes", ejecucion.id),
+    cargarTabla<Comunicado>("comunicados", ejecucion.id),
+    cargarTabla<Evento>("eventos", ejecucion.id, 2000),
+  ]);
+  for (const i of incendios) estado.incendios.set(i.id, i);
+  for (const u of unidades) estado.unidades.set(u.id, u);
+  for (const p of poblaciones) estado.poblaciones.set(p.id, p);
+  for (const o of observaciones) estado.observaciones.set(o.id, o);
+  for (const d of decisiones) estado.decisiones.set(d.id, d);
+  for (const inf of informes) estado.informes.set(inf.id, inf);
+  for (const c of comunicados) estado.comunicados.set(c.id, c);
+  estado.eventos = eventos.sort((a, b) => a.en.localeCompare(b.en));
+
+  // Política vigente, si se guardó
+  const { data: pol } = await cliente.from("politica").select("datos").eq("id", "vigente").limit(1);
+  // Solo se respeta la política guardada si la editó una persona: la de "sistema" es una copia
+  // antigua de la de fábrica y pisaría los cambios de lib/dominio/politica-defecto.ts.
+  const politicaGuardada = pol?.[0]?.datos as typeof estado.politica | undefined;
+  if (politicaGuardada && politicaGuardada.actualizadaPor && politicaGuardada.actualizadaPor !== "sistema") estado.politica = politicaGuardada;
+
+  return estado;
+}
+
+/** Guarda la política vigente (la edita el humano desde /politica). */
+export async function guardarPolitica(politica: unknown): Promise<void> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente) return;
+  const { error } = await cliente.from("politica").upsert({ id: "vigente", datos: politica, actualizada_en: new Date().toISOString() }, { onConflict: "id" });
+  if (error) throw new Error(`politica: ${error.message}`);
+}
+
+/** Vuelca TODO el estado vivo (al cerrar la ejecución o desde scripts). */
+export async function volcarTodo(estado: Estado): Promise<void> {
+  if (!hayPersistencia()) return;
+  const opciones: OpcionesGuardado = { ejecucionId: estado.ejecucion.id };
+  const camarasConAnalisis: Camara[] = [...estado.camaras.values()].filter((c) => !!c.ultimoAnalisis);
+  await Promise.all([
+    guardarLote("incendios", [...estado.incendios.values()], opciones),
+    guardarLote("unidades", [...estado.unidades.values()], opciones),
+    guardarLote("poblaciones", [...estado.poblaciones.values()], opciones),
+    guardarLote("observaciones", [...estado.observaciones.values()], opciones),
+    guardarLote("decisiones", [...estado.decisiones.values()], opciones),
+    guardarLote("informes", [...estado.informes.values()], opciones),
+    guardarLote("comunicados", [...estado.comunicados.values()], opciones),
+    guardarLote("camaras_analisis", camarasConAnalisis, opciones),
+  ]);
+  await guardarPolitica(estado.politica);
+  await guardarEjecucion(estado.ejecucion);
+}

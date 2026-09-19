@@ -140,5 +140,62 @@
       "momento": "a posteriori",
       "comentario": "Vía rápida del ataque inicial, sin cambios."
     }
+  },
+  "comparativaFinal": {
+    "_nota": "Medido tras F0-F5 sobre el MISMO escenario de la línea base: ataque inicial de 2 acciones. Solo se comparan cifras ATRIBUIDAS a la decisión, que es lo único riguroso.",
+    "medidoEn": "2026-09-19T19:36:03Z",
+    "porDecision": {
+      "actasConNarrativaIA": {
+        "antes": 3,
+        "ahora": 0,
+        "medidoPor": "tests/integracion/90-presupuesto.test.ts"
+      },
+      "actasTotal": {
+        "antes": 6,
+        "ahora": 5
+      },
+      "razonamientoEnElCaminoCritico": {
+        "antes": 11,
+        "ahora": 1,
+        "nota": "llamadas consumidas desde la ejecución nueva hasta que la decisión queda ejecutada"
+      },
+      "tokensSalidaEnElCaminoCritico": {
+        "antes": 24072,
+        "ahora": 535
+      }
+    },
+    "porAgente": {
+      "memoria": {
+        "antes": "3 llamadas / 7.605 tokens",
+        "ahora": "0",
+        "verificadoEn": "F1"
+      },
+      "proteccion_poblacion": {
+        "antes": "2 llamadas / 7.410 tokens por 2 pueblos",
+        "ahora": "1 llamada / 2.423 tokens por 4 pueblos",
+        "verificadoEn": "F3"
+      },
+      "supervisor": {
+        "antes": "bloqueante en todas",
+        "ahora": "bloqueante solo si va a una persona, es irreversible, hay alerta legal o riesgo >= umbral",
+        "verificadoEn": "F5"
+      },
+      "coordinador": {
+        "antes": "2 llamadas",
+        "ahora": "2 llamadas",
+        "nota": "sin cambios: su fusión con protección depende de la competencia por acción"
+      },
+      "portavoz": {
+        "nota": "sin cambios"
+      },
+      "redactor": {
+        "nota": "sin cambios"
+      }
+    },
+    "loQueNoSePuedeAfirmar": [
+      "El delta del contador GLOBAL de /api/salud no es comparable entre ventanas: en un sistema vivo el satélite y la prensa siguen descubriendo focos y el gasto sigue subiendo aunque la decisión medida ya haya terminado. Medido: 42 -> 83 llamadas de razonamiento en 9 minutos con varios focos en marcha.",
+      "Por eso la cifra que vale es la ATRIBUIDA por decisión (cadena de auditoría y trazas por agente), no el delta global. El test lo registra, pero como contexto.",
+      "La comparación de `vision` no vale: la medición se hizo con las cámaras apagadas por el simulacro y la línea base con ellas encendidas."
+    ]
   }
 }

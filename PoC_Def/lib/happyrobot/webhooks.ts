@@ -127,10 +127,48 @@ function localizar(decisionId: string | undefined, accionId: string | undefined,
   return undefined;
 }
 
+function canalDe(v: unknown): CanalComunicacion | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim().toLowerCase();
+  if (t === "sms") return "sms";
+  if (t === "email" || t === "correo" || t === "mail") return "email";
+  if (t === "llamada" || t === "voz" || t === "voice" || t === "call") return "llamada";
+  return undefined;
+}
+
 /**
- * Resultado de una acción disparada por nosotros: la llamada se contestó o
- * no, el ayuntamiento confirmó o no. Es lo que cierra el círculo y lo que
- * convierte "avisando" en "avisado" o "sin_respuesta".
+ * Canal por el que salió DE VERDAD el contacto con la población: lo que anotó el ejecutor en la
+ * acción (`datos.canal`, o el bloque `datos.sms` del aviso a población; hoy la voz saliente está
+ * desactivada y todo va por SMS, lib/agentes/ejecucion/ejecutor.ts), el tipo de acción, lo que
+ * declara el workflow en el cuerpo (`canal: "sms"`) y, si nada lo dice, llamada. Antes el webhook
+ * fijaba "llamada" y pisaba el canal "sms" guardado (revisión del PR, 19-09).
+ */
+export function canalDelContacto(accion: Pick<Accion, "tipo" | "resultado">, cuerpo: Record<string, unknown> = {}): CanalComunicacion {
+  const datos = accion.resultado?.datos ?? {};
+  const anotado = canalDe(datos.canal);
+  if (anotado) return anotado;
+  if (datos.sms && typeof datos.sms === "object") return "sms";
+  if (accion.tipo === "enviar_sms") return "sms";
+  if (accion.tipo === "enviar_email") return "email";
+  return canalDe(cuerpo.canal) ?? "llamada";
+}
+
+/** Frase del evento `poblacion_avisada` según el canal y la entrega: para un SMS lo que cuenta es si llegó, nunca si "contestan". */
+export function textoResultadoContacto(canal: CanalComunicacion, r: { fallido: boolean; confirmado?: boolean; detalle?: string }): string {
+  const porQue = r.detalle ? ` (${r.detalle})` : "";
+  if (canal === "sms") {
+    if (r.fallido) return `el SMS al ayuntamiento no se ha podido entregar${porQue}`;
+    return r.confirmado ? "SMS entregado al ayuntamiento, que confirma que activa el aviso" : "SMS entregado al ayuntamiento";
+  }
+  if (canal === "email") return r.fallido ? `el correo al ayuntamiento no se ha podido entregar${porQue}` : "correo entregado al ayuntamiento";
+  if (r.fallido) return "no contestan al teléfono del ayuntamiento";
+  return r.confirmado ? "el ayuntamiento confirma que activa el aviso" : "aviso entregado";
+}
+
+/**
+ * Resultado de una acción disparada por nosotros: el SMS se entregó o no, la
+ * llamada se contestó o no, el ayuntamiento confirmó o no. Es lo que cierra el
+ * círculo y lo que convierte "avisando" en "avisado" o "sin_respuesta".
  */
 export async function resultadoHappyRobot(peticion: Request): Promise<Response> {
   if (!verificarWebhook(peticion.headers)) return error("Cabecera x-webhook-secret ausente o incorrecta", 401);
@@ -160,9 +198,17 @@ export async function resultadoHappyRobot(peticion: Request): Promise<Response> 
   const contestada = "contestada" in cuerpo || "answered" in cuerpo ? esVerdadero(cuerpo.contestada ?? cuerpo.answered) : undefined;
   const confirmado = "confirmado" in cuerpo || "confirmed" in cuerpo ? esVerdadero(cuerpo.confirmado ?? cuerpo.confirmed) : undefined;
   const ok = esVerdadero(cuerpo.ok ?? cuerpo.success ?? cuerpo.exito) || cuerpo.status === "completed" || contestada === true;
+  // Canal real del contacto (hoy solo SMS): lo anotó el ejecutor en la acción, no lo decide este webhook.
+  const canal = canalDelContacto(accion, cuerpo);
 
   const resumen =
-    (transcripcion ? `${transcripcion}` : "Resultado recibido de HappyRobot") +
+    (transcripcion
+      ? `${transcripcion}`
+      : canal === "sms"
+        ? `SMS ${ok ? "entregado" : "no entregado"} (HappyRobot)`
+        : canal === "email"
+          ? `Correo ${ok ? "entregado" : "no entregado"} (HappyRobot)`
+          : "Resultado recibido de HappyRobot") +
     (contestada !== undefined ? ` · ${contestada ? "contestada" : "sin respuesta"}` : "") +
     (confirmado !== undefined ? ` · ${confirmado ? "confirmado" : "no confirmado"}` : "");
 
@@ -199,23 +245,20 @@ export async function resultadoHappyRobot(peticion: Request): Promise<Response> 
   if (esAviso && poblacionId) {
     const poblacion = estado.poblaciones.get(poblacionId);
     if (poblacion) {
-      const canal: CanalComunicacion = accion.tipo === "avisar_poblacion" ? "llamada" : "llamada";
-      const nuevoEstadoAviso =
-        contestada === false
-          ? "sin_respuesta"
-          : accion.tipo === "avisar_poblacion"
-            ? "avisado"
-            : accion.tipo === "confinar_poblacion"
-              ? "confinado"
-              : "evacuando";
+      // El canal del último contacto es el que usó el ejecutor (SMS), no "llamada" fijo: el webhook
+      // sobrescribía el canal guardado y la auditoría hablaba de teléfonos que nadie marcó. Por SMS
+      // (o correo) lo que cuenta es la entrega; por llamada, si contestaron.
+      const fallido = canal === "llamada" ? contestada === false : !ok;
+      const nuevoEstadoAviso: EstadoAviso = fallido ? "sin_respuesta" : accion.tipo === "avisar_poblacion" ? "avisado" : accion.tipo === "confinar_poblacion" ? "confinado" : "evacuando";
       estado.actualizar(estado.poblaciones, poblacionId, {
         estadoAviso: nuevoEstadoAviso,
         ultimoContacto: { en: estado.reloj.ahoraMundo, canal, resultado: resumen },
       });
-      emitir("poblacion_avisada", `${poblacion.nombre}: ${contestada === false ? "no contestan al teléfono del ayuntamiento" : confirmado ? "el ayuntamiento confirma que activa el aviso" : "aviso entregado"}.`, {
+      const detalle = fallido ? (transcripcion ?? primerTexto(cuerpo, ["error", "detalle", "status"])) : undefined;
+      emitir("poblacion_avisada", `${poblacion.nombre}: ${textoResultadoContacto(canal, { fallido, confirmado, detalle })}.`, {
         incendioId: decision.incendioId,
-        nivel: contestada === false ? "aviso" : "info",
-        datos: { poblacionId, decisionId: decision.id, accionId: accion.id },
+        nivel: fallido ? "aviso" : "info",
+        datos: { poblacionId, decisionId: decision.id, accionId: accion.id, canal, entregado: !fallido },
       });
     }
   }

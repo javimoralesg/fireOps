@@ -212,7 +212,10 @@ El texto ya viene recortado a 300 caracteres desde Atalaya. (La misma integraci�
 `{decisionId, accionId, incendioId, ref: run_id, run_url, ok: true, status: "completed", canal: "sms",
 en, destino, motivo, origen, runLlamada, observacionId}`. Si el SMS lo mandó el agente del 112 no hay
 acción detrás: `/api/webhooks/happyrobot/resultado` lo anota por `ref` (`anotarResultadoSms`,
-`lib/happyrobot/sms-avisos.ts`) en vez de responder 404. **Medido el 19-09:** sin URL pública Atalaya no
+`lib/happyrobot/sms-avisos.ts`) en vez de responder 404. Si detrás hay un aviso a población, el último
+contacto del pueblo conserva el canal `sms` que anotó el ejecutor (`canalDelContacto`) y el evento
+`poblacion_avisada` habla de la entrega del SMS, nunca de «no contestan al teléfono»; un SMS no entregado
+deja el pueblo en `sin_respuesta`. **Medido el 19-09:** sin URL pública Atalaya no
 manda `webhook_url` y este nodo falla (`Post "": unsupported protocol scheme`), así que el run queda
 `failed` en la plataforma **aunque el SMS haya salido** (el nodo «Send text» aparece `succeeded`); con el
 túnel abierto los tres nodos completan.

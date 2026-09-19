@@ -73,10 +73,25 @@ export function minutos(min?: number): string {
   return r === 0 ? `${h} h` : `${h} h ${r} min`;
 }
 
+/**
+ * Formateadores de `Intl` reutilizados. Construir uno cuesta bastante más que
+ * formatear, y `toLocaleString` lo construye cada vez: con ~1.000 unidades en el
+ * mapa eso eran cientos de milisegundos por snapshot (medido con el perfilador).
+ */
+const FORMATEADORES = new Map<number, Intl.NumberFormat>();
+
+function formateador(decimales: number): Intl.NumberFormat {
+  const guardado = FORMATEADORES.get(decimales);
+  if (guardado) return guardado;
+  const nuevo = new Intl.NumberFormat("es-ES", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+  FORMATEADORES.set(decimales, nuevo);
+  return nuevo;
+}
+
 /** Número con separador español y los decimales pedidos. */
 export function numero(n?: number, decimales = 0): string {
   if (n === undefined || n === null || Number.isNaN(n)) return "—";
-  return n.toLocaleString("es-ES", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+  return formateador(decimales).format(n);
 }
 
 /** Superficie: "3,4 ha" o "1.240 ha". */
@@ -106,7 +121,7 @@ export function fraccionPorcentaje(f?: number, decimales = 0): string {
 /** Confianza 0..1 con coma decimal, como la muestran los veredictos: "0,91". */
 export function confianza(c?: number): string {
   if (c === undefined || c === null || Number.isNaN(c)) return "—";
-  return c.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formateador(2).format(c);
 }
 
 const ROSA = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"];

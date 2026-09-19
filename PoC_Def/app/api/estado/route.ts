@@ -1,12 +1,26 @@
 // GET /api/estado · Snapshot completo del estado vivo. DUEÑO: constructor A.
+// Rendimiento (constructor P): ETag = versión del estado. Si el cliente manda
+// `If-None-Match` con la versión que ya tiene, contesta 304 sin cuerpo (el
+// polling de respaldo así no descarga megas para nada) y, cuando sí hay cuerpo,
+// reutiliza la cadena ya serializada que comparte con el SSE.
 import { obtenerEstado } from "@/lib/motor/estado";
 import { arrancarOrquestador } from "@/lib/motor/orquestador";
-import { json } from "@/lib/motor/respuestas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(peticion: Request): Promise<Response> {
   arrancarOrquestador(); // idempotente: por si la ruta se toca antes que instrumentation
-  return json(obtenerEstado().snapshot());
+  const estado = obtenerEstado();
+  const etag = `W/"${estado.version}"`;
+  const cabeceras: Record<string, string> = { ETag: etag, "Cache-Control": "no-store" };
+
+  const pedido = peticion.headers.get("if-none-match");
+  if (pedido && pedido.split(",").some((v) => v.trim() === etag)) {
+    return new Response(null, { status: 304, headers: cabeceras });
+  }
+
+  return new Response(estado.snapshotTexto(), {
+    headers: { ...cabeceras, "Content-Type": "application/json; charset=utf-8" },
+  });
 }

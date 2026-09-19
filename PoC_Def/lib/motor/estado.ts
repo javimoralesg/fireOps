@@ -492,7 +492,13 @@ export class Estado {
       datos: extra.datos,
     };
     this.eventos.push(ev);
-    if (this.eventos.length > 5000) this.eventos.splice(0, this.eventos.length - 5000);
+    if (this.eventos.length > 5000) {
+      // Los eventos podados ya no existen en el estado: sus ids tampoco pueden
+      // quedarse en el registro de cambios (sin Supabase nadie lo vacía y crecería sin tope).
+      const podados = this.eventos.splice(0, this.eventos.length - 5000);
+      const ids = this.cambios.get("eventos");
+      if (ids) for (const p of podados) ids.delete(p.id);
+    }
     this.apuntarCambio("eventos", ev.id);
     this.tocar();
     return ev;

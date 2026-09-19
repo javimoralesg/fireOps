@@ -80,7 +80,12 @@ function bloqueTraza(traza?: TrazaCiclo): string {
   ].filter(Boolean).join("\n");
 }
 
-function actaDecisionDeterminista(estado: Estado, d: Decision, traza?: TrazaCiclo): { titulo: string; contenido: string } {
+/**
+ * EXPORTADA (fase F1 de la migración): es la red de no regresión de las actas.
+ * Determinista y pura respecto a sus entradas, así que se caracteriza byte a
+ * byte en tests/unit/actas-deterministas.test.ts. Cambio aditivo.
+ */
+export function actaDecisionDeterminista(estado: Estado, d: Decision, traza?: TrazaCiclo): { titulo: string; contenido: string } {
   const agente = estado.agentes.get(d.agenteId);
   const incendio = d.incendioId ? estado.incendios.get(d.incendioId) : undefined;
   const titulo = `Acta de decisión · ${d.titulo} · ${d.estado}`;
@@ -146,7 +151,8 @@ function actaDecisionDeterminista(estado: Estado, d: Decision, traza?: TrazaCicl
   return { titulo, contenido };
 }
 
-function actaAccionDeterminista(estado: Estado, d: Decision, a: Accion, traza?: TrazaCiclo): { titulo: string; contenido: string } {
+/** EXPORTADA (fase F1 de la migración), mismo motivo que la anterior. */
+export function actaAccionDeterminista(estado: Estado, d: Decision, a: Accion, traza?: TrazaCiclo): { titulo: string; contenido: string } {
   const agente = estado.agentes.get(d.agenteId);
   const titulo = `Acta de acción · ${a.descripcion} · ${a.estado}`;
   const objetivo = a.objetivo ?? {};
@@ -330,29 +336,33 @@ export async function generarActaAccion(decisionId: string, accionId: string): P
 
   try {
     const traza = buscarTraza(estado, d.trazaId);
-    const narrativa = await pedirNarrativa(estado, d, { tipo: "accion", accionId });
+    // F1 de la migración (2026-09-19): el acta de una ACCIÓN es determinista.
+    // Antes se pedía narrativa de IA por CADA acción, sin condición, con tope de
+    // 5.000 tokens de salida: en una decisión de 3 acciones eran 3 llamadas de
+    // razonamiento (~25 s cada una) que no decidían nada, solo narraban.
+    // Lo que se conserva —y está probado en tests/unit/actas-deterministas.test.ts—
+    // es todo lo que hace falta para defender la acción: qué se ordenó, a quién,
+    // con qué parámetros, quién la autorizó, qué pasó de verdad, con qué proveedor
+    // y con qué razonamiento detrás, sellado con huella SHA-256.
+    // La interpretación sigue existiendo UNA vez por decisión, en el acta de su
+    // estado final (ver ESTADOS_CON_NARRATIVA).
     const determinista = actaAccionDeterminista(estado, d, a, traza);
-    // Igual que en las decisiones: la de C si la hay y es del tipo pedido,
-    // y si no el acta determinista de la acción.
-    const contenido = narrativa?.tipo === "accion" && narrativa.contenido
-      ? narrativa.contenido
-      : determinista.contenido;
 
     const informe = sellarYGuardar(estado, {
       ejecucionId: d.ejecucionId || estado.ejecucion.id,
       decisionId: d.id,
       incendioId: d.incendioId,
       titulo: determinista.titulo,
-      contenido,
+      contenido: determinista.contenido,
       decisionesConsideradas: [],
       generadoEn: new Date().toISOString(),
-      modelo: narrativa?.tipo === "accion" ? narrativa.modelo : "determinista",
+      modelo: "determinista",
       tipo: "accion",
       accionId,
       agenteId: d.agenteId,
       trazaId: d.trazaId,
       estadoDecision: d.estado,
-      conNarrativaIA: narrativa?.tipo === "accion" && !!narrativa.contenido,
+      conNarrativaIA: false,
     });
 
     // Se engancha a la acción dentro de la decisión.

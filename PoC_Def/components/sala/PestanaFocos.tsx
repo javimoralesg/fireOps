@@ -7,9 +7,9 @@
 // mueven medios), "Activos" y, plegados, los "Absorbidos" por otro foco y los
 // cerrados. Nunca se mezcla lo que dice una fuente con lo que escribe el mando.
 
-import { useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Check, Crosshair, Flame, NotebookPen, Radio, ShieldCheck, Wind, X } from "lucide-react";
-import type { EstadoIncendio, Incendio, Snapshot } from "@/lib/dominio/tipos";
+import type { Cluster, Comunicado, EstadoIncendio, Incendio, Informe, Observacion, Poblacion, Snapshot, Unidad } from "@/lib/dominio/tipos";
 import { actualizarFoco, mensajeDeError } from "@/lib/cliente/api";
 import { distancia, haceCuanto, hectareas, hora, minutos, numero, rumboFrase, viento } from "@/lib/cliente/formato";
 import { urlOsm } from "@/lib/cliente/enlaces";
@@ -53,18 +53,94 @@ const CIERRES: { estado: EstadoIncendio; etiqueta: string; pregunta: string }[] 
 /** Estados que ya no son operativos: no cuentan como focos activos en ningún filtro. */
 const CERRADOS: EstadoIncendio[] = ["extinguido", "descartado", "fusionado"];
 
-export function PestanaFocos({
+/** Lista vacía compartida: evita crear un array nuevo (y romper memos) por render. */
+const VACIO: never[] = [];
+
+/** Fichas que se montan en el primer render al abrir la pestaña. */
+const FICHAS_DE_ENTRADA = 4;
+
+/**
+ * Montaje escalonado (constructor R): abrir "Focos" con 30 fichas montaba de
+ * golpe cientos de nodos y el clic pasaba de 250 ms. Se pintan las primeras y el
+ * resto entra en la siguiente tarea del hilo, así que la pantalla responde ya y
+ * NO se oculta nada: un instante después están todas.
+ */
+function useMontajeEscalonado(): boolean {
+  const [completo, setCompleto] = useState(false);
+  useEffect(() => {
+    if (completo) return;
+    // `setTimeout` y no `requestAnimationFrame`: el resto debe entrar DESPUÉS
+    // del pintado que cierra la interacción, no dentro de él.
+    const id = setTimeout(() => setCompleto(true), 0);
+    return () => clearTimeout(id);
+  }, [completo]);
+  return completo;
+}
+
+/**
+ * RENDIMIENTO (constructor R): agrupa una lista por el incendio al que pertenece
+ * cada elemento. Se calcula UNA vez por porción del snapshot, no una vez por
+ * tarjeta: antes cada una de las ~34 fichas recorría las 1000 unidades y las
+ * 1000 poblaciones enteras (~68 000 iteraciones por render).
+ */
+function agruparPorIncendio<T extends { incendioId?: string }>(lista: readonly T[]): Map<string, T[]> {
+  const mapa = new Map<string, T[]>();
+  for (const x of lista) {
+    if (!x.incendioId) continue;
+    const grupo = mapa.get(x.incendioId);
+    if (grupo) grupo.push(x);
+    else mapa.set(x.incendioId, [x]);
+  }
+  return mapa;
+}
+
+function PestanaFocosBase({
   snapshot,
   onCentrar,
   onTrasCambio,
   seleccionado,
+  amplio = false,
 }: {
   snapshot?: Snapshot;
   onCentrar?: (id: string) => void;
   onTrasCambio?: () => void;
   seleccionado?: string;
+  /** Panel ampliado a pantalla completa: las fichas se reparten en columnas. */
+  amplio?: boolean;
 }) {
-  const incendios = useMemo(() => snapshot?.incendios ?? [], [snapshot?.incendios]);
+  const incendios = useMemo(() => snapshot?.incendios ?? VACIO, [snapshot?.incendios]);
+
+  // --- Cortes por foco, memoizados POR PORCIÓN del snapshot ------------------
+  // Cada memo depende solo de SU array: con el contrato de identidad del cliente
+  // (lib/cliente/useEstado.ts), un snapshot que no toca las unidades no vuelve a
+  // agruparlas, y las listas que entrega siguen siendo las mismas referencias.
+  const unidadesPorFoco = useMemo(() => agruparPorIncendio(snapshot?.unidades ?? VACIO), [snapshot?.unidades]);
+  const poblacionesPorFoco = useMemo(() => agruparPorIncendio(snapshot?.poblaciones ?? VACIO), [snapshot?.poblaciones]);
+  const informesPorFoco = useMemo(() => agruparPorIncendio(snapshot?.informes ?? VACIO), [snapshot?.informes]);
+  const observacionesPorFoco = useMemo(() => {
+    const mapa = agruparPorIncendio(snapshot?.observaciones ?? VACIO);
+    for (const lista of mapa.values()) lista.sort((a, b) => b.recibidaEn.localeCompare(a.recibidaEn));
+    return mapa;
+  }, [snapshot?.observaciones]);
+  /** Índice por id: `inc.observaciones` guarda ids, no objetos. */
+  const observacionPorId = useMemo(
+    () => new Map((snapshot?.observaciones ?? VACIO).map((o) => [o.id, o])),
+    [snapshot?.observaciones],
+  );
+  /** Último comunicado PUBLICADO de cada foco, para enlazar con el portal. */
+  const comunicadoPorFoco = useMemo(() => {
+    const mapa = new Map<string, Comunicado>();
+    for (const c of snapshot?.comunicados ?? VACIO) {
+      if (!c.incendioId || c.estado !== "publicado") continue;
+      const previo = mapa.get(c.incendioId);
+      if (!previo || (c.publicadoEn ?? "") > (previo.publicadoEn ?? "")) mapa.set(c.incendioId, c);
+    }
+    return mapa;
+  }, [snapshot?.comunicados]);
+  const clusterPorId = useMemo(() => new Map((snapshot?.clusters ?? VACIO).map((c) => [c.id, c])), [snapshot?.clusters]);
+  const montajeCompleto = useMontajeEscalonado();
+  const nombrePorFoco = useMemo(() => new Map(incendios.map((i) => [i.id, i.nombre])), [incendios]);
+
   const { porConfirmar, activos, absorbidos, cerrados } = useMemo(() => {
     const porConfirmar = incendios.filter((i) => i.estado === "detectado");
     const absorbidos = incendios.filter((i) => i.estado === "fusionado");
@@ -78,16 +154,25 @@ export function PestanaFocos({
       <Vacio
         icono={<Flame />}
         titulo="Ningún foco declarado"
-        guia="Pulsa F o el botón «Declarar foco» y haz clic en el mapa. El núcleo buscará el municipio, los parques de bomberos, los pueblos y la meteo reales de esa zona."
+        guia="Pulsa F y haz clic en el mapa (Esc cancela; el botón «Declarar foco» está en el modo desarrollo). El núcleo buscará el municipio, los parques de bomberos, los pueblos y la meteo reales de esa zona."
       />
     );
   }
+
+  /** Lista en el panel estrecho; rejilla de fichas cuando el panel está ampliado o ensanchado (columnas según el ancho del contenedor). */
+  const rejilla = amplio ? "grid items-start gap-2.5 @3xl:grid-cols-2 @min-[96rem]:grid-cols-3" : "space-y-2.5";
 
   const ficha = (inc: Incendio) => (
     <FichaFoco
       key={inc.id}
       incendio={inc}
-      snapshot={snapshot}
+      unidades={unidadesPorFoco.get(inc.id) ?? VACIO}
+      poblaciones={poblacionesPorFoco.get(inc.id) ?? VACIO}
+      observaciones={observacionesPorFoco.get(inc.id) ?? VACIO}
+      observacionPorId={observacionPorId}
+      informes={informesPorFoco.get(inc.id) ?? VACIO}
+      comunicado={comunicadoPorFoco.get(inc.id)}
+      cluster={inc.clusterId ? clusterPorId.get(inc.clusterId) : undefined}
       onCentrar={onCentrar}
       onTrasCambio={onTrasCambio}
       resaltado={seleccionado === inc.id}
@@ -102,7 +187,7 @@ export function PestanaFocos({
           <p className="mb-1.5 text-[11.5px] leading-snug text-muted">
             Señales de una sola fuente. No se despliegan medios hasta que otra fuente o el mando las confirme.
           </p>
-          <div className="space-y-2.5">{porConfirmar.map(ficha)}</div>
+          <div className={rejilla}>{(montajeCompleto ? porConfirmar : porConfirmar.slice(0, FICHAS_DE_ENTRADA)).map(ficha)}</div>
         </section>
       ) : null}
 
@@ -113,7 +198,7 @@ export function PestanaFocos({
             Ningún foco activo ahora mismo.
           </p>
         ) : (
-          <div className="space-y-2.5">{activos.map(ficha)}</div>
+          <div className={rejilla}>{(montajeCompleto ? activos : activos.slice(0, FICHAS_DE_ENTRADA)).map(ficha)}</div>
         )}
       </section>
 
@@ -121,14 +206,14 @@ export function PestanaFocos({
         <Desplegable titulo="Absorbidos" cuenta={absorbidos.length}>
           <ul className="space-y-1">
             {absorbidos.map((i) => {
-              const superviviente = incendios.find((x) => x.id === i.fusionadoEn);
+              const superviviente = i.fusionadoEn ? nombrePorFoco.get(i.fusionadoEn) : undefined;
               return (
                 <li key={i.id} className="flex flex-wrap items-center gap-1.5">
                   <Insignia pequena tono="neutro" punto>
                     Fusionado
                   </Insignia>
                   <span className="font-medium text-foreground">{i.nombre}</span>
-                  <span>unido a {superviviente?.nombre ?? i.fusionadoEn ?? "otro foco"}</span>
+                  <span>unido a {superviviente ?? i.fusionadoEn ?? "otro foco"}</span>
                 </li>
               );
             })}
@@ -138,22 +223,35 @@ export function PestanaFocos({
 
       {cerrados.length > 0 ? (
         <Desplegable titulo="Cerrados" cuenta={cerrados.length}>
-          <div className="space-y-2.5">{cerrados.map(ficha)}</div>
+          <div className={rejilla}>{cerrados.map(ficha)}</div>
         </Desplegable>
       ) : null}
     </div>
   );
 }
 
-function FichaFoco({
+function FichaFocoBase({
   incendio: inc,
-  snapshot,
+  unidades,
+  poblaciones: todasLasPoblaciones,
+  observaciones: observacionesDelFoco,
+  observacionPorId,
+  informes,
+  comunicado,
+  cluster,
   onCentrar,
   onTrasCambio,
   resaltado,
 }: {
   incendio: Incendio;
-  snapshot?: Snapshot;
+  /** Cortes que ya ha calculado el padre: la ficha NO recorre listas de 1000. */
+  unidades: readonly Unidad[];
+  poblaciones: readonly Poblacion[];
+  observaciones: readonly Observacion[];
+  observacionPorId: ReadonlyMap<string, Observacion>;
+  informes: readonly Informe[];
+  comunicado?: Comunicado;
+  cluster?: Cluster;
   onCentrar?: (id: string) => void;
   onTrasCambio?: () => void;
   resaltado: boolean;
@@ -166,30 +264,27 @@ function FichaFoco({
   const [dialogoViento, setDialogoViento] = useState(false);
 
   const porConfirmar = sinConfirmar(inc);
-  const unidades = (snapshot?.unidades ?? []).filter((u) => u.incendioId === inc.id);
-  const todasLasPoblaciones = (snapshot?.poblaciones ?? []).filter((p) => p.incendioId === inc.id);
+  /** Pueblos en peligro de ESTE foco, ordenados por cercanía del frente. */
   const poblaciones = useMemo(
-    () => poblacionesEnPeligro(todasLasPoblaciones).sort((a, b) => (a.etaFrenteMin ?? 1e9) - (b.etaFrenteMin ?? 1e9)),
+    () => poblacionesEnPeligro([...todasLasPoblaciones]).sort((a, b) => (a.etaFrenteMin ?? 1e9) - (b.etaFrenteMin ?? 1e9)),
     [todasLasPoblaciones],
   );
-  const cluster = snapshot?.clusters.find((c) => c.id === inc.clusterId);
   /**
-   * Avisos que sostienen este foco (llamadas, prensa, redes, cámara, satélite).
-   * `inc.observaciones` son ids: aquí se resuelven contra el snapshot para poder
-   * abrir la fuente original de cada uno.
+   * Avisos que sostienen este foco (llamadas, prensa, redes, cámara, satélite),
+   * los 12 más recientes. El padre ya los ha agrupado y ordenado por foco.
    */
   const observaciones = useMemo(() => {
-    const ids = new Set(inc.observaciones ?? []);
-    return (snapshot?.observaciones ?? [])
-      .filter((o) => ids.has(o.id) || o.incendioId === inc.id)
-      .sort((a, b) => b.recibidaEn.localeCompare(a.recibidaEn))
-      .slice(0, 12);
-  }, [inc.id, inc.observaciones, snapshot?.observaciones]);
-  const informes = (snapshot?.informes ?? []).filter((i) => i.incendioId === inc.id);
-  /** Último comunicado publicado de este foco, para enlazar con el portal. */
-  const comunicado = (snapshot?.comunicados ?? [])
-    .filter((c) => c.incendioId === inc.id && c.estado === "publicado")
-    .sort((a, b) => (b.publicadoEn ?? "").localeCompare(a.publicadoEn ?? ""))[0];
+    const lista = [...observacionesDelFoco];
+    const vistos = new Set(lista.map((o) => o.id));
+    for (const id of inc.observaciones ?? []) {
+      if (vistos.has(id)) continue;
+      const o = observacionPorId.get(id);
+      if (!o) continue;
+      vistos.add(id);
+      lista.push(o);
+    }
+    return lista.sort((a, b) => b.recibidaEn.localeCompare(a.recibidaEn)).slice(0, 12);
+  }, [inc.observaciones, observacionPorId, observacionesDelFoco]);
 
   async function cambiarEstado(estado: EstadoIncendio) {
     setOcupado(true);
@@ -314,7 +409,7 @@ function FichaFoco({
               <ul className="space-y-1">
                 {poblaciones.slice(0, 12).map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center gap-1.5">
-                    <Insignia pequena tono={tonoRiesgo(p.riesgo)} punto>
+                    <Insignia pequena tono={tonoRiesgo(p.riesgo)} punto title={p.motivoRiesgo}>
                       {TEXTO_RIESGO[p.riesgo]}
                     </Insignia>
                     <EnlaceExterno href={urlOsm(p.id)} className="text-[12px] font-medium" titulo={`Ver ${p.nombre} en OpenStreetMap`}>
@@ -512,3 +607,12 @@ function FichaFoco({
     </article>
   );
 }
+
+/**
+ * `memo`: una ficha solo se repinta si cambia SU incendio o alguno de sus cortes.
+ * Con el contrato de identidad del cliente, un snapshot que no toca este foco
+ * deja intactas las ~34 tarjetas.
+ */
+const FichaFoco = memo(FichaFocoBase);
+
+export const PestanaFocos = memo(PestanaFocosBase);

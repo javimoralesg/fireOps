@@ -86,7 +86,12 @@ describe("presupuesto de una decisión", () => {
     const antes = await contadores();
 
     const incendio = await declararFoco(FOCO.lat, FOCO.lon, FOCO.nombre);
-    await esperarEntornoCargado(incendio.id);
+    // 240 s y no los 90 s por defecto: medido el 2026-09-19 en una instancia
+    // recién arrancada, el satélite estaba enriqueciendo a la vez sus propios
+    // focos y Overpass se saturó. El entorno tardó más de 90 s y la prueba
+    // moría en la preparación, no en una aserción. Aquí no se mide latencia:
+    // se mide coste, así que el presupuesto de espera es generoso a propósito.
+    await esperarEntornoCargado(incendio.id, 240_000);
 
     // Una decisión que haya llegado hasta el final: es la que arrastra todo el
     // coste (plan + legal + supervisor + actas + lecciones).

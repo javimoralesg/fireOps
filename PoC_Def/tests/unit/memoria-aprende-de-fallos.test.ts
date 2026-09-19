@@ -21,7 +21,18 @@
 // =====================================================================
 import { describe, expect, it } from "vitest";
 import { agenteMemoria, esAprendible, TIPOS_APRENDIBLES } from "@/lib/agentes/aprendizaje/memoria";
-import type { Decision, Evento } from "@/lib/dominio/tipos";
+import type { Decision, EvaluacionSupervisor, Evento } from "@/lib/dominio/tipos";
+
+/** Evaluación completa del supervisor: lo único que varía entre casos es la nota. */
+function evaluacion(puntuacion: number): EvaluacionSupervisor {
+  return {
+    en: "2026-09-19T14:05:00.000Z",
+    puntuacion,
+    aprueba: true,
+    criterios: [{ nombre: "fundamentacion", puntuacion, comentario: "" }],
+    modelo: "glm5.3-flash",
+  };
+}
 
 const PUNTUACION_MINIMA = 70;
 
@@ -88,12 +99,12 @@ describe("F1 · esAprendible · de qué se saca lección y de qué no", () => {
   });
 
   it("una decisión aprobada con buena nota NO enseña: es el curso normal", () => {
-    const buena = decision({ evaluacion: { puntuacion: 88, aprueba: true, criterios: [], resumen: "" } as Decision["evaluacion"] });
+    const buena = decision({ evaluacion: evaluacion(88) });
     expect(esAprendible(evento("decision_aprobada"), buena, PUNTUACION_MINIMA)).toBe(false);
   });
 
   it("una decisión aprobada RASPANDO sí enseña: el supervisor vio algo", () => {
-    const justa = decision({ evaluacion: { puntuacion: 72, aprueba: true, criterios: [], resumen: "" } as Decision["evaluacion"] });
+    const justa = decision({ evaluacion: evaluacion(72) });
     expect(esAprendible(evento("decision_aprobada"), justa, PUNTUACION_MINIMA)).toBe(true);
   });
 
@@ -107,7 +118,7 @@ describe("F1 · esAprendible · de qué se saca lección y de qué no", () => {
   });
 
   it("el caso medido: decisión aprobada con nota alta y 2 acciones ejecutadas → 0 lecciones", () => {
-    const buena = decision({ evaluacion: { puntuacion: 91, aprueba: true, criterios: [], resumen: "" } as Decision["evaluacion"] });
+    const buena = decision({ evaluacion: evaluacion(91) });
     const eventos = [evento("decision_aprobada"), evento("accion_ejecutada"), evento("accion_ejecutada")];
     const aprendibles = eventos.filter((e) => TIPOS_APRENDIBLES.includes(e.tipo) && esAprendible(e, buena, PUNTUACION_MINIMA));
     expect(aprendibles).toHaveLength(0);

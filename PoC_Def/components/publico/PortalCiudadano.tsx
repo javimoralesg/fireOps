@@ -10,10 +10,11 @@ import type { Comunicado } from "@/lib/dominio/tipos";
 import { urlSegura } from "@/lib/cliente/enlaces";
 import { EnlaceExterno } from "@/components/ui/Enlace";
 import MapaFocos, { type FocoPublico } from "./MapaFocos";
+import { formatearTelefono } from "@/lib/happyrobot/telefono";
 
 const IDIOMAS: Record<string, string> = { en: "English", ca: "Català", gl: "Galego", eu: "Euskara" };
 
-export default function PortalCiudadano({ urlLlamadaWeb }: { urlLlamadaWeb?: string }) {
+export default function PortalCiudadano({ urlLlamadaWeb, numeroEntrante }: { urlLlamadaWeb?: string; numeroEntrante?: string }) {
   const [comunicados, setComunicados] = useState<Comunicado[]>([]);
   const [focos, setFocos] = useState<FocoPublico[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,12 @@ export default function PortalCiudadano({ urlLlamadaWeb }: { urlLlamadaWeb?: str
           <Link href="/parte" className="inline-flex min-h-11 items-center rounded-lg bg-amber-600 px-5 font-semibold text-white hover:bg-amber-700">
             Dar parte de un incendio
           </Link>
+          {/* 112 virtual por teléfono (HappyRobot, sesión fireops-82): un agente de voz atiende, recoge los datos y los registra en la sala. */}
+          {numeroEntrante && (
+            <a href={`tel:${numeroEntrante}`} className="inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-5 font-semibold text-amber-800 hover:bg-amber-100">
+              Llamar al 112 virtual: {formatearTelefono(numeroEntrante)}
+            </a>
+          )}
           {urlLlamadaWeb && (
             <a href={urlLlamadaWeb} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-lg border border-amber-600 px-5 font-semibold text-amber-800 hover:bg-amber-100">
               Llamar al 112 virtual desde el navegador

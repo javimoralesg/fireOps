@@ -2143,3 +2143,228 @@ retiraba los focos que ya había creado. Cambios (todos aditivos, sin commits):
   el **"Por qué"** (`motivoRiesgo`) y la meteo del foco con enlace a Open-Meteo. `PestanaFocos.tsx`:
   el motivo va en el `title` de la insignia de riesgo.
 - Pruebas: `tests/unit/escenario.test.ts` (+4) y `tests/unit/firms.test.ts` (nuevo, 5). 275 unitarias en verde.
+
+### 2026-09-19 · sesión fireops-82 · 112 virtual por TELÉFONO (HappyRobot)
+
+Petición de Javi: poder **llamar al número de HappyRobot** y que un agente conteste, atienda,
+recoja los datos y los meta en el sistema para poner focos; montar el workflow por API.
+
+- **Plataforma** (`scripts/happyrobot-entrante.mjs`, nuevo; órdenes `entrante` y `sincronizar` en
+  `scripts/happyrobot-workflows.mjs`): workflow «Atalaya · 112 entrante» creado de cero con el trigger
+  **Inbound to number** (evento `0192a20c-…`, número `+1 573 401 8744`), Inbound Voice Agent en es-ES
+  (Ana HR, grabación), dos herramientas (`consultar_zona`, `registrar_aviso`) con Webhook POST a Atalaya
+  y `x-webhook-secret`, webhook al colgar y salidas de muestra (`custom-output`) para publicar sin URL
+  viva. Hallazgos medidos: `PUT` no cambia el `event_id` de un nodo; las herramientas cuelgan del nodo
+  prompt; `from`/`transcript`/`duration` son variables del agente entrante. `npm run dev:movil`
+  resincroniza el workflow con la URL nueva del túnel.
+- **App**: `lib/happyrobot/entrante.ts` (`registrarAvisoDeLlamada`: Nominatim → centralita → tope de
+  espera → extracción determinista si no hay IA → `verificarObservacionAhora` → `mensajeParaLocutor`;
+  `adjuntarTranscripcion`; `estadoEntrante`), `lib/happyrobot/telefono.ts` (isomorfo),
+  `POST /api/happyrobot/aviso` (nuevo), `POST /api/happyrobot/contexto` (añadido al GET),
+  `lib/happyrobot/webhooks.ts` (la transcripción al colgar se adjunta a la observación del run: misma
+  llamada = una observación), `entrante` en `GET /api/happyrobot/salud`, `usadoPorAtalaya: "entrante"`
+  en `listarWorkflows`, enlace `tel:` al número en `/publico` y `/parte`.
+- **Variables**: `HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE`, `HAPPYROBOT_NUMERO_ENTRANTE` (las escribe la orden
+  `entrante`), `HAPPYROBOT_AVISO_ESPERA_MS` (opcional, 20000). Guía: `docs/HAPPYROBOT.md` §3.4.
+- **Pruebas**: `tests/unit/happyrobot-entrante.test.ts` (lógica con dobles y Estado real),
+  `tests/unit/happyrobot-entrante-workflow.test.ts` (definición de nodos y coherencia app↔workflow↔guía),
+  `tests/integracion/30-llamada-entrante.test.ts` (caso (o), servidor vivo).
+- **Segunda pasada tras la primera llamada real (19-09, 17:08)**: el run duró 109 s y falló todo lo que
+  iba a Atalaya porque el túnel `dress-surely…` estaba muerto (cloudflared zombi sin conexión al edge en
+  la WiFi de la UPM; HappyRobot: "no such host"). Cambios: prompt nuevo que pide solo pueblo y qué ve,
+  una pregunta por turno, sin teléfono ni tamaños, registra una vez y se despide (`docs/HAPPYROBOT.md`
+  §3.4); `lugar` opcional en `registrar_aviso`; saludo «Dígame, ¿qué ocurre y dónde está?»; tope duro
+  de 4 min (`DURACION_MAX_SEG`); `scripts/tunel.sh` resincroniza y republica el workflow en segundo
+  plano en cuanto tiene URL (quitado el duplicado de `dev-movil.sh`); `GET /api/happyrobot/salud` →
+  `entrante.urlEnPlataforma` y `desincronizado` (lee la URL real del nodo publicado y avisa en rojo
+  si no es la pública actual). `sync`/`generate` del Tool Call Result NO se usan: ejecutan el webhook
+  de verdad y registrarían un aviso de prueba por sincronización.
+- **Tercera pasada (19-09, 17:30, tras «se queda pillado, no termina las frases»)**: las dos llamadas
+  reales seguían yendo al túnel muerto (ningún evento en :3000); se cerró el cloudflared zombi y se abrió
+  `scripts/tunel.sh 3000` en el hotspot, que republicó solo el workflow con la URL nueva. Además:
+  `registrarAvisoDeLlamada` ya **no espera a la IA** (extracción determinista + verificación en el acto,
+  tope de 3 s para Nominatim, remate en segundo plano y re-verificación cuando llega el punto), saludo
+  `initial_message_uninterruptible: true`, `enable_denoised_stt: true`, `lugar` opcional, `sincronizar`
+  también actualiza la definición de las herramientas. 326 unitarias en verde.
+- **Cuarta pasada (19-09, 18:00, tras la primera llamada que SÍ llegó)**: la observación entró bien
+  (0,4 s de respuesta) pero el foco salió en la Puerta del Sol: el reconocimiento de voz dictó
+  "Avenida Complutense treinta, Técnica Superior de Ingeniería de Autorcomunicación" y Nominatim, al
+  no encontrarlo, caía al centroide de "Madrid". Cambios: preprocesado de la dirección
+  (`normalizarDireccion`, `viaConNumero`, `candidatasConPrecision`: abreviaturas, números en letras,
+  vía con número sin coletilla, consultas de más a menos precisa) y herramienta nueva **`situar_lugar`**
+  (`POST /api/happyrobot/situar`, `situarLugar`): el AGENTE sitúa el lugar durante la llamada, lo
+  confirma con la persona ("Lo tengo: Edificio B, ETSI de Telecomunicación, Madrid. ¿Es correcto?") o
+  pide una referencia más, y pasa `lat`/`lon` confirmados a `registrar_aviso`. Prompt: registrar UNA
+  vez (antes decía "lo paso a la sala" dos veces porque llamaba dos veces a la herramienta), nunca
+  "uno uno dos" (también quitado de los consejos hablados de la centralita: "avise a emergencias").
+  `keyterms` en el agente (tope 50 caracteres: uno más largo dejó la versión sin publicar; hay
+  `KEYTERM_MAX`). `sincronizarEntrante` crea las herramientas que falten (`definicionHerramientas`,
+  `ORDEN_HERRAMIENTAS`). Webhook de colgar: cuerpos vacíos o con variables sin resolver (pruebas de
+  nodo de la plataforma) ya no crean observaciones basura. Integración (o) contra servidor propio:
+  9 pruebas, registrar_aviso 0,4 s, situar_lugar 2,3 s en la ETSIT (40,4529, -3,7256). 332 unitarias.
+  Coordinación con fireops-00, que añade la herramienta `enviar_sms` al mismo workflow y republica.
+- **Simulacro con llamadas al 112 (19-09, 18:00, petición de Javi)**: las llamadas por teléfono al 112
+  virtual (canal `llamada`, solo las crea el workflow entrante de HappyRobot) pasan a ser **suelo del
+  simulacro**, como la declaración a mano y la cámara de móvil. `lib/dominio/fuentes-deteccion.ts`:
+  `esLlamadaTelefono` y excepción en `fuenteQueBloquea` para `avisos_ciudadanos`; `TEXTO_SIMULACRO`
+  «SIMULACRO · solo focos a mano, móvil y llamadas al 112» y `SUELO_SIMULACRO` (frase común para el
+  evento de `lib/motor/escenario.ts` y los textos de `components/sala/BarraSuperior.tsx`, cuyo botón
+  dice ahora «Simulacro: a mano, móvil y 112»). Con los avisos ciudadanos apagados, SMS, correo,
+  Telegram y web siguen sin crear focos; activar el simulacro ya no descarta los focos que sostiene una
+  llamada. Pruebas en `tests/unit/escenario.test.ts` (fixture con un foco de aviso web).
+
+### 2026-09-19 · sesión fireops-00 · SMS del agente del 112 al teléfono del `.env`
+
+Petición de Javi: «que el agente pueda enviar SMS de avisos y demás al teléfono que se ponga en el
+.env». Hallazgo previo: el workflow «Atalaya · SMS saliente» (`HAPPYROBOT_WORKFLOW_SLUG_SMS`,
+`vp2qk6qpb5sh`) era un **cascarón de 0 nodos sin publicar** (la plantilla `sms-agent` exige Twilio):
+ningún SMS de Atalaya salía, tampoco los de las acciones `enviar_sms` del ejecutor.
+
+- **Plataforma**: `scripts/happyrobot-sms.mjs` (nuevo) + órdenes `sms` y `sms-prueba` en
+  `scripts/happyrobot-workflows.mjs` (`crear`/`configurar`/`publicar` delegan el canal SMS en `sms`).
+  Completa el cascarón nodo a nodo **conservando el slug**: trigger «Predefined request» (22 params = todo
+  lo que manda `lib/happyrobot/cliente.ts` más los campos del agente), acción **«Send text»** (integración
+  *Text*, evento `01936a40-189c-7579-b457-c6ac150b4bed`, **sin credenciales**; sale por el `+1 573 401 8744`)
+  y webhook de resultado a `@webhook_url` con `x-webhook-secret`. Publicado vivo en producción; el aviso
+  «variables sin resolver» al publicar es normal (los params no tienen muestra). Run real de prueba al
+  propio número de la organización: los tres nodos `succeeded`. Medido: sin URL pública no se manda
+  `webhook_url`, el nodo de retorno falla (`Post ""`) y el run queda `failed` aunque el SMS haya salido.
+- **Herramienta `enviar_sms`** del agente entrante (`scripts/happyrobot-entrante.mjs`: cuarta entrada de
+  `definicionHerramientas`, `PARAMETROS_SMS` = `texto`, `motivo`; `cuerpoSms`; webhook a
+  `POST /api/happyrobot/sms`). El agente **no elige el número**: siempre `TELEFONO_AVISOS_SMS` (variable
+  nueva; vacía → `DESTINO_DEMO`). Prompt (`docs/HAPPYROBOT.md` §3.4, bloque «SMS A LA SALA»): solo para lo
+  que la sala deba saber ya y no quepa en `registrar_aviso`. Workflow entrante republicado con la
+  herramienta (`dzftt0y1041x`, 12 nodos, `publicado=true vivo=true`), coordinado con fireops-82.
+- **App**: `lib/happyrobot/sms-avisos.ts` (nuevo): `estadoSmsAvisos`, `textoSmsAviso` (≤ 300 caracteres:
+  dónde, riesgo, veredicto, llamante, referencia y las palabras de la persona), `textoSmsAgente`,
+  `enviarSmsAgente` (por `dispararWorkflow("sms")`; eventos `accion_ejecutada`/`accion_fallida` con agente
+  `centralita` y auditoría sin secretos; registro en memoria por `ref` del run), `anotarResultadoSms`,
+  `herramientaEnviarSms`, `smsDesdeCuerpo`. `POST /api/happyrobot/aviso` manda el **SMS automático del
+  aviso** en segundo plano (marca «(ampliacion)» en la segunda llamada del mismo run; la respuesta a la
+  herramienta no cambia). `POST|GET /api/happyrobot/sms` (nuevo). `lib/happyrobot/webhooks.ts`: el
+  resultado de un SMS sin Decision/Accion se anota por `ref` en vez de 404. `GET /api/happyrobot/salud` →
+  `smsAvisos` y `herramientas.enviarSms`.
+- **Variables**: `TELEFONO_AVISOS_SMS` (línea vacía añadida a `.env.local`; `docs/CLAVES.md` y
+  `docs/HAPPYROBOT.md` §4). **Pendiente para Javi**: poner ahí su móvil (o en `DESTINO_DEMO`) y reiniciar
+  `next dev`. Sin teléfono, cada aviso deja un evento `accion_fallida` «SMS no enviado: Falta
+  TELEFONO_AVISOS_SMS (o DESTINO_DEMO)» (visible, nada simulado).
+- **Pruebas**: `tests/unit/happyrobot-sms-avisos.test.ts` (20, nuevo), `happyrobot-entrante-workflow.test.ts`
+  (11 nodos, cuarta herramienta, `cuerpoSms`), caso (o) `enviar_sms` en
+  `tests/integracion/30-llamada-entrante.test.ts` (deduce del propio servidor si debe haber enviado). 354
+  unitarias en verde; `tsc` (app y tests) y `eslint` limpios. Verificado contra servidor propio (:3111,
+  Supabase vacía, `TELEFONO_AVISOS_SMS` = número de la organización): `enviar_sms` 200 `enviado:true` con
+  run real, 401 sin secreto, 422 sin texto; webhook de resultado → `smsAgente:true` (y 404 si el `ref` no
+  es de nadie); `registrar_aviso` con la misma respuesta de antes y evento «SMS del aviso enviado» con el
+  texto completo; `peticion` auditada sin `secreto`.
+- Ojo aparte (no tocado): «Atalaya · Llamada saliente» (voz) está publicado en entorno **staging** y
+  `HAPPYROBOT_ENVIRONMENT=production`; las llamadas salientes fallarán hasta republicarlo en producción.
+- **Quinta pasada (19-09, 18:15, «haz más inteligente la localización, con IA»)**: la transcripción de
+  la llamada de las 17:56 mostró que el agente NO veía las respuestas de Atalaya (`{"steps":[]}`: campos
+  del Tool Call Result ocultos, y la prueba de nodo con 422 dejaba solo `error`), así que llamó cinco veces
+  a `situar_lugar` a ciegas e inventó coordenadas. Arreglado: `sincronizarEntrante` expone todos los campos
+  (`camposAExponer` + `PUT …/tool-call-result/visibility`, 12/13/4/2 campos visibles), `situar` y `aviso`
+  responden siempre 200 con la forma completa. Nuevo `lib/happyrobot/ubicacion-ia.ts`: interpretación del
+  lugar con el modelo rápido SIN razonar (corrige la transcripción, deduce el municipio, propone consultas;
+  la precisión la calculan reglas, `precisionDeConsulta`). **`lib/ia/llm.ts`: opción aditiva
+  `sinRazonar` en `PeticionJson`** (HelmCode `chat_template_kwargs.enable_thinking=false`, Groq
+  `reasoning_effort=low`): qwen3.6 pasa de 16-23 s a 0,2-3 s. `situar_lugar` guarda el punto por run y
+  `registrar_aviso` usa ese; tope total de 9 s también dentro de la cola de Nominatim. Prompt: probar a
+  situar antes de preguntar el pueblo, confirmar una vez, nunca escribir coordenadas, no decir que los
+  medios salen antes de registrar. 365 unitarias; integración (o) 11/11 con IA y Nominatim reales.
+- **Segunda pasada (19-09, 18:15, «no llegan SMS ni llamadas al número que he puesto»)**: Javi rellenó
+  `TELEFONO_AVISOS_SMS` y dejó `DESTINO_DEMO` vacío, y el aviso manual a Salobral falló con «Falta
+  DESTINO_DEMO» (ejecutor). Ahora **basta un número**: `destinoDemo()` del ejecutor, `telefonoDemo()` de
+  `lib/motor/enriquecer.ts`, la ruta `POST /api/poblaciones/[id]/avisar` y la ficha de
+  `proteccion-poblacion.ts` caen a `TELEFONO_AVISOS_SMS` si `DESTINO_DEMO` está vacío (y al revés en
+  `sms-avisos.ts`); el mensaje de fallo nombra las dos variables. Reiniciar `next dev` para que el
+  ejecutor lo coja. Además `HAPPYROBOT_WORKFLOW_SLUG_VOZ` apuntaba a `d1gx30wdpecw`, que **no existe**
+  en la organización (404): ahora `5yxtlfuuyfpe` («Atalaya · Llamada saliente»), que estaba vivo en
+  *staging* y se ha despublicado y publicado en **producción** (`publicado=true vivo=true`).
+  Medido: **los SMS sí llegan** al móvil de Javi (dos reales a las 18:08: el aviso automático y la
+  herramienta, disparados por la integración de fireops-82 contra su :3000), con **2-4 minutos de
+  retraso** del operador; salen del gratuito americano `+1 888 560 9266` (Send text), no del `+1 573`.
+  **Las llamadas NO conectan**: run real de voz a su móvil → `sip_code 403 Forbidden`,
+  `failure_reason: sip_call_never_connected`, `call_end_event: user_missed_call` en 3 s: el troncal
+  Telnyx del `+1 573 401 8744` no tiene permitidas las llamadas internacionales (`GET /sip-trunks/` no
+  expone ningún ajuste): hay que pedirlo a los organizadores. Hallazgo de fireops-82 aplicado a
+  `enviar_sms`: la plataforma solo deja ver al agente los campos que ve en la prueba del nodo, así que
+  `POST /api/happyrobot/sms` responde **siempre 200 con las cinco claves** (`enviado`, `referencia`,
+  `destino`, `error`, `mensajeParaLocutor`; `null` las que no aplican), también sin texto;
+  `SALIDAS_MUESTRA.sms` lleva `error: null` (la próxima `sincronizar`, con el túnel vivo, lo expone).
+  365 unitarias, `tsc` y `eslint` limpios.
+- **Tercera pasada (19-09, 18:30, Javi: «quita lo de llamada saliente, que sea solo SMS»)**: la VOZ
+  SALIENTE queda **desactivada** (medido: `SIP 403 Forbidden`, el troncal no llama a España). En
+  `lib/agentes/ejecucion/ejecutor.ts` (`VOZ_DESACTIVADA`, `hacerSmsEnVezDeLlamar`; `hacerLlamada` eliminada)
+  todo lo que era llamada sale por SMS al mismo destino con el guion recortado a 300: la acción `llamar`
+  («Voz saliente desactivada (solo SMS): SMS enviado a …», `datos.vozDesactivada`), el aviso al ayuntamiento
+  de `avisar/confinar/evacuar_poblacion` (un solo SMS; `ultimoContacto.canal = "sms"`), la llamada de
+  `solicitar_medios_aereos` (SMS al organismo + parte por correo) y `solicitar_confirmacion` (siempre SMS).
+  El orquestador ya no suma `llamadasRealizadas` a una «llamar» que salió como SMS. El aviso manual
+  (`POST /api/poblaciones/[id]/avisar`) con canal «llamada» crea un `enviar_sms`. El planificador de
+  población pide el `guionLlamada` como texto para SMS (≤ 300) y describe «SMS + Telegram»; la política
+  por defecto y la etiqueta de la sala («Llamada (sale por SMS)») lo dicen; el toast de «Avisar ahora» dice
+  «El SMS se está enviando de verdad». `GET /api/happyrobot/salud`: `canales` = SMS y email,
+  `voz.desactivada` con el motivo, resumen «listo (SMS y email; voz saliente desactivada)». El workflow de
+  voz (`5yxtlfuuyfpe`) sigue publicado en producción por si los organizadores habilitan el destino;
+  `cliente.ts#llamar` se conserva. Guía: `docs/HAPPYROBOT.md` §2, §3.1 (aviso de desactivado) y §4.
+  Prueba nueva `tests/unit/ejecutor-solo-sms.test.ts` (5: llamar→SMS, aviso a población solo SMS y estado,
+  reserva TELEFONO_AVISOS_SMS/fallo explicado, confirmación por SMS, medios aéreos sin llamada).
+- **Sexta pasada (19-09, 18:45, «que se regenere solo y no se pierda nada de la llamada»; quitar "112" y
+  "forestales")**: nuevos `lib/happyrobot/recuperar-llamadas.ts` (pide a la API de HappyRobot las llamadas
+  que no llegaron y las registra; idempotente por run; cada minuto desde `instrumentation.ts`, línea añadida),
+  `app/api/happyrobot/recuperar/route.ts` (GET última pasada, POST con secreto) y `scripts/tunel-vigilado.sh`
+  (regenera el túnel tras 3 fallos vistos desde fuera y lanza la recuperación; `dev-movil.sh` lo usa).
+  `salud` → `entrante.recuperacion`. Guion: saludo sin "ciento doce" ni "forestales", persona-agente
+  «Atalaya · Emergencias», registrar aunque falle situar, colgar tras despedirse, frases de espera literales.
+  Recuperadas en vivo las dos llamadas perdidas de las 18:31 y 18:33 (foco en la ETSIT). Pruebas:
+  `tests/unit/happyrobot-recuperar-llamadas.test.ts` con esas dos transcripciones reales; 382 unitarias.
+- **Cuarta pasada (19-09, 18:40, Javi con capturas de los SMS: «revisa que el texto sea mejor, pon horas y
+  minutos en vez de tantos minutos» y «al usuario no le debe llegar tanto movimiento de cada unidad»)**:
+  `lib/dominio/tiempo-legible.ts` (nuevo, isomorfo): `duracionLegible` (2972 → «49 h 32 min»), `horaLegible`
+  (ISO → HH:MM de Madrid) y `kmLegible` («1,2 km», «420 m»). El SMS del aviso manual
+  (`POST /api/poblaciones/[id]/avisar`) dice ahora «incendio forestal a 1,2 km de La Dehesa (Incendio de X).
+  El frente podría llegar en 49 h 32 min. Manténgase atento…»; la ficha del planificador de población pide
+  al modelo escribir el tiempo así. La orden a una unidad ya no reutiliza la descripción interna de la
+  acción: «Parque de bomberos · BUL, salga hacia Incendio de Brunete (Brunete), sector A. Trayecto: 1 h 15
+  min por carretera. Llegada prevista: 18:04.» (hora local; antes salía el `slice` del ISO). Y **solo se manda
+  a un teléfono real de la unidad** (OSM): si la unidad lleva el móvil de la demo (`enriquecer.ts` se lo pone
+  cuando OSM no tiene), no hay SMS por cada movimiento; la orden queda registrada y el acta lo dice
+  (`datos.smsOmitido`). Pruebas: `tests/unit/tiempo-legible.test.ts` (3) y dos casos más en
+  `ejecutor-solo-sms.test.ts` (orden legible a teléfono real; sin SMS al móvil de demo).
+- **RGPD en los SMS (19-09, 18:50, Javi vía fireops-82)**: fireops-82 quitó de `lib/happyrobot/sms-avisos.ts` el
+  «Llamante …» y la cita literal de la persona (`textoSmsAviso`, `textoSmsAgente`) y añadió `anonimizarSms`
+  (tacha teléfonos y correos; última barrera en `enviarSmsAgente`). fireops-00 actualizó los ejemplos de
+  `docs/HAPPYROBOT.md` §3.4 (párrafo «SMS al teléfono del .env» y fila de `enviar_sms`): el SMS nunca lleva
+  datos de quien llama; el contacto queda en la ficha del aviso (`observacion.remitente`). 388 unitarias.
+- **Etiqueta al principio de cada SMS (19-09, 18:55, Javi)**: `ETIQUETA_SMS` en el ejecutor. Los SMS a una
+  población empiezan por «(Aviso a población)» (acciones `avisar/confinar/evacuar_poblacion`, y también
+  `enviar_sms` o `llamar` cuando llevan `objetivo.poblacionId`, como el aviso manual con canal «sms»); las
+  órdenes a unidades, por «(Orden a una unidad)». `etiquetar()` no la repite si el texto ya la trae. Los SMS
+  del agente del 112 siguen con su cabecera «ATALAYA 112 hh:mm». Tres casos más en
+  `tests/unit/ejecutor-solo-sms.test.ts`; 393 unitarias en verde.
+- **Séptima pasada (19-09, 18:55, «pulir un poco más» tras la llamada de las 18:46, y SMS con RGPD)**:
+  `lib/happyrobot/sms-avisos.ts` (con permiso de fireops-00): el SMS ya no lleva el número de quien llama
+  ni sus palabras literales; `anonimizarSms` tacha teléfonos y correos como última barrera. Voz: confirmar
+  el sitio con la calle y el número («Lo tengo en Avenida Complutense 30, Madrid. ¿Es ahí?»), `paraVoz`
+  sin siglas («ETSI» → «Escuela de Ingenieros»), cierre más corto y consejo urbano o de monte
+  (`esAvisoUrbano`), no contestar a un saludo suelto, «lugar» = lo que dijo la persona, coma antes del
+  municipio en las consultas de la IA. Nuevo `lib/happyrobot/transcripcion.ts` (común con la
+  recuperación): la transcripción que llega en JSON al colgar se guarda legible en la ficha. 394 unitarias.
+- **Octava pasada (19-09, 20:05, «se ha caído, no registra; revisa todas las transcripciones»)**: el guardián
+  murió al regenerar el túnel (`PUERTO: unbound variable`: en bash 3.2 "$PUERTO…" con los puntos suspensivos
+  se lee como otra variable; mismo fallo arreglado en `dev-movil.sh`) y además regeneraba un túnel SANO
+  cuando lo caído era la app (`npm run dev` reiniciándose). `tunel-vigilado.sh` ahora comprueba primero la
+  app local y no toca el túnel si es ella; `tunel.sh` admite `TUNEL_SIN_HAPPYROBOT=1` para probarlo sin tocar
+  el workflow. Probado en un puerto aparte: app caída 20 s → mismo túnel; túnel muerto → túnel nuevo en 17 s.
+  Agente (seis llamadas 19:13-19:51): una dirección encontrada tal cual se AFIRMA sin pedir confirmación
+  (la espera costaba 20-45 s), no pregunta "¿humo o llamas?" ni inventa el tipo, si todo falla dice "Su aviso
+  ha quedado grabado…" y cuelga (antes seguía preguntando), calle con número = consejo urbano, el cierre
+  nombra el municipio dicho. 398 unitarias. Recuperación: la llamada de las 19:51 se recuperó sola; las de
+  19:46-19:50 son de antes de la ejecución actual (19:51:19) y por diseño no se meten en ella.
+- **Pruebas para que no vuelva a pasar (19-09, 20:15)**: `tests/unit/scripts-bash.test.ts` (todos los
+  `scripts/*.sh` compilan con `bash -n` y ninguna variable queda pegada a un carácter no ASCII, el fallo que
+  mató al guardián); `tests/unit/tunel-vigilado.test.ts` (el script REAL contra una app y un túnel falsos, sin
+  red: la app se reinicia → mismo túnel; el túnel muere → túnel nuevo y guardián vivo; nunca "unbound
+  variable"; pide la recuperación al volver); `tests/unit/happyrobot-arranque-salud.test.ts` (instrumentation
+  arranca la recuperación, la salud detecta túnel muerto y workflow DESPUBLICADO). Nuevo en la salud:
+  `leerWorkflowEntrante` y `entrante.publicado` (ok:false y aviso en rojo si el número no atiende). 417 unitarias.

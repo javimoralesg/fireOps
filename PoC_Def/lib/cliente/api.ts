@@ -133,7 +133,9 @@ export const ejecucion = (accion: "nueva" | "cerrar", extra: { nombre?: string; 
  * mando). Se manda la lista COMPLETA de apagadas; [] = operación real.
  */
 export const cambiarFuentesDeteccion = (fuentesDesactivadas: FuenteDeteccion[]) =>
-  pedir<{ ejecucion: Ejecucion; cambiado: boolean }>("/api/ejecucion", { metodo: "POST", cuerpo: { accion: "fuentes", fuentesDesactivadas } });
+  // Apagar una fuente puede cerrar focos huérfanos (rutas de regreso de sus
+  // unidades por carretera): el mismo margen que crear o cerrar una ejecución.
+  pedir<{ ejecucion: Ejecucion; cambiado: boolean }>("/api/ejecucion", { metodo: "POST", cuerpo: { accion: "fuentes", fuentesDesactivadas }, timeoutMs: 60_000 });
 
 // --- Focos ------------------------------------------------------------------
 

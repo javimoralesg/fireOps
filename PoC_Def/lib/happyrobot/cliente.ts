@@ -67,8 +67,8 @@ export interface WorkflowHappyRobot {
   nombre: string;
   publicado: boolean;
   entorno?: string;
-  /** true si es uno de los slugs que Atalaya tiene configurados. */
-  usadoPorAtalaya?: CanalHappyRobot;
+  /** true si es uno de los slugs que Atalaya tiene configurados ("entrante" = el 112 virtual por teléfono, lib/happyrobot/entrante.ts). */
+  usadoPorAtalaya?: CanalHappyRobot | "entrante";
 }
 
 const TIMEOUT_MS = 20_000;
@@ -217,7 +217,11 @@ export async function dispararWorkflow(canal: CanalHappyRobot, payload: Record<s
   };
 }
 
-/** Llamada de voz saliente: el agente lee el guion y recoge la respuesta. */
+/**
+ * Llamada de voz saliente: el agente lee el guion y recoge la respuesta.
+ * DESACTIVADA en el ejecutor desde el 19-09-2026 (SIP 403: el troncal no llama a España); se
+ * conserva por si los organizadores habilitan el destino. Ver VOZ_DESACTIVADA en el ejecutor.
+ */
 export async function llamar(p: PeticionLlamada): Promise<ResultadoEnvio> {
   if (!p.telefono) throw new Error("Falta el teléfono de destino (¿DESTINO_DEMO sin valor?)");
   return dispararWorkflow("voz", {
@@ -298,11 +302,14 @@ export async function listarWorkflows(signal?: AbortSignal): Promise<WorkflowHap
        (bruto as { items?: WorkflowApi[] }).items ??
        []);
 
-  const porCanal = new Map<string, CanalHappyRobot>();
+  const porCanal = new Map<string, CanalHappyRobot | "entrante">();
   for (const canal of ["voz", "sms", "email"] as CanalHappyRobot[]) {
     const s = slugDe(canal);
     if (s) porCanal.set(s, canal);
   }
+  // Workflow del 112 entrante (llamada AL número de HappyRobot): lib/happyrobot/entrante.ts.
+  const entrante = variable("HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE");
+  if (entrante) porCanal.set(entrante, "entrante");
 
   return lista.map((w) => ({
     id: w.id,

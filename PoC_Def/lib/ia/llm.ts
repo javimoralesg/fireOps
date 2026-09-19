@@ -67,6 +67,13 @@ export interface PeticionJson<T> {
   maxTokens?: number;
   temperatura?: number;
   signal?: AbortSignal;
+  /**
+   * Pedir la respuesta SIN razonamiento previo (HelmCode qwen3.6: `enable_thinking: false`;
+   * Groq: `reasoning_effort: low`). Para tareas cortas con una persona esperando al
+   * teléfono: medido el 19-09, qwen3.6 tarda 16-23 s razonando y 0,2-2 s sin razonar
+   * (sesión fireops-82, interpretación del lugar dictado al 112).
+   */
+  sinRazonar?: boolean;
 }
 
 export interface RespuestaLLM<T> {
@@ -432,6 +439,8 @@ interface OpcionesLlamada {
   temperatura?: number;
   signal?: AbortSignal;
   formato?: OpenAI.Chat.Completions.ChatCompletionCreateParams["response_format"];
+  /** Ver `PeticionJson.sinRazonar`. */
+  sinRazonar?: boolean;
 }
 
 interface ResultadoCrudo {
@@ -618,7 +627,9 @@ async function llamarSinCola(o: OpcionesLlamada): Promise<ResultadoCrudo> {
   };
   if (o.formato) cuerpo.response_format = o.formato;
   // `reasoning_effort: low` acelera mucho el papel rápido en Groq (gpt-oss/qwen).
-  if (conf.admiteEsfuerzoRazonamiento && o.papel === "rapido") cuerpo.reasoning_effort = "low";
+  if (conf.admiteEsfuerzoRazonamiento && (o.papel === "rapido" || o.sinRazonar)) cuerpo.reasoning_effort = "low";
+  // HelmCode sirve qwen3 con plantilla vLLM: sin esto razona siempre antes de contestar.
+  if (o.sinRazonar && conf.nombre === "helmcode") cuerpo.chat_template_kwargs = { enable_thinking: false };
 
   const ejecutar = async (): Promise<ResultadoCrudo> => {
     const t0 = Date.now();
@@ -761,6 +772,7 @@ export async function completarJson<T>(p: PeticionJson<T>): Promise<RespuestaLLM
       signal: p.signal,
       permitirEnPausa: p.permitirEnPausa,
       prioridad: p.prioridad,
+      sinRazonar: p.sinRazonar,
       formato: { type: "json_schema", json_schema: { name: nombre, strict: true, schema: esquema } },
     });
   } catch (e) {
@@ -777,6 +789,7 @@ export async function completarJson<T>(p: PeticionJson<T>): Promise<RespuestaLLM
       signal: p.signal,
       permitirEnPausa: p.permitirEnPausa,
       prioridad: p.prioridad,
+      sinRazonar: p.sinRazonar,
       formato: { type: "json_object" },
     });
   }
@@ -800,6 +813,7 @@ export async function completarJson<T>(p: PeticionJson<T>): Promise<RespuestaLLM
     temperatura: 0.1,
     signal: p.signal,
     prioridad: p.prioridad,
+    sinRazonar: p.sinRazonar,
     formato: { type: "json_object" },
   });
 

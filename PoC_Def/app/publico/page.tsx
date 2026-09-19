@@ -12,6 +12,8 @@ export const metadata = {
 export default function PaginaPublica() {
   const organismo = process.env.ORGANISMO_NOMBRE?.trim() || "Centro de Coordinación de Incendios Forestales";
   const urlLlamadaWeb = process.env.HAPPYROBOT_WEB_CALL_URL?.trim() || undefined;
+  // Número del 112 virtual (HappyRobot): lo atiende el agente de voz de «Atalaya · 112 entrante».
+  const numeroEntrante = process.env.HAPPYROBOT_NUMERO_ENTRANTE?.trim() || undefined;
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
@@ -26,7 +28,7 @@ export default function PaginaPublica() {
           .
         </p>
       </header>
-      <PortalCiudadano urlLlamadaWeb={urlLlamadaWeb} />
+      <PortalCiudadano urlLlamadaWeb={urlLlamadaWeb} numeroEntrante={numeroEntrante} />
     </main>
   );
 }

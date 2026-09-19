@@ -14,7 +14,7 @@
 // DUEÑO: constructor L (escrito en la fase F3 de la migración).
 // =====================================================================
 import { describe, expect, it } from "vitest";
-import { decisionDeMedida, type MedidaPoblacion } from "@/lib/agentes/planificacion/proteccion-poblacion";
+import { decisionesDeMedidas, decisionDeMedida, type MedidaPoblacion } from "@/lib/agentes/planificacion/proteccion-poblacion";
 import type { ContextoAgente } from "@/lib/motor/contratos";
 import { Estado } from "@/lib/motor/estado";
 import { incendio as fabricaIncendio, poblacion as fabricaPoblacion } from "./ayudas/dominio";
@@ -176,5 +176,37 @@ describe("agrupar no cambia el resultado", () => {
       evidencias: d.evidencias,
     });
     expect(comparable(uno)).toEqual(comparable(dos));
+  });
+
+  it("deduplica IDs, ignora inventados y deja trazadas las poblaciones omitidas", () => {
+    const otro = fabricaPoblacion("Villanueva", 6, 200, { id: "osm:node/Villanueva", habitantes: 300 });
+    const registros: { mensaje: string; motivo?: unknown; poblacionId?: unknown }[] = [];
+    const ctx = contexto();
+    ctx.registrar = (_tipo, mensaje, detalle) => {
+      registros.push({ mensaje, motivo: detalle?.datos?.motivo, poblacionId: detalle?.datos?.poblacionId });
+    };
+
+    const resultado = decisionesDeMedidas(
+      [
+        medida({ medida: "avisar", riesgo: 10 }),
+        medida({ medida: "evacuar", riesgo: 100 }),
+        medida({ poblacionId: "osm:node/Inventado" }),
+      ],
+      [PUEBLO, otro],
+      FOCO,
+      ctx,
+      [],
+    );
+
+    expect(resultado).toHaveLength(1);
+    expect(resultado[0].decision.acciones[0].objetivo?.poblacionId).toBe(PUEBLO.id);
+    expect(resultado[0].decision.competencia).toBe("autonoma");
+    expect(registros).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ motivo: "id_duplicado", poblacionId: PUEBLO.id }),
+        expect.objectContaining({ motivo: "id_desconocido", poblacionId: "osm:node/Inventado" }),
+        expect.objectContaining({ motivo: "sin_respuesta", poblacionId: otro.id }),
+      ]),
+    );
   });
 });

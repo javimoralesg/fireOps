@@ -23,7 +23,7 @@ import {
 import type { EstadoAccion, TipoAccion } from "@/lib/dominio/tipos";
 
 export const TEXTO_ACCION: Record<TipoAccion, string> = {
-  llamar: "Llamada",
+  llamar: "Llamada (sale por SMS)",
   enviar_sms: "SMS",
   enviar_email: "Correo",
   enviar_telegram: "Telegram",

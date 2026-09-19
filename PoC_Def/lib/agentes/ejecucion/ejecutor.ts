@@ -2,7 +2,8 @@
 // ATALAYA INCENDIOS · Ejecutor de acciones reales
 // ---------------------------------------------------------------------
 // Propósito: convertir cada Accion aprobada en un efecto REAL fuera del
-// sistema: una llamada de voz y un SMS por HappyRobot, un mensaje de
+// sistema: un SMS por HappyRobot (la VOZ SALIENTE está DESACTIVADA desde el
+// 19-09-2026, ver VOZ_DESACTIVADA: toda «llamada» sale como SMS), un mensaje de
 // Telegram, un correo, una unidad que sale por carretera con OSRM, una
 // cámara puesta en vigilancia, un comunicado publicado en el portal.
 // DUEÑO: constructor D.
@@ -24,13 +25,16 @@
 // =====================================================================
 import type { Accion, Comunicado, Decision, Punto, Ticket } from "../../dominio/tipos";
 import type { ContextoAgente, EjecutorAcciones } from "../../motor/contratos";
+import { duracionLegible, horaLegible, kmLegible } from "../../dominio/tiempo-legible";
 import { nuevoId } from "../../motor/ids";
-import { enviarEmail, enviarSms, llamar, type ResultadoEnvio } from "../../happyrobot/cliente";
+import { enviarEmail, enviarSms, type ResultadoEnvio } from "../../happyrobot/cliente";
 import { chatDemo, enviarMensaje as enviarTelegram, enviarMensajeTrazado } from "../../telegram/cliente";
 import { asignar, retirar } from "./despachador";
 
 const variable = (clave: string): string | undefined => process.env[clave]?.trim() || undefined;
-const destinoDemo = () => variable("DESTINO_DEMO");
+// Teléfono de la demo: DESTINO_DEMO y, si está vacío, el de los SMS del 112 (TELEFONO_AVISOS_SMS):
+// un solo número en .env.local recibe llamadas y SMS (petición de Javi, 19-09; sesión fireops-00).
+const destinoDemo = () => variable("DESTINO_DEMO") ?? variable("TELEFONO_AVISOS_SMS");
 const emailDemo = () => variable("EMAIL_DEMO");
 const organismo = () => variable("ORGANISMO_NOMBRE") || "Centro de Coordinación de Incendios Forestales";
 
@@ -117,26 +121,32 @@ function contextoComun(decision: Decision, accion: Accion, ctx: ContextoAgente):
 // Acciones elementales (las reutilizan las compuestas)
 // ---------------------------------------------------------------------
 
-async function hacerLlamada(accion: Accion, decision: Decision, ctx: ContextoAgente, telefono: string | undefined, guion: string): Promise<{ envio: ResultadoEnvio; destino: string }> {
-  const destino = telefono || destinoDemo();
-  if (!destino) throw new Error("Falta DESTINO_DEMO (ningún teléfono al que llamar)");
-  const r = await llamar({
-    telefono: destino,
-    guion,
-    contexto: contextoComun(decision, accion, ctx),
-    decisionId: decision.id,
-    accionId: accion.id,
-    incendioId: decision.incendioId,
-  });
-  // El orquestador ya suma `llamadasRealizadas` para las acciones de tipo "llamar";
-  // aquí solo se cuentan las llamadas que van dentro de una acción compuesta.
-  if (accion.tipo !== "llamar") ctx.estado.ejecucion.metricas.llamadasRealizadas += 1;
-  return { envio: r, destino };
+/**
+ * CANAL DE VOZ SALIENTE DESACTIVADO (Javi, 19-09-2026: «que sea solo SMS»). Medido ese día: una
+ * llamada real a un móvil +34 termina en `sip_code 403 Forbidden` / `sip_call_never_connected`
+ * (el troncal del número americano no llama a España). Todo lo que antes era una llamada sale
+ * por SMS al mismo destino, con el guion recortado a 300 caracteres, y el acta lo dice.
+ */
+export const VOZ_DESACTIVADA = "Voz saliente desactivada (solo SMS)";
+
+/** Etiqueta al principio de cada SMS para que quien lo recibe sepa de qué va (Javi, 19-09). */
+export const ETIQUETA_SMS = { poblacion: "(Aviso a población)", unidad: "(Orden a una unidad)" } as const;
+
+/** Antepone la etiqueta si el texto no la lleva ya. */
+function etiquetar(etiqueta: string, cuerpo: string): string {
+  const t = cuerpo.trim();
+  return t.startsWith(etiqueta) ? t : `${etiqueta} ${t}`;
+}
+
+async function hacerSmsEnVezDeLlamar(accion: Accion, decision: Decision, ctx: ContextoAgente, telefono: string | undefined, guion: string): Promise<{ envio: ResultadoEnvio; destino: string; texto: string }> {
+  const cuerpo = guion.trim().slice(0, 300);
+  const { envio, destino } = await hacerSms(accion, decision, ctx, telefono, cuerpo);
+  return { envio, destino, texto: cuerpo };
 }
 
 async function hacerSms(accion: Accion, decision: Decision, ctx: ContextoAgente, telefono: string | undefined, cuerpo: string): Promise<{ envio: ResultadoEnvio; destino: string }> {
   const destino = telefono || destinoDemo();
-  if (!destino) throw new Error("Falta DESTINO_DEMO (ningún número al que enviar el SMS)");
+  if (!destino) throw new Error("Falta DESTINO_DEMO o TELEFONO_AVISOS_SMS (ningún número al que enviar el SMS)");
   const envio = await enviarSms({
     destino,
     texto: cuerpo,
@@ -179,12 +189,16 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
       switch (accion.tipo) {
         // ---------------- comunicaciones sueltas ----------------
         case "llamar": {
-          const { envio, destino } = await hacerLlamada(accion, decision, ctx, accion.objetivo?.telefono, texto(p.guion, accion.descripcion));
-          return exito(accion, "HappyRobot", `Llamada lanzada a ${enmascarar(destino)} (run ${envio.referencia}).`, envio.referencia, { ...trazaEnvio(envio, destino), guion: texto(p.guion, accion.descripcion) });
+          // Voz saliente desactivada: el guion sale por SMS al mismo destino (VOZ_DESACTIVADA).
+          const guion = texto(p.guion, accion.descripcion);
+          const { envio, destino, texto: cuerpo } = await hacerSmsEnVezDeLlamar(accion, decision, ctx, accion.objetivo?.telefono, accion.objetivo?.poblacionId ? etiquetar(ETIQUETA_SMS.poblacion, guion) : guion);
+          return exito(accion, "HappyRobot", `${VOZ_DESACTIVADA}: SMS enviado a ${enmascarar(destino)} (run ${envio.referencia}).`, envio.referencia, { ...trazaEnvio(envio, destino), texto: cuerpo, canal: "sms", vozDesactivada: true });
         }
 
         case "enviar_sms": {
-          const cuerpo = texto(p.sms, texto(p.texto, accion.descripcion)).slice(0, 300);
+          const base = texto(p.sms, texto(p.texto, accion.descripcion));
+          // Si el SMS va a una población (aviso manual con canal «sms»), lleva su etiqueta.
+          const cuerpo = (accion.objetivo?.poblacionId ? etiquetar(ETIQUETA_SMS.poblacion, base) : base).slice(0, 300);
           const { envio, destino } = await hacerSms(accion, decision, ctx, accion.objetivo?.telefono, cuerpo);
           return exito(accion, "HappyRobot", `SMS enviado a ${enmascarar(destino)} (run ${envio.referencia}).`, envio.referencia, { ...trazaEnvio(envio, destino), texto: cuerpo });
         }
@@ -227,20 +241,15 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
           let algoFue = false;
           const errores: string[] = [];
 
+          // Voz saliente desactivada (VOZ_DESACTIVADA): el aviso al ayuntamiento va SOLO por SMS. Si el
+          // planificador escribió guion de llamada y no SMS, el guion recortado hace de SMS.
+          const cuerpoSms = etiquetar(ETIQUETA_SMS.poblacion, sms || guion).slice(0, 300);
           try {
-            const { envio, destino } = await hacerLlamada(accion, decision, ctx, telefono, guion);
+            const { envio, destino } = await hacerSms(accion, decision, ctx, telefono, cuerpoSms);
             referencia = envio.referencia;
-            datos.llamada = { ...trazaEnvio(envio, destino), guion };
-            partes.push(`llamada lanzada al ${enmascarar(destino)} (run ${envio.referencia})`);
-            algoFue = true;
-          } catch (e) {
-            errores.push(`llamada: ${mensajeDe(e)}`);
-          }
-
-          try {
-            const { envio, destino } = await hacerSms(accion, decision, ctx, telefono, sms);
-            datos.sms = { ...trazaEnvio(envio, destino), texto: sms };
-            partes.push(`SMS enviado (run ${envio.referencia})`);
+            datos.sms = { ...trazaEnvio(envio, destino), texto: cuerpoSms };
+            datos.vozDesactivada = true;
+            partes.push(`SMS enviado al ${enmascarar(destino)} (run ${envio.referencia})`);
             algoFue = true;
           } catch (e) {
             errores.push(`SMS: ${mensajeDe(e)}`);
@@ -251,7 +260,7 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
             // Si fallan TODOS los canales queda "sin_respuesta": visible en la sala y sin reintentos en bucle
             // (el mando puede pulsar "Avisar ahora" cuando haya un canal configurado).
             estadoAviso: algoFue ? nuevoEstadoAviso : accion.tipo === "avisar_poblacion" ? "sin_respuesta" : poblacion.estadoAviso,
-            ultimoContacto: { en: ctx.ahoraMundo, canal: "llamada", resultado: algoFue ? partes.join("; ") : errores.join("; ") },
+            ultimoContacto: { en: ctx.ahoraMundo, canal: "sms", resultado: algoFue ? partes.join("; ") : errores.join("; ") },
           });
 
           // Confinar y evacuar exigen comunicado oficial: se deja el borrador al portavoz.
@@ -308,20 +317,30 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
           };
           let extra = "";
 
-          if (unidad.telefono) {
-            const orden = `${organismo()}: ${accion.descripcion}. Llegada prevista ${r.ruta.llegadaPrevista.slice(11, 16)}. Sector ${sector}.`;
+          // Las órdenes a unidades solo van por SMS a un teléfono REAL de la unidad (el de OSM). Al móvil de
+          // la demo no: llegaría un SMS por cada movimiento de cada unidad (Javi, 19-09). La orden queda igual
+          // registrada en el sistema y en la ficha de la unidad.
+          const telefonoReal = unidad.telefono && unidad.telefono !== destinoDemo() ? unidad.telefono : undefined;
+          if (telefonoReal) {
+            // Orden redactada para quien la lee en el móvil (no la descripción interna de la acción):
+            // adónde, qué sector, cuánto trayecto y a qué hora llega, en hora local de España.
+            const incendio = estado.incendios.get(incendioId);
+            const orden = etiquetar(ETIQUETA_SMS.unidad, `${organismo()}: ${unidad.nombre}, salga hacia ${incendio?.nombre ?? "el incendio"}${incendio?.municipio ? ` (${incendio.municipio})` : ""}, sector ${sector}. Trayecto: ${duracionLegible(r.minutosViaje)} por carretera. Llegada prevista: ${horaLegible(r.ruta.llegadaPrevista)}.`);
             try {
-              const { envio, destino } = await hacerSms(accion, decision, ctx, unidad.telefono, orden.slice(0, 300));
+              const { envio, destino } = await hacerSms(accion, decision, ctx, telefonoReal, orden.slice(0, 300));
               datos.sms = { ...trazaEnvio(envio, destino), texto: orden.slice(0, 300) };
               extra = ` Orden enviada por SMS a la unidad (run ${envio.referencia}).`;
             } catch (e) {
               extra = ` La orden queda registrada, pero el SMS a la unidad falló: ${mensajeDe(e)}.`;
             }
+          } else if (unidad.telefono) {
+            datos.smsOmitido = "teléfono de la demo: las órdenes a unidades no se mandan al móvil de demo";
+            extra = " La unidad no tiene teléfono propio (solo el de la demo): la orden queda registrada en el sistema, sin SMS.";
           } else {
             extra = " La unidad no tiene teléfono en OSM: la orden queda registrada en el sistema.";
           }
 
-          return exito(accion, "OSRM + HappyRobot", `${unidad.nombre} en ruta al sector ${sector}: ${(r.ruta.distanciaM / 1000).toFixed(1)} km, ${r.minutosViaje} min por carretera.${extra}`, "osrm", datos);
+          return exito(accion, "OSRM + HappyRobot", `${unidad.nombre} en ruta al sector ${sector}: ${kmLegible(r.ruta.distanciaM / 1000)}, ${duracionLegible(r.minutosViaje)} por carretera.${extra}`, "osrm", datos);
         }
 
         case "retirar_unidad": {
@@ -364,12 +383,13 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
             errores.push(`correo: ${mensajeDe(e)}`);
           }
           try {
-            const guion = `${organismo()}. Solicitamos ${tipoMedio} para el ${incendio?.nombre ?? "incendio forestal"} en ${incendio?.municipio ?? "la zona"}. ${texto(p.motivo, decision.resumen)} Le he enviado el parte formal por correo. ¿Me confirma la asignación de medios?`;
-            const { envio, destino } = await hacerLlamada(accion, decision, ctx, accion.objetivo?.telefono, guion);
-            datos.llamada = { ...trazaEnvio(envio, destino), guion };
-            partes.push(`llamada al organismo (run ${envio.referencia})`);
+            // Voz saliente desactivada: el aviso al organismo va por SMS (el parte formal, por correo).
+            const aviso = `${organismo()}: solicitamos ${tipoMedio} para el ${incendio?.nombre ?? "incendio forestal"} en ${incendio?.municipio ?? "la zona"}. ${texto(p.motivo, decision.resumen)} Parte formal enviado por correo.`;
+            const { envio, destino, texto: cuerpo } = await hacerSmsEnVezDeLlamar(accion, decision, ctx, accion.objetivo?.telefono, aviso);
+            datos.sms = { ...trazaEnvio(envio, destino), texto: cuerpo };
+            partes.push(`SMS al organismo (run ${envio.referencia})`);
           } catch (e) {
-            errores.push(`llamada: ${mensajeDe(e)}`);
+            errores.push(`SMS: ${mensajeDe(e)}`);
           }
 
           if (partes.length) return exito(accion, "HappyRobot", `Medios aéreos solicitados a ${destinatario}: ${partes.join("; ")}.${errores.length ? ` Pendiente: ${errores.join("; ")}.` : ""}`, undefined, datos);
@@ -465,12 +485,9 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
           const pregunta = texto(p.texto, texto(p.guion, `${organismo()}: nos ha llegado su aviso. ¿Puede confirmarnos el lugar exacto y si ve llamas o solo humo?`));
           if (!remitente) return fallo(accion, "Atalaya", "No hay remitente al que pedir confirmación (la observación no trae teléfono).");
 
-          // Por SMS si parece un teléfono; si el canal era una llamada, se devuelve la llamada.
-          const porLlamada = observacion?.canal === "llamada" || p.canal === "llamada";
-          const { envio, destino } = porLlamada
-            ? await hacerLlamada(accion, decision, ctx, remitente, pregunta)
-            : await hacerSms(accion, decision, ctx, remitente, pregunta.slice(0, 300));
-          return exito(accion, "HappyRobot", `Confirmación solicitada a ${enmascarar(destino)} por ${porLlamada ? "llamada" : "SMS"} (run ${envio.referencia}).`, envio.referencia, {
+          // Siempre por SMS, aunque el aviso llegara por llamada: la voz saliente está desactivada (VOZ_DESACTIVADA).
+          const { envio, destino } = await hacerSms(accion, decision, ctx, remitente, pregunta.slice(0, 300));
+          return exito(accion, "HappyRobot", `Confirmación solicitada a ${enmascarar(destino)} por SMS (run ${envio.referencia}).`, envio.referencia, {
             ...trazaEnvio(envio, destino),
             observacionId,
             pregunta,

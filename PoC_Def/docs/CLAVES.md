@@ -154,6 +154,18 @@ SUPABASE_URL=https://zpbhjyfidueckuegtpia.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...            # o sb_secret_...
 NEXT_PUBLIC_SUPABASE_URL=https://zpbhjyfidueckuegtpia.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...        # o sb_publishable_...
+# Opcional: milisegundos antes de cortar una petición a Supabase (15000 por defecto).
+# Con la base lenta o caída ninguna ruta espera más que esto; la persistencia reintenta sola.
+SUPABASE_TIMEOUT_MS=15000
+# Opcional: nombre de esta instancia en la base compartida (por defecto, el nombre del
+# equipo; en Railway, el id del servicio). Cada instancia solo recupera y lista SUS
+# ejecuciones, guarda su propia política y sus filas llevan este nombre delante del id.
+ATALAYA_INSTANCIA=javi
+# Quién guarda la ejecución en Supabase: 1 = esta instancia, 0 = nadie. Sin la variable,
+# solo Railway. Los `next dev` sin ella viven en memoria y no cargan la base compartida
+# (que se colapsó el 19-09 con cuatro servidores volcando a la vez); lecciones y
+# conocimiento se siguen leyendo igual.
+SUPABASE_PERSISTIR=1
 ```
 
 ```bash
@@ -306,12 +318,13 @@ openssl rand -hex 24        # p. ej. 9f2c...
   cabecera. **Sin secreto configurado, todos los webhooks se rechazan**: no hay modo abierto.
 
 ```bash
-HAPPYROBOT_WORKFLOW_SLUG_VOZ=
+HAPPYROBOT_WORKFLOW_SLUG_VOZ=   # voz saliente DESACTIVADA (solo SMS, 19-09): opcional
 HAPPYROBOT_WORKFLOW_SLUG_SMS=
 HAPPYROBOT_WORKFLOW_SLUG_EMAIL=
 HAPPYROBOT_WEB_CALL_URL=
 HAPPYROBOT_WEBHOOK_SECRET=
-DESTINO_DEMO=+34...
+DESTINO_DEMO=+34...          # llamadas y SMS de las acciones (avisos a población…); vacío → TELEFONO_AVISOS_SMS
+TELEFONO_AVISOS_SMS=+34...   # SMS del agente del 112 (aviso registrado + herramienta enviar_sms); vacío → DESTINO_DEMO. Basta con rellenar uno de los dos
 EMAIL_DEMO=...
 ```
 

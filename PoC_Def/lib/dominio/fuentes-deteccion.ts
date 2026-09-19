@@ -6,8 +6,11 @@
 // avisos ciudadanos). Una fuente apagada deja de recogerse, sus avisos ya no
 // crean ni confirman focos y los focos sin confirmar que SOLO sostenía esa
 // fuente se descartan (lib/motor/escenario.ts), para que el escenario quede
-// limpio. La declaración a mano y las cámaras de móvil (`movil:<id>`) no se
-// apagan nunca: son el suelo del "simulacro" (solo focos a mano y de móvil).
+// limpio. La declaración a mano, las cámaras de móvil (`movil:<id>`) y las
+// llamadas por teléfono al 112 virtual de HappyRobot (canal "llamada") no se
+// apagan nunca: son el suelo del "simulacro" (focos a mano, de móvil y del 112).
+// Las llamadas se añadieron al suelo el 19-09-2026 (sesión fireops-82): en un
+// simulacro alguien llama de verdad al número y el foco tiene que aparecer.
 // DUEÑO: sesión actual (2026-09-19). Módulo ISOMORFO: lo usan el servidor
 // (orquestador, verificador, vigía, enriquecimiento) y el navegador (barra
 // superior), así que no importa nada con efectos ni dependencias de Node.
@@ -36,7 +39,10 @@ export const PREFIJO_CAMARA_MOVIL = "movil:";
 export const RADIO_CAMARAS_FIJAS_KM = 25;
 
 /** Texto de la insignia cuando están apagadas las cuatro fuentes. */
-export const TEXTO_SIMULACRO = "SIMULACRO · solo focos a mano y móvil";
+export const TEXTO_SIMULACRO = "SIMULACRO · solo focos a mano, móvil y llamadas al 112";
+
+/** Qué crea focos en simulacro, en una frase (insignia, botón y registro de eventos). */
+export const SUELO_SIMULACRO = "la declaración a mano, las cámaras de móvil y las llamadas por teléfono al 112 virtual";
 
 export const CATALOGO_FUENTES: readonly FichaFuenteDeteccion[] = [
   {
@@ -67,7 +73,7 @@ export const CATALOGO_FUENTES: readonly FichaFuenteDeteccion[] = [
     id: "avisos_ciudadanos",
     nombre: "Avisos ciudadanos",
     nombreCorto: "avisos ciudadanos",
-    descripcion: "Llamadas, SMS, email, Telegram y formulario web: se registran pero no crean focos.",
+    descripcion: "SMS, email, Telegram y formulario web: se registran pero no crean focos. Las llamadas por teléfono al 112 virtual siguen creándolos.",
     agentes: [],
     canales: ["llamada", "sms", "email", "telegram", "web"],
   },
@@ -94,7 +100,7 @@ export function fuenteActiva(e: ConFuentes, fuente: FuenteDeteccion): boolean {
   return !fuentesDesactivadas(e).includes(fuente);
 }
 
-/** Simulacro = las cuatro fuentes apagadas: solo la mano y el móvil crean focos. */
+/** Simulacro = las cuatro fuentes apagadas: solo la mano, el móvil y las llamadas al 112 crean focos. */
 export function esSimulacro(e: ConFuentes): boolean {
   return fuentesDesactivadas(e).length === IDS_FUENTES.length;
 }
@@ -118,15 +124,24 @@ export const esCamaraMovil = (referenciaExterna: string | undefined): boolean =>
   Boolean(referenciaExterna?.startsWith(PREFIJO_CAMARA_MOVIL));
 
 /**
+ * Llamada por teléfono al 112 virtual (workflow «Atalaya · 112 entrante» de HappyRobot,
+ * lib/happyrobot/entrante.ts): la única vía por la que entra el canal "llamada". Es
+ * suelo del simulacro, como la cámara de móvil: la hace una persona de verdad.
+ */
+export const esLlamadaTelefono = (canal: CanalObservacion | string | undefined): boolean => canal === "llamada";
+
+/**
  * Ficha de la fuente apagada que bloquea esta observación (no crea ni confirma
  * focos), o undefined si puede seguir su camino. `manual` y `sensor` pasan siempre;
- * una cámara pasa si es de móvil aunque las fijas estén apagadas.
+ * una cámara pasa si es de móvil aunque las fijas estén apagadas, y una llamada por
+ * teléfono al 112 pasa aunque los avisos ciudadanos estén apagados.
  */
 export function fuenteQueBloquea(e: ConFuentes, obs: Pick<Observacion, "canal" | "referenciaExterna">): FichaFuenteDeteccion | undefined {
   for (const id of fuentesDesactivadas(e)) {
     const ficha = fichaFuente(id);
     if (!ficha.canales.includes(obs.canal)) continue;
     if (id === "camaras_fijas" && esCamaraMovil(obs.referenciaExterna)) continue;
+    if (id === "avisos_ciudadanos" && esLlamadaTelefono(obs.canal)) continue;
     return ficha;
   }
   return undefined;

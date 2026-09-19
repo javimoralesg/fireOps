@@ -278,6 +278,13 @@ export interface Poblacion {
   riesgo: RiesgoPoblacion;
   /** Minutos de mundo estimados hasta que el frente llegue (undefined = fuera de trayectoria). */
   etaFrenteMin?: number;
+  /**
+   * Por qué tiene ese riesgo, en una frase para la pantalla (sesión riesgo-fundado,
+   * 2026-09-19): el analista de propagación la reescribe en cada ciclo con el
+   * frente, el cono y la meteo; hasta entonces dice que es provisional por
+   * distancia. OPCIONAL: las filas antiguas no lo traen.
+   */
+  motivoRiesgo?: string;
   estadoAviso: EstadoAviso;
   /** Teléfono de contacto (ayuntamiento) si se conoce; en demo puede ser DESTINO_DEMO. */
   telefono?: string;
@@ -412,6 +419,14 @@ export interface FocoSatelite {
 export type CanalComunicacion = "llamada" | "sms" | "email" | "whatsapp" | "telegram" | "web" | "ticket" | "interno";
 
 export type CanalObservacion = "llamada" | "sms" | "email" | "telegram" | "web" | "rrss" | "prensa" | "satelite" | "camara" | "sensor" | "manual";
+
+/**
+ * Fuentes automáticas de detección que el mando puede apagar en una ejecución
+ * (escenario). La declaración a mano y las cámaras de móvil no se apagan nunca:
+ * son el suelo del "simulacro". Catálogo y reglas en `lib/dominio/fuentes-deteccion.ts`.
+ * CAMPO NUEVO Y ADITIVO (sesión actual, 2026-09-19).
+ */
+export type FuenteDeteccion = "satelite" | "prensa_redes" | "camaras_fijas" | "avisos_ciudadanos";
 
 export interface ExtraccionObservacion {
   esIncendio: boolean;
@@ -684,6 +699,12 @@ export interface Ejecucion {
   /** Comparación con la ejecución anterior (texto para el usuario). */
   comparativa?: string;
   postmortemInformeId?: string;
+  /**
+   * Fuentes de detección apagadas por el mando en esta ejecución (ausente o
+   * vacío = operación real, todas activas). Una fuente apagada no se recoge y
+   * sus avisos no crean ni confirman focos. CAMPO NUEVO Y OPCIONAL (sesión actual).
+   */
+  fuentesDesactivadas?: FuenteDeteccion[];
 }
 
 // ----------------------------------------------------------------------
@@ -761,6 +782,13 @@ export interface EstadoAgenteApp {
   tiempoMaximoSeg?: number;
   /** Últimos ciclos (≤ 20), para los visores de agentes. */
   trazas?: TrazaCiclo[];
+  /**
+   * Nombre legible de la fuente de detección apagada por el escenario que deja a
+   * este agente sin ciclos (p. ej. "Satélite (NASA FIRMS)"). Distinto de `pausado`:
+   * no lo ha parado un humano a él, sino que su fuente está apagada. CAMPO NUEVO Y
+   * OPCIONAL (sesión actual).
+   */
+  desactivadoPorEscenario?: string;
 }
 
 // ----------------------------------------------------------------------

@@ -81,7 +81,10 @@ interface Servidor {
   timeoutGeomMs: number;
 }
 const SERVIDORES: Servidor[] = [
-  { url: "https://maps.mail.ru/osm/tools/overpass/api/interpreter", host: "maps.mail.ru", timeoutMs: 26_000, timeoutGeomMs: 28_000 },
+  // 45 s y no 26 (2026-09-19, foco de Madrid): 30 km alrededor de una ciudad son
+  // miles de elementos y mail.ru pasó de 26 s → el foco se quedó 4,5 min sin
+  // pueblos ni unidades. Es el único vivo: mejor esperarle que perder la consulta.
+  { url: "https://maps.mail.ru/osm/tools/overpass/api/interpreter", host: "maps.mail.ru", timeoutMs: 45_000, timeoutGeomMs: 45_000 },
   { url: "https://overpass-api.de/api/interpreter", host: "overpass-api.de", timeoutMs: 5_000, timeoutGeomMs: 5_000 },
   { url: "https://overpass.private.coffee/api/interpreter", host: "overpass.private.coffee", timeoutMs: 5_000, timeoutGeomMs: 5_000 },
 ];
@@ -101,8 +104,10 @@ const TIMEOUT_PING_MS = 20_000;
  * 25 s ≈ 200 s por consulta, y cada foco hace tres. Son 34 s y no 25 porque el
  * único espejo vivo necesita hasta 23 s para contestar DE VERDAD: una consulta
  * de 25 s que siempre falla es peor que una de 30 s que trae las unidades.
+ * 55 s desde el 2026-09-19: los 45 s de mail.ru más el rechazo inmediato de
+ * overpass-api.de y un intento corto a private.coffee.
  */
-const PRESUPUESTO_MS = 34_000;
+const PRESUPUESTO_MS = 55_000;
 /**
  * Una sola vuelta a la lista: el cortacircuitos ya deja fuera al servidor que
  * acaba de fallar, así que una segunda vuelta solo repetiría los saltos.
@@ -262,6 +267,18 @@ interface Opciones {
   sinCola?: boolean;
   /** No mete al servidor en cortacircuitos si falla (ídem: el ping no juzga). */
   sinCastigo?: boolean;
+  /**
+   * Reintento del entorno de un foco: ignora el fallo recordado en caché y, si
+   * todos los espejos están en cortacircuitos, pregunta igualmente al que antes
+   * vuelve. Sin esto el primer reintento (a los 60 s) chocaba con el fallo
+   * cacheado 2 min y fallaba en 0 ms sin preguntar a nadie.
+   */
+  forzar?: boolean;
+}
+
+/** Opciones que aceptan las consultas públicas (pueblos, medios, combustible). */
+export interface OpcionesConsulta {
+  forzar?: boolean;
 }
 
 /** Tope por intento según el modo, leyendo el que tenga configurado cada servidor. */
@@ -287,7 +304,7 @@ async function elementosDe(
   const ttl = opciones.ttl ?? CACHE_MS;
   const c = buscarCelda(tipo, centro, radioKm);
   if (c?.ok && c.datos) return c.datos;
-  if (c && !c.ok) throw new Error(c.error ?? `Overpass no disponible (${etiqueta})`);
+  if (c && !c.ok && !opciones.forzar) throw new Error(c.error ?? `Overpass no disponible (${etiqueta})`);
 
   const yaEnVuelo = buscarVuelo(tipo, centro, radioKm);
   if (yaEnVuelo) return yaEnVuelo;
@@ -295,7 +312,7 @@ async function elementosDe(
   const clave = claveDe(tipo, centro, radioKm);
   const promesa = (async () => {
     try {
-      const lanzar = () => consultar(query, etiqueta, topeSegunModo(opciones.modo), opciones.sinCastigo === true);
+      const lanzar = () => consultar(query, etiqueta, topeSegunModo(opciones.modo), opciones.sinCastigo === true, opciones.forzar === true);
       const datos = opciones.sinCola ? await lanzar() : await conRanura(lanzar);
       celdas().set(clave, { en: Date.now(), ttl, centro, ok: true, datos });
       return datos;
@@ -318,7 +335,11 @@ async function elementosDe(
  * y cero elementos). Una respuesta así es PEOR que un error: se tomaría por
  * buena y el foco se quedaría sin pueblos ni parques sin que nadie lo note.
  */
-function validar(j: { elements?: ElementoOsm[]; osm3s?: { timestamp_osm_base?: string } }): ElementoOsm[] {
+function validar(j: { elements?: ElementoOsm[]; osm3s?: { timestamp_osm_base?: string }; remark?: string }): ElementoOsm[] {
+  // Si el servidor corta la consulta por SU tope responde 200 con un `remark`
+  // ("runtime error: Query timed out…") y los elementos a medias o ninguno. Darlo
+  // por bueno dejaba el foco con 0 pueblos en caché 6 h y sin reintento.
+  if (j.remark && /error|timed out|out of memory/i.test(j.remark)) throw new Error(`consulta cortada por el servidor: ${j.remark.slice(0, 160)}`);
   const sello = j.osm3s?.timestamp_osm_base;
   const t = sello ? Date.parse(sello) : NaN;
   if (!Number.isFinite(t)) throw new Error(`respuesta sin sello de base válido (timestamp_osm_base="${sello ?? "—"}"): espejo no fiable`);
@@ -344,6 +365,24 @@ function castigoPara(motivo: string): number {
 }
 
 /**
+ * Con `forzar`, el espejo al que se pregunta aunque tenga el cortacircuitos
+ * abierto: el que antes vuelve, y solo cuando TODOS están abiertos (si queda uno
+ * cerrado se le pregunta a ese, como siempre). Así un reintento nunca se gasta
+ * sin llegar a preguntar a nadie.
+ */
+function primeroEnVolver(): Servidor | undefined {
+  const ahora = Date.now();
+  let mejor: { s: Servidor; hasta: number } | undefined;
+  for (const s of SERVIDORES) {
+    const m = muertos().get(s.host);
+    const hasta = m && ahora < m.hasta ? m.hasta : 0;
+    if (hasta === 0) return undefined; // hay uno disponible: no hace falta saltarse nada
+    if (!mejor || hasta < mejor.hasta) mejor = { s, hasta };
+  }
+  return mejor?.s;
+}
+
+/**
  * Lanza la consulta contra los servidores por orden hasta que uno responda.
  * Reglas de rendimiento (constructor T):
  *   · El orden de SERVIDORES es por salud medida: el espejo que funciona va
@@ -364,6 +403,7 @@ async function consultar(
   etiqueta: string,
   topeDe: (s: Servidor) => number,
   sinCastigo = false,
+  forzar = false,
 ): Promise<Respuesta> {
   const limite = Date.now() + PRESUPUESTO_MS;
   let ultimo: string | undefined;
@@ -372,7 +412,7 @@ async function consultar(
     for (const servidor of SERVIDORES) {
       const { url, host } = servidor;
       const salud = muertos().get(host);
-      if (salud && Date.now() < salud.hasta) {
+      if (salud && Date.now() < salud.hasta && !(forzar && servidor === primeroEnVolver())) {
         saltados.push(`${host} (cortacircuitos ${Math.round((salud.hasta - Date.now()) / 1000)} s: ${salud.motivo})`);
         continue;
       }
@@ -391,7 +431,7 @@ async function consultar(
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        const elementos = validar((await res.json()) as { elements?: ElementoOsm[]; osm3s?: { timestamp_osm_base?: string } });
+        const elementos = validar((await res.json()) as { elements?: ElementoOsm[]; osm3s?: { timestamp_osm_base?: string }; remark?: string });
         muertos().delete(host); // responde: se le borra el historial de fallos
         console.log(`[overpass] ${etiqueta} · ${host} · ${Date.now() - t0} ms · ${elementos.length} elementos`);
         return { elementos, url };
@@ -474,7 +514,7 @@ const alrededor = (c: Punto, radioM: number) => `(around:${radioM},${c.lat.toFix
 /** (1) Pueblos + ayuntamientos: de aquí salen las POBLACIONES y sus teléfonos. */
 function consultaPueblos(c: Punto, radioM: number): string {
   const a = alrededor(c, radioM);
-  return `[out:json][timeout:25][maxsize:67108864];
+  return `[out:json][timeout:44][maxsize:67108864];
 (
   node["place"~"^(city|town|village|hamlet)$"]${a};
   nwr["amenity"="townhall"]${a};
@@ -487,7 +527,7 @@ function consultaMedios(c: Punto, radioM: number): string {
   const a = alrededor(c, radioM);
   // Un solo `nwr` con expresión regular para los amenity: agrupar baja el
   // tiempo de 14 s a 4-7 s frente a una línea por etiqueta (medido).
-  return `[out:json][timeout:25][maxsize:67108864];
+  return `[out:json][timeout:44][maxsize:67108864];
 (
   nwr["amenity"~"^(fire_station|police|hospital|clinic|doctors|school|kindergarten)$"]${a};
   nwr["social_facility"]${a};
@@ -501,7 +541,7 @@ out center tags;`;
 /** (3) Superficies de combustible en 5 km. */
 function consultaSuperficies(c: Punto, radioM: number): string {
   const a = alrededor(c, radioM);
-  return `[out:json][timeout:27][maxsize:67108864];
+  return `[out:json][timeout:44][maxsize:67108864];
 (
   way["landuse"~"^(forest|farmland|orchard|vineyard|meadow|residential)$"]${a};
   way["natural"~"^(wood|scrub|heath|grassland)$"]${a};
@@ -564,10 +604,10 @@ export interface MediosCercanos {
  * (1) Poblaciones del radio, ya ordenadas por distancia y con el teléfono del
  * ayuntamiento más cercano (≤ 3 km) cuando OSM lo tiene.
  */
-export async function poblacionesCercanas(centro: Punto, radioKm: number): Promise<PueblosCercanos> {
+export async function poblacionesCercanas(centro: Punto, radioKm: number, opciones: OpcionesConsulta = {}): Promise<PueblosCercanos> {
   {
     const radioM = Math.round(Math.max(1, Math.min(60, radioKm)) * 1000);
-    const { elementos, url } = await elementosDe("pueblos", centro, radioKm, consultaPueblos(centro, radioM), `pueblos ${radioKm} km`);
+    const { elementos, url } = await elementosDe("pueblos", centro, radioKm, consultaPueblos(centro, radioM), `pueblos ${radioKm} km`, { forzar: opciones.forzar });
 
     const ayuntamientos: { punto: Punto; nombre: string; telefono?: string; email?: string }[] = [];
     const poblaciones: PoblacionBase[] = [];
@@ -611,10 +651,10 @@ export async function poblacionesCercanas(centro: Punto, radioKm: number): Promi
 }
 
 /** (2) Parques, policía, hospitales, puntos vulnerables y puntos de agua del radio. */
-export async function mediosCercanos(centro: Punto, radioKm: number): Promise<MediosCercanos> {
+export async function mediosCercanos(centro: Punto, radioKm: number, opciones: OpcionesConsulta = {}): Promise<MediosCercanos> {
   {
     const radioM = Math.round(Math.max(1, Math.min(60, radioKm)) * 1000);
-    const { elementos, url } = await elementosDe("medios", centro, radioKm, consultaMedios(centro, radioM), `medios ${radioKm} km`);
+    const { elementos, url } = await elementosDe("medios", centro, radioKm, consultaMedios(centro, radioM), `medios ${radioKm} km`, { forzar: opciones.forzar });
 
     const parquesBomberos: BaseMedios[] = [];
     const policia: BaseMedios[] = [];
@@ -682,14 +722,14 @@ export async function mediosCercanos(centro: Punto, radioKm: number): Promise<Me
 }
 
 /** (3) Combustible dominante en 5 km a partir de los polígonos de uso del suelo. */
-export async function combustibleCercano(centro: Punto): Promise<Combustible> {
+export async function combustibleCercano(centro: Punto, opciones: OpcionesConsulta = {}): Promise<Combustible> {
   const { elementos } = await elementosDe(
     "combustible",
     centro,
     RADIO_COMBUSTIBLE_KM,
     consultaSuperficies(centro, RADIO_COMBUSTIBLE_KM * 1000),
     "superficies 5 km",
-    { modo: "geom" },
+    { modo: "geom", forzar: opciones.forzar },
   );
   return combustibleDe(elementos);
 }

@@ -7,6 +7,7 @@ import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Bot } from "lucide-react";
 import { useEstado } from "@/lib/cliente/useEstado";
+import { buscarAgenteCompatible, perteneceAlMismoAgente } from "@/lib/agentes/identidad";
 import { haceCuanto, hora, numero } from "@/lib/cliente/formato";
 import { Boton } from "@/components/ui/Boton";
 import { Insignia, TEXTO_ESTADO_DECISION, tonoEstadoDecision } from "@/components/ui/Insignia";
@@ -30,14 +31,25 @@ export default function DetalleAgente({ params }: { params: Promise<{ id: string
   const { ejecutar, ocupado } = useAccionesAgente(refrescar);
   const [decisionAbierta, setDecisionAbierta] = useState<string>();
 
-  const agente = snapshot?.agentes.find((a) => a.id === id);
+  const agente = buscarAgenteCompatible(snapshot?.agentes ?? [], id);
+  // Antes del corte, el id exacto conserva la vista actual. Después del corte,
+  // un enlace legacy muestra el agente canónico y recupera también su historia.
+  const incluirIdentidadCompleta = Boolean(agente && agente.id !== id);
   const eventos = useMemo(
-    () => (snapshot?.eventos ?? []).filter((e) => e.agenteId === id).sort((a, b) => b.en.localeCompare(a.en)).slice(0, 40),
-    [snapshot?.eventos, id],
+    () =>
+      (snapshot?.eventos ?? [])
+        .filter((e) => (incluirIdentidadCompleta ? perteneceAlMismoAgente(e.agenteId, id) : e.agenteId === id))
+        .sort((a, b) => b.en.localeCompare(a.en))
+        .slice(0, 40),
+    [snapshot?.eventos, id, incluirIdentidadCompleta],
   );
   const decisiones = useMemo(
-    () => (snapshot?.decisiones ?? []).filter((d) => d.agenteId === id).sort((a, b) => b.creadaEn.localeCompare(a.creadaEn)).slice(0, 20),
-    [snapshot?.decisiones, id],
+    () =>
+      (snapshot?.decisiones ?? [])
+        .filter((d) => (incluirIdentidadCompleta ? perteneceAlMismoAgente(d.agenteId, id) : d.agenteId === id))
+        .sort((a, b) => b.creadaEn.localeCompare(a.creadaEn))
+        .slice(0, 20),
+    [snapshot?.decisiones, id, incluirIdentidadCompleta],
   );
 
   return (

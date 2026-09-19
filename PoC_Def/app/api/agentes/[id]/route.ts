@@ -1,6 +1,7 @@
 // GET/POST /api/agentes/[id] · Control humano de un agente. DUEÑO: constructor A.
 // { accion: "pausar" | "reanudar" | "asumir" | "liberar" | "ciclo" }
 import { z } from "zod";
+import { agenteCanonicoDe } from "@/lib/agentes/identidad";
 import { obtenerEstado } from "@/lib/motor/estado";
 import { despertar } from "@/lib/motor/orquestador";
 import { cuerpoValidado, error, json } from "@/lib/motor/respuestas";
@@ -13,15 +14,24 @@ const Esquema = z.object({
   quien: z.string().trim().max(80).optional(),
 });
 
+function resolverIdOperativo(id: string): string {
+  const estado = obtenerEstado();
+  if (estado.agentes.has(id)) return id;
+  const canonico = agenteCanonicoDe(id);
+  return canonico && estado.agentes.has(canonico) ? canonico : id;
+}
+
 export async function GET(_peticion: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
-  const { id } = await ctx.params;
+  const { id: solicitadoId } = await ctx.params;
+  const id = resolverIdOperativo(solicitadoId);
   const ficha = obtenerEstado().agentes.get(id);
   if (!ficha) return error(`No hay ningún agente con id ${id}`, 404);
   return json({ agente: ficha });
 }
 
 export async function POST(peticion: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
-  const { id } = await ctx.params;
+  const { id: solicitadoId } = await ctx.params;
+  const id = resolverIdOperativo(solicitadoId);
   const { datos, respuesta } = await cuerpoValidado(peticion, Esquema);
   if (respuesta) return respuesta;
 

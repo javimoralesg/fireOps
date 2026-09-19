@@ -5,9 +5,8 @@
 // verifica en el acto y se devuelve al agente qué decir (`mensajeParaLocutor`).
 // DUEÑO: sesión fireops-82 (2026-09-19). Lógica en lib/happyrobot/entrante.ts.
 import { verificarWebhook } from "@/lib/happyrobot/cliente";
-import { avisoDesdeCuerpo, avisoSinDatos, observacionDeLlamada, registrarAvisoDeLlamada } from "@/lib/happyrobot/entrante";
+import { avisoDesdeCuerpo, avisoSinDatos, registrarAvisoDeLlamada } from "@/lib/happyrobot/entrante";
 import { enviarSmsAvisoRegistrado } from "@/lib/happyrobot/sms-avisos";
-import { obtenerEstado } from "@/lib/motor/estado";
 import { arrancarOrquestador } from "@/lib/motor/orquestador";
 import { error, json, mensajeDeError } from "@/lib/motor/respuestas";
 
@@ -36,13 +35,14 @@ export async function POST(peticion: Request): Promise<Response> {
 
   arrancarOrquestador();
   try {
-    // ¿Segunda llamada a la herramienta en la misma conversación? Amplía el aviso y el SMS lo dice.
-    const ampliacion = Boolean(leido.aviso.runId && observacionDeLlamada(obtenerEstado(), leido.aviso.runId));
     const resultado = await registrarAvisoDeLlamada(leido.aviso);
     // SMS del aviso al teléfono del .env (TELEFONO_AVISOS_SMS; lib/happyrobot/sms-avisos.ts, sesión
     // fireops-00): en segundo plano para no retrasar la respuesta al agente de voz. El envío o su
-    // fallo quedan como evento; la respuesta a la herramienta no cambia.
-    void enviarSmsAvisoRegistrado(leido.aviso, resultado, { ampliacion });
+    // fallo quedan como evento; la respuesta a la herramienta no cambia. Qué hizo el registro lo dice
+    // `resultado.registro` (decidido dentro de la cola por run, no antes: dos peticiones a la vez
+    // veían las dos "primera vez"): un reintento con los mismos datos no manda otro SMS; una
+    // ampliación real lo dice en el texto.
+    if (resultado.registro !== "repetido") void enviarSmsAvisoRegistrado(leido.aviso, resultado, { ampliacion: resultado.registro === "ampliacion" });
     return json(resultado);
   } catch (e) {
     return error(`No se pudo registrar el aviso de la llamada: ${mensajeDeError(e)}`, 500);

@@ -197,7 +197,7 @@ export const SALIDAS_MUESTRA = {
     interpretacion: "Avenida Complutense 30, Ciudad Universitaria, Madrid",
     correcciones: "Arabaca → Aravaca; treinta → 30",
     origen: "ia",
-    mensajeParaLocutor: "Lo tengo en Avenida Complutense 30, Madrid. ¿Es ahí?",
+    mensajeParaLocutor: "Localizado en Avenida Complutense 30, Madrid.",
   },
   consultar: {
     incendiosCercanos: [{ nombre: "Incendio de Navalacruz", distanciaKm: 3.2, estado: "activo", consejo: "Prepárese para salir y esté pendiente del teléfono." }],
@@ -206,6 +206,7 @@ export const SALIDAS_MUESTRA = {
   registrar: {
     registrado: true,
     observacionId: "obs-demo",
+    registro: "nuevo",
     impacto: "nuevo_foco",
     verificacion: "Foco nuevo declarado (Incendio de Navalacruz) por extracción fiable (0.70)",
     foco: { id: "inc-demo", nombre: "Incendio de Navalacruz", municipio: "Navalacruz", estado: "detectado", confianza: 0.7 },

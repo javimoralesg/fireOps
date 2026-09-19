@@ -353,7 +353,10 @@ observación (no crea otra). Agente: saludo ininterrumpible y reconocimiento con
 sale **automáticamente** por SMS desde `POST /api/happyrobot/aviso`, en segundo plano (no retrasa la
 respuesta al agente): «ATALAYA 112 17:42: Humo en N-403 km 62, Navalacruz. Viviendas cerca. Foco nuevo
 declarado: Incendio de Navalacruz (detectado, confianza 70%). Ref obs-…»; una segunda llamada a la
-herramienta en el mismo run va marcada «(ampliacion)». (2) La herramienta `enviar_sms` deja que el agente
+herramienta en el mismo run con datos nuevos va marcada «(ampliacion)»; un reintento de la plataforma con los
+MISMOS datos (`registro: "repetido"` en la respuesta de `registrar_aviso`) no cambia la observación ni manda
+otro SMS, y las peticiones del mismo run se atienden de una en una (dos a la vez creaban dos observaciones).
+(2) La herramienta `enviar_sms` deja que el agente
 mande un texto libre (personas atrapadas, cambio de situación, mensaje que pide la persona) con cabecera
 «ATALAYA 112 hh:mm (agente): …». **El SMS nunca lleva datos de quien llama** (RGPD, minimización; petición
 de Javi el 19-09): ni el número ni la cita literal de la persona; el contacto está en la ficha del aviso en

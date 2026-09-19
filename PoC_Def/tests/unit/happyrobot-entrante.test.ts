@@ -32,6 +32,7 @@ import {
   adjuntarTranscripcion,
   avisoDesdeCuerpo,
   esAfirmativo,
+  esRepeticion,
   estadoEntrante,
   extraccionDeterminista,
   formatearTelefono,
@@ -65,6 +66,7 @@ beforeEach(() => {
   dobles.iaDisponible = false;
   dobles.completarJson.mockReset();
   delete (globalThis as { __atalayaSituadoPorRun?: unknown }).__atalayaSituadoPorRun;
+  delete (globalThis as { __atalayaAvisoPorRun?: unknown }).__atalayaAvisoPorRun;
   dobles.extraccionIA = true;
   dobles.demoraMs = 0;
   dobles.contador = 0;
@@ -268,14 +270,47 @@ describe("registrarAvisoDeLlamada · la herramienta registrar_aviso", () => {
     expect(obs?.extraccion).toMatchObject({ gravedad: "grave", fiabilidad: 0.7 });
   });
 
-  it("misma llamada dos veces (mismo run): amplía la observación y no crea otra", async () => {
-    await registrarAvisoDeLlamada(AVISO, { esperaMs: 2000 });
+  it("misma llamada dos veces (mismo run) con datos nuevos: amplía la observación y no crea otra", async () => {
+    const r1 = await registrarAvisoDeLlamada(AVISO, { esperaMs: 2000 });
+    expect(r1.registro).toBe("nuevo");
     const r2 = await registrarAvisoDeLlamada({ ...AVISO, queVe: "Ahora también se ven llamas", tipo: "llamas" }, { esperaMs: 2000 });
     expect(dobles.procesarEntrada).toHaveBeenCalledTimes(1);
     expect([...estado().observaciones.values()].filter((o) => o.canal === "llamada")).toHaveLength(1);
     expect(r2.observacionId).toBe("obs-1");
     expect(r2.impacto).toBe("nuevo_foco");
+    expect(r2.registro).toBe("ampliacion");
     expect(observacionDeLlamada(estado(), "run-1")?.texto).toContain("Actualización durante la misma llamada:\nLlamada al 112 virtual");
+  });
+
+  it("un reintento con los MISMOS datos (la plataforma repite la herramienta si tardamos) no amplía nada: mismo resultado y sin texto añadido", async () => {
+    const r1 = await registrarAvisoDeLlamada(AVISO, { esperaMs: 2000 });
+    const r2 = await registrarAvisoDeLlamada({ ...AVISO }, { esperaMs: 2000 });
+    expect(r2.registro).toBe("repetido");
+    expect(r2.observacionId).toBe(r1.observacionId);
+    expect(r2.impacto).toBe("nuevo_foco");
+    expect(dobles.procesarEntrada).toHaveBeenCalledTimes(1);
+    const obs = observacionDeLlamada(estado(), "run-1");
+    expect(obs?.texto).not.toContain("Actualización durante la misma llamada");
+    expect(esRepeticion(obs!, AVISO)).toBe(true);
+    expect(esRepeticion(obs!, { ...AVISO, queVe: "Ahora también se ven llamas" })).toBe(false);
+  });
+
+  it("dos peticiones del mismo run A LA VEZ: una sola observación; la segunda entra cuando la primera ha terminado y la ve", async () => {
+    // Nominatim tarda: sin cola, las dos peticiones pasaban la comprobación de "sin observación previa" y creaban dos.
+    dobles.geocodificar.mockImplementation(() => new Promise((r) => setTimeout(() => r({ punto: NAVALACRUZ, nombre: "Navalacruz", url: "" }), 80)));
+    const [r1, r2, r3] = await Promise.all([
+      registrarAvisoDeLlamada(AVISO, { esperaMs: 2000 }),
+      registrarAvisoDeLlamada(AVISO, { esperaMs: 2000 }),
+      registrarAvisoDeLlamada({ ...AVISO, queVe: "Hay una persona atrapada", personasEnRiesgo: true }, { esperaMs: 2000 }),
+    ]);
+    expect(dobles.procesarEntrada).toHaveBeenCalledTimes(1);
+    expect([...estado().observaciones.values()].filter((o) => o.canal === "llamada")).toHaveLength(1);
+    expect([r1.registro, r2.registro, r3.registro]).toEqual(["nuevo", "repetido", "ampliacion"]);
+    expect(new Set([r1.observacionId, r2.observacionId, r3.observacionId]).size).toBe(1);
+    expect(observacionDeLlamada(estado(), "run-1")?.texto.split("Actualización durante la misma llamada")).toHaveLength(2);
+    // Dos llamadas DISTINTAS (runs distintos) siguen yendo en paralelo, cada una con su observación.
+    await Promise.all([registrarAvisoDeLlamada({ ...AVISO, runId: "run-A" }), registrarAvisoDeLlamada({ ...AVISO, runId: "run-B" })]);
+    expect(dobles.procesarEntrada).toHaveBeenCalledTimes(3);
   });
 
   it("no espera a la IA: contesta al momento con la extracción determinista y el foco declarado; el modelo refina después", async () => {

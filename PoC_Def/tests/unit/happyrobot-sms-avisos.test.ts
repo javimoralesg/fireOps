@@ -50,6 +50,7 @@ const AVISO: AvisoLlamada = {
 const RESULTADO: ResultadoAviso = {
   registrado: true,
   observacionId: "obs-1",
+  registro: "nuevo",
   impacto: "nuevo_foco",
   verificacion: "Foco nuevo declarado",
   foco: { id: "inc-1", nombre: "Incendio de Navalacruz", municipio: "Navalacruz", estado: "detectado", confianza: 0.7 },

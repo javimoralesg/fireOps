@@ -14,8 +14,11 @@
 //
 // Aquí vive la lógica; las rutas solo verifican el secreto, validan y llaman.
 // Flujo de `registrarAvisoDeLlamada`:
-//   1. idempotencia por `run_id` (una segunda llamada a la herramienta en la
-//      misma conversación AMPLÍA la observación, no crea otra);
+//   1. idempotencia por `run_id`: las peticiones del mismo run van EN SERIE (la
+//      plataforma reintenta la herramienta si tardamos, y dos a la vez creaban dos
+//      observaciones); un reintento con los mismos datos y sin punto nuevo no
+//      cambia nada (`registro: "repetido"`, sin segundo SMS) y una segunda llamada
+//      con datos nuevos AMPLÍA la observación, no crea otra (`registro: "ampliacion"`);
 //   2. sitúa el aviso con Nominatim a partir de municipio/lugar dictados;
 //   3. lo entrega a la centralita (`procesarEntrada`, canal "llamada"), que lo
 //      guarda al instante y lo extrae con el modelo rápido;
@@ -384,6 +387,12 @@ export function mensajeParaLocutor(v: VeredictoLocutor): string {
 export interface ResultadoAviso {
   registrado: true;
   observacionId: string;
+  /**
+   * Qué hizo este registro: "nuevo" (primera vez en la llamada), "ampliacion" (misma llamada
+   * con datos nuevos: se añaden a la observación) o "repetido" (reintento con los MISMOS
+   * datos: no cambia nada). POST /api/happyrobot/aviso decide el SMS con esto.
+   */
+  registro: "nuevo" | "ampliacion" | "repetido";
   impacto: Observacion["impacto"] | null;
   verificacion: string | null;
   foco: { id: string; nombre: string; municipio: string; estado: string; confianza: number } | null;
@@ -400,10 +409,11 @@ export interface ResultadoAviso {
  * `registrado: false`, para que la plataforma exponga todos los campos al agente y él
  * sepa qué pedir. No registra nada.
  */
-export function avisoSinDatos(motivo: string): Omit<ResultadoAviso, "registrado" | "observacionId" | "extraccion"> & { registrado: false; observacionId: null; extraccion: null; motivo: string } {
+export function avisoSinDatos(motivo: string): Omit<ResultadoAviso, "registrado" | "observacionId" | "extraccion" | "registro"> & { registrado: false; observacionId: null; extraccion: null; registro: null; motivo: string } {
   return {
     registrado: false,
     observacionId: null,
+    registro: null,
     impacto: null,
     verificacion: null,
     foco: null,
@@ -793,20 +803,55 @@ async function conTope<T>(p: Promise<T>, ms: number): Promise<{ listo: true; val
   }
 }
 
-function resultadoDe(estado: Estado, obs: Observacion, a: AvisoLlamada, enAnalisis: boolean): ResultadoAviso {
+function resultadoDe(estado: Estado, obs: Observacion, a: AvisoLlamada, enAnalisis: boolean, registro: ResultadoAviso["registro"]): ResultadoAviso {
   const foco = focoDe(estado, obs);
   const geolocalizada = Boolean(obs.punto);
   return {
     registrado: true,
     observacionId: obs.id,
+    registro,
     impacto: obs.impacto ?? null,
     verificacion: obs.verificacion ?? null,
     foco,
     geolocalizada,
     enAnalisis,
     extraccion: !obs.extraccion ? "pendiente" : obs.extraccion.resumen.includes(MARCA_DETERMINISTA) ? "determinista" : "ia",
-    mensajeParaLocutor: mensajeParaLocutor({ impacto: obs.impacto, foco, geolocalizada, enAnalisis, personasEnRiesgo: a.personasEnRiesgo, urbano: esAvisoUrbano(a) }),
+    // El foco recién declarado aún no tiene municipio (se enriquece en segundo plano): se nombra el que dijo la persona.
+    mensajeParaLocutor: mensajeParaLocutor({ impacto: obs.impacto, foco: foco ? { ...foco, municipio: foco.municipio || a.municipio || "" } : foco, geolocalizada, enAnalisis, personasEnRiesgo: a.personasEnRiesgo, urbano: esAvisoUrbano(a) }),
   };
+}
+
+// Una petición a la vez POR RUN (revisión del PR, 19-09): HappyRobot reintenta la herramienta si la
+// respuesta tarda, y dos peticiones del mismo run corriendo a la vez veían las dos "sin observación
+// previa", esperaban las dos a Nominatim y creaban dos observaciones. En cola, la segunda entra cuando
+// la primera ha terminado y ve su observación. Sobrevive a la recarga en caliente, como el Estado.
+type GlobalColaAviso = typeof globalThis & { __atalayaAvisoPorRun?: Map<string, Promise<unknown>> };
+const colaAvisoPorRun = () => ((globalThis as GlobalColaAviso).__atalayaAvisoPorRun ??= new Map());
+
+async function enSeriePorRun<T>(runId: string | undefined, tarea: () => Promise<T>): Promise<T> {
+  if (!runId) return tarea();
+  const colas = colaAvisoPorRun();
+  const anterior = colas.get(runId) ?? Promise.resolve();
+  // Pase lo que pase con la anterior (también si falló), la siguiente entra después.
+  const propia = anterior.then(tarea, tarea);
+  colas.set(runId, propia);
+  try {
+    return await propia;
+  } finally {
+    if (colas.get(runId) === propia) colas.delete(runId);
+  }
+}
+
+const compacto = (t: string): string => t.replace(/\s+/g, " ").trim();
+
+/**
+ * ¿Estos datos dictados ya están en la observación de la llamada? Entonces es un REINTENTO
+ * de la misma petición (la plataforma repite la herramienta si tardamos en contestar), no
+ * una ampliación: no se añade texto ni vuelve a salir el SMS. Se mira en el propio texto de
+ * la observación (`textoDeAviso` es determinista), así que vale también tras un reinicio.
+ */
+export function esRepeticion(previa: Pick<Observacion, "texto">, a: AvisoLlamada): boolean {
+  return compacto(previa.texto).includes(compacto(textoDeAviso(a)));
 }
 
 /**
@@ -814,8 +859,13 @@ function resultadoDe(estado: Estado, obs: Observacion, a: AvisoLlamada, enAnalis
  * decirle. Es la herramienta `registrar_aviso` del workflow entrante.
  * Contesta en dos o tres segundos: Nominatim con tope, extracción determinista
  * de lo dictado y verificación en el acto; la IA de la centralita refina después.
+ * Las peticiones del mismo run se atienden de una en una (`enSeriePorRun`).
  */
 export async function registrarAvisoDeLlamada(a: AvisoLlamada, opciones: { esperaMs?: number; esperaGeoMs?: number } = {}): Promise<ResultadoAviso> {
+  return enSeriePorRun(a.runId, () => registrarAvisoEnSerie(a, opciones));
+}
+
+async function registrarAvisoEnSerie(a: AvisoLlamada, opciones: { esperaMs?: number; esperaGeoMs?: number }): Promise<ResultadoAviso> {
   const estado = obtenerEstado();
   const esperaMs = opciones.esperaMs ?? Number(process.env.HAPPYROBOT_AVISO_ESPERA_MS ?? ESPERA_EXTRACCION_MS);
   const esperaGeoMs = opciones.esperaGeoMs ?? Number(process.env.HAPPYROBOT_AVISO_ESPERA_GEO_MS ?? ESPERA_GEOCODIFICACION_MS);
@@ -824,11 +874,18 @@ export async function registrarAvisoDeLlamada(a: AvisoLlamada, opciones: { esper
   if (confirmado) a = { ...a, punto: confirmado };
   const geo = (): Promise<Punto | undefined> => (a.punto && enEspana(a.punto) ? Promise.resolve(a.punto) : situarAviso(a));
 
-  // 1. Misma llamada, segunda vez: se amplía la observación existente.
+  // 1. Misma llamada, segunda vez. Un reintento con los MISMOS datos y sin punto nuevo no cambia nada
+  //    (la plataforma repite la herramienta si tardamos): se contesta lo que hay. Con datos nuevos se
+  //    amplía la observación existente; si solo llega el punto (situar_lugar acertó después), se aplica
+  //    sin repetir el texto. Nunca se crea otra observación.
   if (a.runId) {
     const previa = observacionDeLlamada(estado, a.runId);
     if (previa) {
-      const cambios: Partial<Observacion> = { texto: `${previa.texto}\n\nActualización durante la misma llamada:\n${textoDeAviso(a)}` };
+      const mismosDatos = esRepeticion(previa, a);
+      const puntoNuevo = Boolean(!previa.punto && a.punto && enEspana(a.punto));
+      if (mismosDatos && !puntoNuevo) return resultadoDe(estado, previa, a, false, "repetido");
+      const cambios: Partial<Observacion> = {};
+      if (!mismosDatos) cambios.texto = `${previa.texto}\n\nActualización durante la misma llamada:\n${textoDeAviso(a)}`;
       if (!previa.remitente && a.telefono) cambios.remitente = a.telefono;
       let punto = previa.punto;
       let situando: Promise<Punto | undefined> | undefined;
@@ -841,10 +898,10 @@ export async function registrarAvisoDeLlamada(a: AvisoLlamada, opciones: { esper
           if (punto) cambios.punto = punto;
         }
       }
-      estado.actualizar(estado.observaciones, previa.id, cambios);
+      if (Object.keys(cambios).length) estado.actualizar(estado.observaciones, previa.id, cambios);
       const obs = (await rematar(estado, previa.id, { ...a, punto })) ?? previa;
       if (situando) void situando.then((p) => rematar(estado, previa.id, { ...a, punto: p })).catch(() => undefined);
-      return resultadoDe(estado, obs, a, Boolean(situando));
+      return resultadoDe(estado, obs, a, Boolean(situando), "ampliacion");
     }
   }
 
@@ -877,7 +934,7 @@ export async function registrarAvisoDeLlamada(a: AvisoLlamada, opciones: { esper
   // …y en segundo plano: el punto que falte y la extracción de IA cuando termine.
   if (situando) void situando.then((p) => rematar(estado, guardada.id, { ...a, punto: p })).catch(() => undefined);
   if (!ia.listo) void enCurso.then(async (r) => { if (r.ok) await rematar(estado, r.obs.id, conPunto); });
-  return resultadoDe(estado, obs, a, Boolean(situando));
+  return resultadoDe(estado, obs, a, Boolean(situando), "nuevo");
 }
 
 /**

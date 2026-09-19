@@ -45,6 +45,11 @@ const FUERA: Record<string, [number, number]> = {
   Tánger: [35.7595, -5.834],
   "Nador (junto a Melilla)": [35.1681, -2.9335],
   "Mar de Alborán (alta mar)": [36.5, -3.0],
+  "Mar de Alborán alrededor de la isla": [35.9, -3.0],
+  "Canal entre Tenerife y La Gomera": [28.1, -17.15],
+  "Canal entre Fuerteventura y Lanzarote": [28.8, -13.75],
+  "Canal entre Mallorca y Menorca": [39.95, 3.75],
+  "Mar alrededor de las Columbretes": [39.85, 0.7],
   "Atlántico (entre Canarias y la península)": [32.0, -12.0],
   "Funchal (Madeira)": [32.6669, -16.9241],
 };

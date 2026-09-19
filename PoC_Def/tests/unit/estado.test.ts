@@ -227,4 +227,29 @@ describe("fusión en el cliente (conservación de identidad)", () => {
     const nuevo = fundirSnapshot(sin(), previo);
     expect(nuevo.incendios).toBe(previo.incendios);
   });
+
+  it("no reutiliza colecciones de una ejecución anterior aunque coincidan versión y sellos", () => {
+    const anterior = new Estado();
+    anterior.ejecucion = { ...anterior.ejecucion, id: "ejecucion-anterior", nombre: "Anterior" };
+    anterior.guardar(anterior.incendios, incendio("fuego-anterior"));
+    const previo = fundirSnapshot(porElCable(anterior));
+
+    const siguiente = new Estado();
+    siguiente.ejecucion = { ...siguiente.ejecucion, id: "ejecucion-nueva", nombre: "Nueva" };
+    siguiente.guardar(siguiente.incendios, incendio("fuego-nuevo"));
+    const nuevo = fundirSnapshot(porElCable(siguiente), previo);
+
+    expect(nuevo.ejecucion.id).toBe("ejecucion-nueva");
+    expect(nuevo.incendios.map((i) => i.id)).toEqual(["fuego-nuevo"]);
+    expect(nuevo.incendios).not.toBe(previo.incendios);
+  });
+
+  it("el registro incremental no retiene ids de eventos que el propio estado ya podó", () => {
+    const e = new Estado();
+    for (let i = 0; i < 6_000; i += 1) e.registrarEvento("sistema", `Evento ${i}`);
+
+    const cambios = e.consumirCambios().get("eventos");
+    expect(e.eventos).toHaveLength(5_000);
+    expect(cambios?.size).toBeLessThanOrEqual(e.eventos.length);
+  });
 });

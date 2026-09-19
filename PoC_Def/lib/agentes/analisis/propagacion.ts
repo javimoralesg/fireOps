@@ -272,7 +272,15 @@ export const analistaPropagacion: Agente = {
         const previa = poblaciones.find((p) => p.id === amenaza.poblacionId);
         if (!previa) continue;
         const subeAAlto = ORDEN_RIESGO[amenaza.riesgo] >= ORDEN_RIESGO.alto && ORDEN_RIESGO[amenaza.riesgo] > ORDEN_RIESGO[previa.riesgo];
-        estado.actualizar(estado.poblaciones, previa.id, { riesgo: amenaza.riesgo, etaFrenteMin: amenaza.etaMin });
+        // El "por qué" que ve el usuario en el popup del pueblo (sesión riesgo-fundado):
+        // frente, cono y meteo, no una etiqueta suelta.
+        const motivoRiesgo =
+          `${amenaza.explicacion}. Frente al ${avance.frente?.rumboTexto ?? "?"} a ${(avance.frente?.velocidadMmin ?? 0).toFixed(1)} m/min ` +
+          `con viento de ${actual.meteo?.vientoKmh.toFixed(0)} km/h del ${actual.meteo?.direccionTexto}, ` +
+          `HR ${actual.meteo?.humedadPct.toFixed(0)} %, ${actual.meteo?.temperaturaC.toFixed(0)} °C` +
+          (factorAhora.factor < 0.99 ? ` (los medios frenan el avance ×${factorAhora.factor.toFixed(2)})` : "") +
+          ".";
+        estado.actualizar(estado.poblaciones, previa.id, { riesgo: amenaza.riesgo, etaFrenteMin: amenaza.etaMin, motivoRiesgo });
         if (subeAAlto) {
           subidas += 1;
           ctx.registrar(

@@ -15,8 +15,7 @@ export type ClaveCapa =
   | "camaras"
   | "camarasEspana"
   | "viento"
-  | "satelite"
-  | "avisos";
+  | "satelite";
 
 export interface FilaCapa {
   id: ClaveCapa;

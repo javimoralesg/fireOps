@@ -6,7 +6,7 @@
 // Capas: focos (perímetro + predicción), unidades (con ruta y movimiento suave),
 // bases de las que salen, pueblos por riesgo, hospitales, cámaras vigiladas,
 // TODAS las cámaras de España, viento (rejilla calculada aquí a partir de la
-// meteo del foco), satélite y avisos meteo.
+// meteo del foco) y satélite.
 //
 // AMPLIADO (constructor H, 2026-09-19): capa "Cámaras de España", iconos de
 // unidad por cuerpo con ruta recorrida y flecha de sentido, capa "Bases",
@@ -100,7 +100,6 @@ const CAPAS_POR_DEFECTO: Record<ClaveCapa, boolean> = {
   camarasEspana: true,
   viento: true,
   satelite: false,
-  avisos: true,
 };
 
 export interface MapaProps {
@@ -1020,7 +1019,6 @@ export function MapaCliente({
   const hospitales = snapshot?.hospitales ?? [];
   const camaras = useMemo(() => snapshot?.camaras ?? [], [snapshot?.camaras]);
   const satelite = snapshot?.focosSatelite ?? [];
-  const avisos = snapshot?.avisosMeteo ?? [];
   const zonas = useMemo(() => zonasPeligroDe(snapshot), [snapshot]);
 
   const posiciones = usePosicionesAnimadas(unidades);
@@ -1127,7 +1125,6 @@ export function MapaCliente({
     },
     { id: "viento", etiqueta: "Viento", cuenta: incendios.filter((i) => i.meteo).length + zonas.length, color: colores.riesgoMedio, ayuda: "Rejilla calculada con la meteo de cada foco" },
     { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS. Apagada, oculta también los focos que solo ha visto el satélite y nadie ha confirmado" },
-    { id: "avisos", etiqueta: "Avisos meteo", cuenta: avisos.length, color: colores.warning, ayuda: "AEMET / Meteoalarm" },
   ];
 
   const leyenda = [
@@ -1276,23 +1273,6 @@ export function MapaCliente({
           </span>
         ) : null}
       </div>
-
-      {/* Avisos meteo: no tienen geometría, se listan como pastillas arriba a la izquierda. */}
-      {capas.avisos && avisos.length > 0 ? (
-        <div className="pointer-events-none absolute left-2 top-12 z-[880] flex max-w-[15.5rem] flex-col gap-1">
-          {avisos.slice(0, 3).map((a) => (
-            <span
-              key={a.id}
-              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-warning/45 bg-panel/95 px-2 py-1 text-[11px] font-medium text-warning shadow-sm backdrop-blur"
-            >
-              <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">
-                Aviso {a.nivel} · {a.fenomeno} · {a.zona}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       {/* Estado vacío: sin focos, el mapa explica qué hacer. */}
       {snapshot && incendios.length === 0 ? (

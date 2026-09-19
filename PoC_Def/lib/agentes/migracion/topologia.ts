@@ -11,16 +11,16 @@ export interface SeleccionTopologia {
 }
 
 /**
- * Lee AGENT_TOPOLOGY de forma estricta. La ausencia conserva el comportamiento
- * actual; un typo falla al arrancar en vez de activar accidentalmente otra
- * topología.
+ * Lee AGENT_TOPOLOGY de forma estricta. Tras superar la puerta diferencial,
+ * la ausencia activa las cinco fichas; `legacy` sigue disponible para rollback
+ * y comparación. Un typo falla al arrancar en vez de elegir accidentalmente.
  */
 export function leerTopologiaAgentes(valor?: string): TopologiaAgentes {
   // Pasar `undefined` explícitamente significa "sin configuración" y permite
   // probar el valor seguro aunque el proceso tenga AGENT_TOPOLOGY definido.
   const entrada = arguments.length === 0 ? process.env.AGENT_TOPOLOGY : valor;
   const normalizado = entrada?.trim().toLowerCase();
-  if (!normalizado) return "legacy";
+  if (!normalizado) return "five";
   if ((TOPOLOGIAS_AGENTES as readonly string[]).includes(normalizado)) {
     return normalizado as TopologiaAgentes;
   }

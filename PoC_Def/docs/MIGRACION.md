@@ -1,10 +1,10 @@
 # Migración de agentes · de 16 fichas a 5 que razonan
 
-Rama `migracion/16-a-5-agentes`. Objetivo: **menos agentes, menos tokens, más
-rápido, sin perder comportamiento.**
+Rama `migracion/16-a-5-agentes`. Objetivo: **cinco fichas operativas, menos
+complejidad visible y el mismo comportamiento de las dieciséis capacidades**.
 
-Este documento dice qué se ha hecho, qué se midió, **en qué el plan estaba
-equivocado** y qué queda. Si retomas esto, empieza por §4.
+La rama ya incorpora `main` (merge `f656c67`). Este documento separa lo que
+está implementado de lo que todavía debe demostrarse con una ejecución viva.
 
 ---
 
@@ -48,6 +48,9 @@ de su tipo declarado. Ver `lib/agentes/planificacion/mapeo-plan.ts`.
 | **F3** | Protección de población: una llamada por foco, no por pueblo | 2 llamadas / 7.410 tok por 2 pueblos → **1 / 2.423 por 4** |
 | **F4** | Prensa y redes: una llamada por lote, no por artículo | hasta 6 llamadas/ciclo → **1** |
 | **F5** | El supervisor evalúa por muestreo | bloqueante en todas → solo donde importa |
+| **F6** | Integrar `main` en la rama de migración | merge `f656c67`; resolución de protección de población y Overpass |
+| **F7** | Competencia, riesgo y dependencias por acción | Implementado y cubierto por unitarias/type-check |
+| **F8** | Registro de 5 fichas / 16 capacidades y aliases | Implementado; replay determinista legacy/five en verde |
 
 **Resultado sobre el mismo escenario de la línea base** (ataque inicial de 2
 acciones), atribuido por decisión:
@@ -91,40 +94,75 @@ abren dos focos», que ya está arreglado. Hay una prueba que lo deja escrito.
 
 ---
 
-## 4. Qué queda
+## 4. Corte estructural ya implementado
 
-**Competencia por acción.** Es lo único pendiente, y es lo que desbloquea la
-fusión grande del mando. Cuatro piezas:
+La reducción no crea cinco *mega-prompts*. Se han separado la ficha que ve la
+sala y la unidad que ejecuta trabajo:
 
-1. `Accion.competencia?` — campo opcional, aditivo, anotar en `REPARTO.md`.
-2. La política evalúa por acción y devuelve el **suelo**: el agente propone, la
-   política solo puede subir, nunca bajar.
-3. La ejecución se detiene en la primera acción que requiera una persona.
-4. Con eso hecho, se puede fundir coordinador + protección en un plan único.
+| Ficha lógica | Capacidades que conserva |
+|---|---|
+| `observador` | `vigia_camaras`, `satelite`, `prensa_redes`, `centralita`, `meteorologo`, `verificador` |
+| `planificador_operativo` | `propagacion`, `patrones`, `coordinador`, `proteccion_poblacion`, `despachador` |
+| `comunicador` | `portavoz` |
+| `guardian` | `asesor_legal`, `supervisor` |
+| `cronista` | `memoria`, `redactor` |
 
-**Riesgo de contrato**: ampliar `EstadoAccion` **no es aditivo**. Rompe los
-`switch` exhaustivos de `lib/agentes/ejecucion/ejecutor.ts` y la UI de acciones.
-El instrumento es `npm run test:tipos`, y la auditoría de cada `switch` forma
-parte de la fase.
+- En topología `five`, `Estado.agentes` registra estas cinco fichas; las 16
+  capacidades siguen teniendo su propia cadencia, disparadores, límite de
+  tiempo y llave de concurrencia. Una capacidad lenta no bloquea a sus
+  hermanas.
+- Los ids antiguos son aliases estables para URL, API, históricos y enlaces
+  guardados. Una petición a `coordinador`, por ejemplo, se atribuye al padre
+  `planificador_operativo` cuando ya no exista una ficha propia.
+- La competencia ya se evalúa por acción. `Accion.competencia`, `riesgo` y
+  `dependeDe` son aditivos; la política solo puede elevar el suelo indicado por
+  el agente. Las acciones autónomas independientes se ejecutan antes de la
+  espera humana, y las dependientes esperan o se cancelan si su dependencia
+  termina mal.
+- El oráculo diferencial normaliza decisiones (ids legacy/canónicos, orden,
+  prosa y campos volátiles) y compara productor, objetivos, acciones,
+  competencia, riesgo, evidencias y fundamentos. El modo `shadow` construye
+  un snapshot clonado y congelado y solo permite devolver un plan candidato no
+  aplicable: no recibe estado mutable ni ejecutores.
 
-**Pregunta sin resolver** que hay que contestar antes de implementar: si el paso
-1 es automático, el 2 humano y el 3 automático, ¿el 3 espera al 2? ¿Y si el
-humano deniega el 2, se revierte el 1 (camiones ya en carretera)? Y `caducarPendientes`
-solo mira estados de decisión: tal cual, **una acción pendiente no caducaría nunca**.
+`AGENT_TOPOLOGY` controla el despliegue: `legacy` conserva 16 fichas, `shadow`
+mantiene autoridad legacy y habilita la infraestructura de planes candidatos
+aislados, y `five` publica las cinco fichas. La ausencia de la variable selecciona `five`; un valor
+desconocido aborta el arranque de forma explícita. `legacy` permanece como
+rollback y referencia de comparación.
 
-**Cabo suelto menor**: la revisión legal en línea tarda ~40 s (medido). Para un
-comunicado da igual, pero una decisión de evacuación también los espera.
-Propuesta sin decidir: cuando todas las acciones ya sean de competencia humana,
-que la revisión llegue a posteriori — la va a leer una persona igualmente.
+## 5. Qué queda por verificar
+
+No se debe confundir el corte de código con una equivalencia ya demostrada.
+Quedan estas puertas, que deben registrarse con sus salidas reales:
+
+1. Completar el build de Next sobre el estado final. Webpack compila el código,
+   pero el proceso local queda bloqueado al leer tipos de dependencias durante
+   el type-check interno; `test:tipos` sí pasó antes de los últimos cambios de
+   fixture/documentación.
+2. **Hecho:** unitarias completas en `legacy` y `five`: 710 pasan y 5 están
+   omitidas en cada topología. El replay diferencial añade 3/3 casos en verde
+   contra el contrato pre-corte de las 16 capacidades.
+3. Ampliar la comparación viva desde la sonda LLM aislada al escenario operativo completo. La sonda, sin efectos externos,
+   devolvió el mismo JSON en ambas pasadas con HelmCode/qwen3.6 (76 tokens de
+   entrada, 49 de salida; 968 ms y 152 ms). El escenario integral debe usar el mismo LLM en ambas
+   topologías, en procesos limpios y con fuentes de detección apagadas. Las
+   llamadas/SMS/email deben interceptarse o dirigirse al destino de demo; el
+   informe debe incluir decisiones, acciones, llamadas/tokens y latencia.
+4. Hacer una pasada de integración/UI en `five`. Los resultados históricos de
+   este documento y de `PRUEBAS.md` son anteriores al corte y no sustituyen esa
+   puerta.
 
 ---
 
-## 5. Cómo verificar
+## 6. Cómo verificar
 
 ```bash
-npm run test:unit      # 524 en verde, sin red, < 1 s
-npm run test:tipos     # el guardián de los contratos
-ATALAYA_URL=http://localhost:3100 npm run test:integracion
+AGENT_TOPOLOGY=legacy npm run test:unit
+AGENT_TOPOLOGY=five npm run test:unit
+AGENT_TOPOLOGY=five npm run test:tipos
+AGENT_TOPOLOGY=five npm run build
+AGENT_TOPOLOGY=five ATALAYA_URL=http://localhost:3100 npm run test:integracion
 ```
 
 **Avisos de método, aprendidos a base de tropezar:**

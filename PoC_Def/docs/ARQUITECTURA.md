@@ -86,9 +86,20 @@ prensa) llegan en tiempo real y se sellan también con la hora de mundo.
 
 ## 5. Agentes de la aplicación
 
-Todos implementan `Agente` de `lib/motor/contratos.ts`. El orquestador
-(`lib/motor/orquestador.ts`) los ejecuta por cadencia o al recibir un evento de
-`despiertaCon`, les inyecta lecciones relevantes y recoge `ResultadoCiclo`.
+El registro operativo separa **fichas** y **capacidades**. En la topología por
+defecto hay cinco fichas (`observador`, `planificador_operativo`, `comunicador`,
+`guardian` y `cronista`) para la sala; bajo ellas siguen ejecutándose las 16
+capacidades históricas con su cadencia, eventos, timeout y concurrencia propios.
+No se ha concentrado el comportamiento en cinco prompts. `lib/agentes/logicos.ts`
+contiene la composición y `lib/agentes/identidad.ts` conserva los ids históricos
+como aliases para API, URL y trazas. `AGENT_TOPOLOGY=legacy` conserva el registro
+de 16 fichas para rollback; `shadow` no puede aplicar efectos; `five` es el
+corte activo.
+
+Cada capacidad implementa `Agente` de `lib/motor/contratos.ts`. El orquestador
+(`lib/motor/orquestador.ts`) la ejecuta por cadencia o al recibir un evento de
+`despiertaCon`, le inyecta lecciones relevantes y recoge `ResultadoCiclo`,
+atribuyendo el resultado a su ficha lógica cuando está activa la topología five.
 
 **Dos cosas distintas comparten tablero** (`lib/dominio/clase-agente.ts`):
 
@@ -148,13 +159,16 @@ y equivocándose, y son doce.
 ### 6.2 Decisión → ejecución
 1. Un agente de planificación devuelve `Decision` (estado `propuesta`).
 2. `asesor_legal` añade fundamentos/alertas.
-3. `lib/dominio/politica.ts#evaluarCompetencia` fija `riesgo` y `competencia` (la acción
-   más restrictiva manda; nivel de gravedad y umbrales globales pueden subirla).
+3. `lib/dominio/politica.ts#evaluarCompetenciasAcciones` fija `riesgo` y
+   `competencia` por acción. La decisión muestra el máximo necesario; la política,
+   la gravedad y los umbrales solo pueden elevarlo.
 4. `supervisor` puntúa. Si `aprueba` y `competencia = autonoma` → `aprobada` sin humano.
    Si `supervisada` → `pendiente_humano` (con recomendación). Si suspende → `escalada`.
 5. Humano aprueba/deniega desde la sala (comentario obligatorio al denegar).
-6. `ejecutor` y `despachador` ejecutan cada `Accion`; resultados reales quedan en
-   `accion.resultado`. Evento `decision_ejecutada`.
+6. `ejecutor` y `despachador` ejecutan cada `Accion` respetando `dependeDe`;
+   las autónomas independientes pueden avanzar antes de la aprobación de sus
+   hermanas humanas. Los resultados reales quedan en `accion.resultado`.
+   Evento `decision_ejecutada`.
 7. `redactor` genera el `Informe`. `memoria` extrae lecciones.
 
 ### 6.3 Replanificación (el frente gira)

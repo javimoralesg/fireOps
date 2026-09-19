@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { leerTopologiaAgentes, seleccionarTopologia } from "@/lib/agentes/migracion/topologia";
 
 describe("selección de topología de agentes", () => {
-  it("conserva legacy cuando no hay configuración", () => {
-    expect(leerTopologiaAgentes(undefined)).toBe("legacy");
+  it("activa five cuando no hay configuración y conserva rollback explícito", () => {
+    expect(leerTopologiaAgentes(undefined)).toBe("five");
+    expect(leerTopologiaAgentes("legacy")).toBe("legacy");
     expect(seleccionarTopologia("legacy")).toEqual({ autoridad: "legacy", ejecutarSombra: false });
   });
 
@@ -20,4 +21,3 @@ describe("selección de topología de agentes", () => {
     expect(() => leerTopologiaAgentes("shdow")).toThrow(/AGENT_TOPOLOGY inválida/);
   });
 });
-

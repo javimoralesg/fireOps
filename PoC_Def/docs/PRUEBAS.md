@@ -10,6 +10,10 @@ para validar cada aspecto y corroborar que funciona como se espera"*. Eso es lo 
 integración hablan con el servidor de verdad, con HelmCode de verdad y con Overpass, OSRM,
 Open-Meteo, Nominatim y las cámaras de la DGT de verdad; las de UI abren un Chromium real.
 
+> Estado de migración: las tablas históricas de §3 documentan ejecuciones
+> anteriores al corte de cinco fichas. No prueban todavía la equivalencia del
+> código actual. La puerta pendiente se describe en «Verificación 16 → 5».
+
 ---
 
 ## 1. Cómo se ejecutan
@@ -69,6 +73,33 @@ npm run test:tipos     # type-check de tests/** y vitest.config.mts
 | `esquema-json.test.ts` | `lib/ia/llm.ts` | Endurecimiento del JSON Schema para `strict`: `additionalProperties: false`, **todas** las propiedades en `required` (también las opcionales de zod), recursión en objetos anidados y en `items`, se quitan las palabras clave no soportadas, `enum` se conserva, y la función es pura (fallo L-2 cerrado) |
 | `registro-agentes.test.ts` | `lib/agentes/registro.ts` | **Caracterización del inventario**: 16 agentes, sus ids, categoría, cadencia, `despiertaCon` y cuáles son deterministas. Cada fase de la migración lo cambia a propósito y el diff es la revisión |
 | `mapeo-plan.test.ts` | `lib/agentes/planificacion/mapeo-plan.ts` | **La frontera zod**: conversión `Plan` → acciones sin proveedor de IA. Rumbos de sector sobre el frente, unidades inventadas o no disponibles que se descartan, tiempo real por carretera en la descripción, no pedir dos veces lo mismo, retiradas solo del propio foco, y pureza |
+| `identidad-agentes.test.ts` | `lib/agentes/identidad.ts` | Los 16 ids históricos resuelven al padre correcto y los aliases siguen funcionando contra fichas de 5 o de 16 |
+| `registro-agentes.test.ts` / `topologia-agentes.test.ts` | registro y flag de topología | Cinco fichas frente a 16 capacidades, autoridad de `legacy`/`shadow`/`five`, valor por defecto y rechazo de flags inválidos |
+| `comparador-agentes.test.ts` / `sombra-agentes.test.ts` | oráculo diferencial | Normalización semántica y plan candidato aislado: snapshot clonado/congelado, sin mutación ni efectos |
+| `topologia-16-a-5.test.ts` | integración de topología | Registro, aliases, pausar/controlar por padre y conservación de tareas de capacidad en `five` |
+
+### Verificación 16 → 5
+
+La comprobación completa requiere las dos topologías y no se considera cerrada
+hasta conservar sus resultados. Ejecutar en procesos limpios:
+
+```bash
+AGENT_TOPOLOGY=legacy npm run test:unit
+AGENT_TOPOLOGY=five npm run test:unit
+AGENT_TOPOLOGY=five npm run test:tipos
+AGENT_TOPOLOGY=five npm run build
+```
+
+Resultado actual: 710 pruebas pasan y 5 quedan omitidas en cada topología; el
+replay diferencial dirigido pasa 3/3. Una sonda LLM aislada, sin estado mutable
+ni efectos externos, produjo el mismo JSON en ambas pasadas con
+HelmCode/qwen3.6 (76 tokens de entrada, 49 de salida; 968 ms y 152 ms).
+
+Sigue pendiente repetir el escenario operativo completo con fuentes apagadas y
+comparar las decisiones con `lib/agentes/migracion/comparador.ts`. Esa pasada
+debe interceptar efectos externos y registrar llamadas, tokens y latencia. El
+build limpio compiló webpack, pero el type-check interno quedó bloqueado leyendo
+tipos de `node_modules`, por lo que no se registra todavía como build completo.
 
 ### 2.2 Integración (`tests/integracion/`) — servidor vivo
 

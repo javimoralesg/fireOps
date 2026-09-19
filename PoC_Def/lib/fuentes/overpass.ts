@@ -63,13 +63,25 @@ export interface EntornoIncendio {
 // consultas por foco y hasta tres reintentos del enriquecimiento. Se retira de
 // la lista (el propio comentario de arriba ya lo daba por muerto) y el resto
 // queda protegido por un cortacircuitos por servidor.
-// ORDEN Y TOPE POR SERVIDOR (constructor T, 2026-09-19, 2.ª pasada).
-// El orden es por SALUD MEDIDA, no por preferencia: maps.mail.ru es hoy el
-// ÚNICO espejo que devuelve datos, así que va PRIMERO y con el tope más alto
-// (medido: `medios 30 km` 7-23 s, hasta 22.737 ms con 3.227 elementos; `out
-// geom` de superficies 9-21 s). Los otros dos están muertos —overpass-api.de
-// rechaza la conexión en ~130 ms, private.coffee se cuelga— y van detrás con un
-// tope corto para que NO consuman presupuesto antes de llegar al que funciona.
+// ORDEN Y TOPE POR SERVIDOR.
+//
+// Esta lista es solo la SEMILLA: el orden real lo decide la latencia medida en
+// caliente (ver `preferencias` y `servidoresOrdenados`). Se hizo así porque la
+// lista escrita a mano CADUCA, y caduca rápido:
+//
+//   2026-09-19 (constructor T): maps.mail.ru era el único vivo (7-23 s) y los
+//     otros dos estaban muertos. Se puso primero con tope 26 s.
+//   2026-09-19, más tarde (fase F3 de la migración): justo al revés. Medido
+//     contra los tres espejos: maps.mail.ru se cuelga sin responder (>30 s),
+//     private.coffee se cuelga, y overpass-api.de contesta en 1,5 s.
+//
+// El efecto del orden caducado no era menor: cada consulta empezaba esperando
+// 26 s a un servidor muerto antes de llegar al bueno, y un foco hace tres o
+// cuatro consultas. Un proceso recién arrancado tardaba MINUTOS en cargar el
+// entorno de un foco (medido: el entorno no llegaba en 90 s y el foco se
+// quedaba con 0 pueblos). Un proceso con horas de vida iba bien, porque su
+// cortacircuitos ya había aprendido a saltarse al muerto.
+//
 // kumi.systems se ha retirado de la lista: se colgaba >60 s en cada consulta y
 // era el origen de casi todos los `falló ... tras 25002 ms` del log.
 interface Servidor {
@@ -81,10 +93,21 @@ interface Servidor {
   timeoutGeomMs: number;
 }
 const SERVIDORES: Servidor[] = [
+  { url: "https://overpass-api.de/api/interpreter", host: "overpass-api.de", timeoutMs: 26_000, timeoutGeomMs: 28_000 },
   { url: "https://maps.mail.ru/osm/tools/overpass/api/interpreter", host: "maps.mail.ru", timeoutMs: 26_000, timeoutGeomMs: 28_000 },
-  { url: "https://overpass-api.de/api/interpreter", host: "overpass-api.de", timeoutMs: 5_000, timeoutGeomMs: 5_000 },
-  { url: "https://overpass.private.coffee/api/interpreter", host: "overpass.private.coffee", timeoutMs: 5_000, timeoutGeomMs: 5_000 },
+  { url: "https://overpass.private.coffee/api/interpreter", host: "overpass.private.coffee", timeoutMs: 26_000, timeoutGeomMs: 28_000 },
 ];
+
+/**
+ * Tope del PRIMER intento contra un espejo del que todavía no sabemos nada en
+ * este proceso. Sin esto, un servidor muerto que esté el primero se come 26 s
+ * de presupuesto antes de que nadie aprenda nada. Con historial de éxito, se
+ * usa su tope completo: el espejo bueno puede tardar de verdad 20 s en una
+ * consulta grande y cortarle a los 8 s sería peor.
+ * EXCEPCIÓN: al último candidato se le da el tope completo. Si es el único que
+ * queda, más vale esperarle que quedarse sin datos.
+ */
+const TOPE_SIN_HISTORIAL_MS = 8_000;
 const UA = "atalaya-incendios/1.0 (HackSpain 2026; contacto javimorgalis@gmail.com)";
 /**
  * Tope del ping de salud. Es una consulta de 1 KB, pero el espejo sano de hoy
@@ -175,12 +198,15 @@ type Global = typeof globalThis & {
   __atalayaOverpassCeldas?: Map<string, Celda>;
   __atalayaOverpassVuelos?: Map<string, Vuelo>;
   __atalayaOverpassMuertos?: Map<string, SaludServidor>;
+  __atalayaOverpassLatencias?: Map<string, { latenciaMs: number; en: number }>;
   __atalayaOverpassCola?: { enCurso: number; espera: (() => void)[] };
 };
 const g = globalThis as Global;
 const celdas = () => (g.__atalayaOverpassCeldas ??= new Map());
 const vuelos = () => (g.__atalayaOverpassVuelos ??= new Map());
 const muertos = () => (g.__atalayaOverpassMuertos ??= new Map());
+/** Última latencia con la que cada espejo respondió DE VERDAD (solo éxitos). */
+const latencias = () => (g.__atalayaOverpassLatencias ??= new Map());
 const cola = () => (g.__atalayaOverpassCola ??= { enCurso: 0, espera: [] });
 const CACHE_MS = 6 * 60 * 60_000;
 /** El mundo físico no cambia, pero un fallo sí: se recuerda solo 2 minutos. */
@@ -346,9 +372,13 @@ function castigoPara(motivo: string): number {
 /**
  * Lanza la consulta contra los servidores por orden hasta que uno responda.
  * Reglas de rendimiento (constructor T):
- *   · El orden de SERVIDORES es por salud medida: el espejo que funciona va
- *     primero y con su tope propio; los muertos van detrás con tope corto para
- *     no comerse el presupuesto antes de llegar al bueno.
+ *   · El orden lo decide `servidoresOrdenados()` con la latencia MEDIDA en este
+ *     proceso, no la lista escrita a mano: el que ya respondió va primero, del
+ *     más rápido al más lento, y los que nadie ha probado van detrás en el orden
+ *     de la semilla. Se corrige solo cuando un espejo se cae o resucita.
+ *   · A un espejo sin historial se le dan TOPE_SIN_HISTORIAL_MS en su primer
+ *     intento (salvo que sea el último candidato): un muerto no puede comerse el
+ *     presupuesto entero antes de que nadie aprenda nada.
  *   · PRESUPUESTO_MS es un tope DURO de la consulta entera: el último intento
  *     se recorta a lo que quede.
  *   · El cortacircuitos se abre A LA PRIMERA solo ante fallos duros (conexión
@@ -359,6 +389,33 @@ function castigoPara(motivo: string): number {
  *   · Si todos están abiertos se LANZA el error diciéndolo: el servicio queda en
  *     rojo con su motivo, no se devuelve nada inventado.
  */
+/**
+ * Los espejos, ordenados por lo que han demostrado EN ESTE PROCESO: primero los
+ * que han respondido, del más rápido al más lento; después los que no se han
+ * probado todavía, en el orden de la semilla. Así el orden se corrige solo
+ * cuando un espejo se cae o resucita, sin que nadie tenga que editar la lista.
+ */
+function servidoresOrdenados(): Servidor[] {
+  const medidas = latencias();
+  return [...SERVIDORES].sort((a, b) => {
+    const la = medidas.get(a.host)?.latenciaMs;
+    const lb = medidas.get(b.host)?.latenciaMs;
+    if (la !== undefined && lb !== undefined) return la - lb;
+    if (la !== undefined) return -1; // el que ya respondió va antes
+    if (lb !== undefined) return 1;
+    return SERVIDORES.indexOf(a) - SERVIDORES.indexOf(b); // ninguno probado: semilla
+  });
+}
+
+/** Latencias medidas, para /api/fuentes/salud y para explicar el orden. */
+export function latenciasOverpass(): { host: string; latenciaMs?: number; medidaHaceS?: number }[] {
+  const ahora = Date.now();
+  return servidoresOrdenados().map(({ host }) => {
+    const m = latencias().get(host);
+    return m ? { host, latenciaMs: m.latenciaMs, medidaHaceS: Math.round((ahora - m.en) / 1000) } : { host };
+  });
+}
+
 async function consultar(
   query: string,
   etiqueta: string,
@@ -369,7 +426,8 @@ async function consultar(
   let ultimo: string | undefined;
   const saltados: string[] = [];
   for (let vuelta = 0; vuelta < VUELTAS; vuelta++) {
-    for (const servidor of SERVIDORES) {
+    const orden = servidoresOrdenados();
+    for (const [indice, servidor] of orden.entries()) {
       const { url, host } = servidor;
       const salud = muertos().get(host);
       if (salud && Date.now() < salud.hasta) {
@@ -383,20 +441,30 @@ async function consultar(
       }
       const t0 = Date.now();
       try {
+        // Probación: a un espejo del que no sabemos nada se le dan
+        // TOPE_SIN_HISTORIAL_MS, no su tope completo, para que un muerto no se
+        // coma el presupuesto. Al último candidato se le da todo: si es el que
+        // queda, más vale esperarle que quedarse sin datos.
+        const conHistorial = latencias().has(host);
+        const esUltimo = indice === orden.length - 1;
+        const tope = conHistorial || esUltimo ? topeDe(servidor) : Math.min(topeDe(servidor), TOPE_SIN_HISTORIAL_MS);
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "text/plain; charset=utf-8", "User-Agent": UA, Accept: "application/json" },
           body: query,
-          signal: AbortSignal.timeout(Math.min(topeDe(servidor), restante)),
+          signal: AbortSignal.timeout(Math.min(tope, restante)),
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const elementos = validar((await res.json()) as { elements?: ElementoOsm[]; osm3s?: { timestamp_osm_base?: string } });
         muertos().delete(host); // responde: se le borra el historial de fallos
+        latencias().set(host, { latenciaMs: Date.now() - t0, en: Date.now() }); // y se anota lo que tardó
         console.log(`[overpass] ${etiqueta} · ${host} · ${Date.now() - t0} ms · ${elementos.length} elementos`);
         return { elementos, url };
       } catch (e) {
         const motivo = mensaje(e);
+        // Deja de ser "el rápido": que vuelva a ganárselo respondiendo.
+        latencias().delete(host);
         ultimo = `${host}: ${motivo}`;
         console.warn(`[overpass] ${etiqueta} falló en ${host} tras ${Date.now() - t0} ms: ${motivo}${anotarFallo(host, motivo, sinCastigo)}`);
       }

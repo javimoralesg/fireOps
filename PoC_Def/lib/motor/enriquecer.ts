@@ -125,7 +125,8 @@ async function camarasCacheadas() {
 export const RADIO_CAMARAS_KM = 25;
 
 function telefonoDemo(): string | undefined {
-  const t = process.env.DESTINO_DEMO?.trim();
+  // DESTINO_DEMO y, si está vacío, TELEFONO_AVISOS_SMS (un solo número en .env.local; sesión fireops-00).
+  const t = process.env.DESTINO_DEMO?.trim() || process.env.TELEFONO_AVISOS_SMS?.trim();
   return t ? t : undefined;
 }
 

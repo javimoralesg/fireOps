@@ -11,6 +11,7 @@
 import { z } from "zod";
 import type { Decision, Poblacion } from "../../dominio/tipos";
 import type { Agente, ContextoAgente, ResultadoCiclo } from "../../motor/contratos";
+import { duracionLegible, kmLegible } from "../../dominio/tiempo-legible";
 import { gradosATexto } from "../../fuentes/geo";
 import { completarJson, modeloPara, proveedorDisponible } from "../../ia/llm";
 import { bloqueDecisionesPrevias, bloqueLecciones, decisionBase, DOCTRINA_ESPANA, fichaIncendio, hayEquivalenteViva, type AccionPropuesta } from "./comun";
@@ -52,7 +53,7 @@ export const proteccionPoblacion: Agente = {
   id: "proteccion_poblacion",
   nombre: "Protección de población",
   categoria: "planificacion",
-  descripcion: "Decide a qué pueblos se avisa, confina o evacúa, y redacta el guion de la llamada y el mensaje a los vecinos.",
+  descripcion: "Decide a qué pueblos se avisa, confina o evacúa, y redacta el SMS al ayuntamiento y el mensaje a los vecinos (la voz saliente está desactivada).",
   modelo: modeloPara("razonamiento"),
   cadenciaSeg: 60,
   // 180 s: dos pueblos × ~25 s de razonamiento más el ida y vuelta del RAG caben de
@@ -133,7 +134,7 @@ async function decidirPoblacion(poblacion: Poblacion, incendioId: string, ctx: C
   const incendio = estado.incendios.get(incendioId);
   if (!incendio) return undefined;
   const previas = bloqueDecisionesPrevias(ctx, incendioId);
-  const destinoDemo = process.env.DESTINO_DEMO?.trim();
+  const destinoDemo = process.env.DESTINO_DEMO?.trim() || process.env.TELEFONO_AVISOS_SMS?.trim();
   const organismo = process.env.ORGANISMO_NOMBRE?.trim() || "Centro de Coordinación de Incendios Forestales";
 
   const ficha = [
@@ -142,12 +143,12 @@ async function decidirPoblacion(poblacion: Poblacion, incendioId: string, ctx: C
     `POBLACIÓN A PROTEGER: ${poblacion.nombre} (id ${poblacion.id})`,
     `- Tipo: ${poblacion.tipo}${poblacion.habitantes !== undefined ? ` · ${poblacion.habitantes} habitantes` : ""}`,
     `- Situación: a ${poblacion.distanciaKm.toFixed(1)} km al ${gradosATexto(poblacion.rumboDesdeFuegoGrados)} del foco`,
-    `- Riesgo: ${poblacion.riesgo}${poblacion.etaFrenteMin !== undefined ? ` · el frente llegaría en ~${poblacion.etaFrenteMin} min` : " · fuera de la trayectoria actual"}`,
+    `- Riesgo: ${poblacion.riesgo}${poblacion.etaFrenteMin !== undefined ? ` · el frente llegaría en unas ${duracionLegible(poblacion.etaFrenteMin)} (escríbelo así en el SMS, nunca en minutos sueltos)` : " · fuera de la trayectoria actual"}`,
     `- Estado de aviso: ${poblacion.estadoAviso}`,
     poblacion.vulnerables?.length
       ? `- Colectivos vulnerables cerca: ${poblacion.vulnerables.map((v) => `${v.tipo} "${v.nombre}"`).join(", ")}`
       : "- Sin colectivos vulnerables registrados en OSM.",
-    poblacion.telefono ? `- Teléfono de contacto: ${poblacion.telefono}` : `- Sin teléfono en OSM: se usará el número de demostración (${destinoDemo || "SIN DESTINO_DEMO configurado"}).`,
+    poblacion.telefono ? `- Teléfono de contacto: ${poblacion.telefono}` : `- Sin teléfono en OSM: se usará el número de demostración (${destinoDemo || "SIN DESTINO_DEMO ni TELEFONO_AVISOS_SMS configurados"}).`,
     "",
     `Medios ya desplegados en el foco: ${estado.unidadesDe(incendioId).length || "ninguno"}.`,
     previas.texto,
@@ -169,9 +170,9 @@ async function decidirPoblacion(poblacion: Poblacion, incendioId: string, ctx: C
         "(residencias, campings, colegios) que necesitan más tiempo.\n" +
         "- 'esperar': no hay nada que hacer todavía; explícalo.\n\n" +
         "Escribe SIEMPRE:\n" +
-        `- guionLlamada: lo que dirá el agente de voz al llamar al ayuntamiento. En español, natural al oído. Debe decir quién llama ` +
-        `("${organismo}"), qué ocurre (incendio, dónde, a qué distancia, tiempo estimado), qué se le pide exactamente, y pedir una ` +
-        "confirmación explícita (\"¿me confirma que lo activan?\") antes de colgar.\n" +
+        `- guionLlamada: texto para el ayuntamiento; va por SMS (la voz saliente está desactivada), así que máximo 300 caracteres. ` +
+        `Debe decir quién avisa ("${organismo}"), qué ocurre (incendio, dónde, a qué distancia, tiempo estimado), qué se le pide ` +
+        "exactamente, y pedir que confirmen por SMS que lo activan.\n" +
         "- textoSms: mensaje para los vecinos, máximo 300 caracteres, claro, sin tecnicismos, con la instrucción concreta y sin alarmismo.\n" +
         "- razonamiento: 3 a 5 frases. Si propones confinar o evacuar, di explícitamente que la orden corresponde al Director del Plan " +
         "y que esta sala solo la propone.",
@@ -195,7 +196,7 @@ async function decidirPoblacion(poblacion: Poblacion, incendioId: string, ctx: C
         tipo,
         descripcion:
           plan.medida === "avisar"
-            ? `Avisar al Ayuntamiento de ${poblacion.nombre} (llamada + SMS + Telegram)`
+            ? `Avisar al Ayuntamiento de ${poblacion.nombre} (SMS + Telegram)`
             : plan.medida === "confinar"
               ? `Proponer confinamiento de ${poblacion.nombre}`
               : `Proponer evacuación de ${poblacion.nombre}`,
@@ -245,7 +246,7 @@ async function decidirPoblacion(poblacion: Poblacion, incendioId: string, ctx: C
         {
           id: `ev-eta-${poblacion.id}`,
           fuente: "Modelo de propagación (Atalaya)",
-          resumen: `${poblacion.nombre}: ${poblacion.distanciaKm.toFixed(1)} km al ${gradosATexto(poblacion.rumboDesdeFuegoGrados)}, riesgo ${poblacion.riesgo}` + (poblacion.etaFrenteMin !== undefined ? `, frente en ~${poblacion.etaFrenteMin} min.` : "."),
+          resumen: `${poblacion.nombre}: ${kmLegible(poblacion.distanciaKm)} al ${gradosATexto(poblacion.rumboDesdeFuegoGrados)}, riesgo ${poblacion.riesgo}` + (poblacion.etaFrenteMin !== undefined ? `, frente en unas ${duracionLegible(poblacion.etaFrenteMin)}.` : "."),
           en: ctx.ahoraMundo,
           confianza: 0.75,
         },

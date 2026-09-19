@@ -1082,7 +1082,8 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     void sinTraza(() => generarActaAccion(id, resultado.id)).catch((e) =>
       console.error(`[orquestador] no se pudo redactar el acta de la acción ${resultado.id}: ${mensajeDe(e)}`),
     );
-    if (exito && resultado.tipo === "llamar") sumarMetrica(estado, "llamadasRealizadas");
+    // Voz saliente desactivada (ejecutor, VOZ_DESACTIVADA): una acción «llamar» sale como SMS y no cuenta como llamada.
+    if (exito && resultado.tipo === "llamar" && !resultado.resultado?.datos?.vozDesactivada) sumarMetrica(estado, "llamadasRealizadas");
     if (exito && (resultado.tipo === "avisar_poblacion" || resultado.tipo === "confinar_poblacion" || resultado.tipo === "evacuar_poblacion")) {
       sumarMetrica(estado, "poblacionesAvisadas");
     }

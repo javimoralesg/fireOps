@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AlertTriangle, Bot, Clock3, Cpu, ShieldCheck, TimerReset } from "lucide-react";
 import type { EstadoAgenteApp, Incendio } from "@/lib/dominio/tipos";
 import { haceCuanto, numero } from "@/lib/cliente/formato";
+import { AYUDA_CLASE, claseDeAgente, esServicioDeterminista, TEXTO_CLASE } from "@/lib/dominio/clase-agente";
 import { ControlesAgente, TEXTO_CATEGORIA, TEXTO_ESTADO_AGENTE, tonoEstadoAgente, useAccionesAgente } from "@/components/sala/TarjetaAgente";
 import { ResumenTraza } from "@/components/sala/TrazaAgente";
 import { Insignia } from "@/components/ui/Insignia";
@@ -111,7 +112,17 @@ export function EquipoAgentes({ agentes, incendios = [], mundoPausado = false, o
                         />
                         <span className="truncate text-[13px] font-semibold text-foreground">{agente.nombre}</span>
                       </span>
-                      <span className="mt-0.5 block truncate pl-3.5 text-[11px] text-subtle">{TEXTO_CATEGORIA[agente.categoria]}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 truncate pl-3.5 text-[11px] text-subtle">
+                        {TEXTO_CATEGORIA[agente.categoria]}
+                        {esServicioDeterminista(agente.modelo) ? (
+                          <span
+                            title={AYUDA_CLASE.servicio}
+                            className="rounded-sm border border-border px-1 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted"
+                          >
+                            {TEXTO_CLASE.servicio}
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[12.5px] text-foreground">{agente.tareaActual || agente.descripcion}</span>
@@ -152,8 +163,19 @@ export function EquipoAgentes({ agentes, incendios = [], mundoPausado = false, o
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               <Insignia pequena tono="marca">{TEXTO_CATEGORIA[seleccionado.categoria]}</Insignia>
+              <Insignia
+                pequena
+                tono={esServicioDeterminista(seleccionado.modelo) ? "exito" : "info"}
+                title={AYUDA_CLASE[claseDeAgente(seleccionado.modelo)]}
+              >
+                {TEXTO_CLASE[claseDeAgente(seleccionado.modelo)]}
+              </Insignia>
               {seleccionado.controlHumano ? <Insignia pequena tono="aviso">Control humano</Insignia> : null}
-              <Insignia pequena tono="neutro">{seleccionado.modelo}</Insignia>
+              {esServicioDeterminista(seleccionado.modelo) ? (
+                <Insignia pequena tono="neutro">Sin llamadas a la IA</Insignia>
+              ) : (
+                <Insignia pequena tono="neutro">{seleccionado.modelo}</Insignia>
+              )}
             </div>
           </header>
 

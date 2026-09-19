@@ -43,6 +43,7 @@ import { evaluarCompetencia } from "../dominio/politica";
 import { anotarTraza, ejecutarConTraza, resumir, sinTraza, trazaActual } from "./traza";
 import { generarActaAccion, generarActaDecision } from "./actas";
 import { describirFueraEspana, enEspana } from "../dominio/espana";
+import { esServicioDeterminista } from "../dominio/clase-agente";
 import { sanearFueraEspana } from "./saneamientoEspana";
 
 // ---------------------------------------------------------------------
@@ -168,7 +169,10 @@ function esRazonamiento(agente: Agente): boolean {
  * cada 5 s, satélite, propagación y meteorólogo cada 30-60 s.
  */
 function esDeterminista(agente: Agente): boolean {
-  return (agente.modelo ?? "").trim().toLowerCase() === "determinista";
+  // Una sola fuente de verdad con la pantalla (lib/dominio/clase-agente.ts): lo
+  // que aquí decide no pedir lecciones es lo mismo que allí se enseña como
+  // "entrada determinista".
+  return esServicioDeterminista(agente.modelo);
 }
 
 /**

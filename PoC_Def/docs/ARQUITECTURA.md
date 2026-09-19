@@ -90,6 +90,19 @@ Todos implementan `Agente` de `lib/motor/contratos.ts`. El orquestador
 (`lib/motor/orquestador.ts`) los ejecuta por cadencia o al recibir un evento de
 `despiertaCon`, les inyecta lecciones relevantes y recoge `ResultadoCiclo`.
 
+**Dos cosas distintas comparten tablero** (`lib/dominio/clase-agente.ts`):
+
+- **Agentes** (12): llaman a un modelo, interpretan, proponen y pueden
+  equivocarse. Su trabajo hay que supervisarlo, y cuesta tokens y segundos.
+- **Entradas deterministas** (4: `satelite`, `meteorologo`, `propagacion`,
+  `despachador`): no llaman a ningún modelo. Recogen un dato de una fuente real
+  (FIRMS, Open-Meteo, OSRM) o calculan con una fórmula. Mismo dato de entrada,
+  mismo resultado, siempre. No hay nada que supervisar y no cuestan ni un token.
+
+La clase se deduce de `modelo`, no es un campo nuevo. La sala las distingue con
+una etiqueta: decir "16 agentes" hacía pensar que hay dieciséis cosas razonando
+y equivocándose, y son doce.
+
 | id | Nombre | Categoría | Modelo | Cadencia | Se despierta con | Qué hace |
 |---|---|---|---|---|---|---|
 | `vigia_camaras` | Vigía de cámaras | percepción | visión | `CAMARAS_INTERVALO_SEG` | `incendio_nuevo` | Analiza en vivo las cámaras DGT/Madrid vigiladas (cerca de focos + muestreo de zonas forestales de alto peligro). Dos positivos seguidos → observación `camara` |

@@ -12,7 +12,7 @@ import { listarCamarasMadrid } from "./camarasMadrid";
 import { exaDisponible } from "./exa";
 import { firmsDisponible, focosEspana } from "./firms";
 import { meteoActual } from "./openMeteo";
-import { entornoIncendio } from "./overpass";
+import { pingOverpass } from "./overpass";
 import { ruta } from "./osrm";
 import { municipioDe } from "./nominatim";
 import { noticiasGoogle } from "./rss";
@@ -28,14 +28,86 @@ export interface SaludFuente {
 /** Punto de referencia de las comprobaciones: Ávila capital. */
 const REFERENCIA = { lat: 40.66, lon: -4.7 };
 
+// ---------------------------------------------------------------------
+// Presupuesto de tiempo (constructor T, 2026-09-19)
+// ---------------------------------------------------------------------
+// Antes cada comprobación esperaba el timeout de SU fuente (12-25 s) y el
+// `Promise.all` esperaba a la más lenta: /api/fuentes/salud se quedaba minutos
+// colgado de un espejo muerto. Ahora cada comprobación tiene un tope propio de
+// 5 s: pasado ese tiempo la fuente se declara LENTA (en rojo, con el motivo
+// literal), que es información verdadera, no un dato inventado. 5 s es holgado
+// —ninguna fuente sana pasa de 1 s medida— y a la vez deja el endpoint entero
+// por debajo de 6 s en frío, porque todas se comprueban en paralelo.
+const TOPE_COMPROBACION_MS = 5_000;
+/** Vigencia del resultado completo. Se refresca EN SEGUNDO PLANO. */
+const CACHE_MS = 60_000;
+
+/**
+ * Un refresco NUNCA debería tardar más que el tope de una comprobación más un
+ * poco (todas van en paralelo). Si uno se queda colgado más de esto se le da por
+ * perdido y se lanza otro: un guardián de "hay uno en curso" que se atasca deja
+ * la barra de estado congelada para siempre, que es justo lo que pasó al
+ * medirlo (el mismo `en` en tres peticiones separadas 20 s).
+ */
+const VUELO_CADUCA_MS = 20_000;
+
+type Global = typeof globalThis & {
+  __atalayaSaludCache?: { en: number; fuentes: SaludFuente[] };
+  __atalayaSaludEnCurso?: { desde: number; promesa: Promise<SaludFuente[]> };
+};
+const g = globalThis as Global;
+
 async function medir(nombre: string, fn: () => Promise<string>): Promise<SaludFuente> {
   const t0 = Date.now();
+  let temporizador: ReturnType<typeof setTimeout> | undefined;
   try {
-    const detalle = await fn();
+    const detalle = await Promise.race([
+      fn(),
+      new Promise<never>((_, rechazar) => {
+        temporizador = setTimeout(
+          () => rechazar(new Error(`sin respuesta en ${TOPE_COMPROBACION_MS / 1000} s (tope de la comprobación de salud)`)),
+          TOPE_COMPROBACION_MS,
+        );
+      }),
+    ]);
     return { nombre, ok: true, detalle, ms: Date.now() - t0 };
   } catch (e) {
     return { nombre, ok: false, detalle: e instanceof Error ? e.message : String(e), ms: Date.now() - t0 };
+  } finally {
+    // Sin esto quedaban trece temporizadores de 5 s vivos en cada refresco.
+    if (temporizador) clearTimeout(temporizador);
   }
+}
+
+/**
+ * Estado de las fuentes con caché de 60 s y refresco en SEGUNDO PLANO: la
+ * petición nunca espera al refresco si ya hay un resultado, y dos peticiones a
+ * la vez comparten la misma comprobación (no se duplican las llamadas externas).
+ */
+export async function comprobarFuentesCacheadas(): Promise<{ fuentes: SaludFuente[]; en: string; delCache: boolean }> {
+  const c = g.__atalayaSaludCache;
+  const fresco = !!c && Date.now() - c.en < CACHE_MS;
+  if (c && !fresco) void refrescar().catch(() => undefined); // refresco en segundo plano
+  if (c) return { fuentes: c.fuentes, en: new Date(c.en).toISOString(), delCache: fresco };
+  const fuentes = await refrescar();
+  return { fuentes, en: new Date(g.__atalayaSaludCache?.en ?? Date.now()).toISOString(), delCache: false };
+}
+
+function refrescar(): Promise<SaludFuente[]> {
+  // Deduplicación de vuelos: si ya hay una comprobación en curso se comparte...
+  const enCurso = g.__atalayaSaludEnCurso;
+  if (enCurso && Date.now() - enCurso.desde < VUELO_CADUCA_MS) return enCurso.promesa;
+  // ...salvo que se haya quedado colgada: entonces se abandona y se lanza otra.
+  const promesa = comprobarFuentes()
+    .then((fuentes) => {
+      g.__atalayaSaludCache = { en: Date.now(), fuentes };
+      return fuentes;
+    })
+    .finally(() => {
+      if (g.__atalayaSaludEnCurso?.promesa === promesa) g.__atalayaSaludEnCurso = undefined;
+    });
+  g.__atalayaSaludEnCurso = { desde: Date.now(), promesa };
+  return promesa;
 }
 
 /** Comprueba todas las fuentes en paralelo y devuelve su estado con latencias. */
@@ -47,10 +119,10 @@ export async function comprobarFuentes(): Promise<SaludFuente[]> {
     }),
     medir("Cámaras DGT", async () => `${(await listarCamarasDgt()).length} cámaras en el catálogo`),
     medir("Cámaras Madrid", async () => `${(await listarCamarasMadrid()).length} cámaras en el catálogo`),
-    medir("Overpass (OSM)", async () => {
-      const e = await entornoIncendio(REFERENCIA, 10);
-      return `${e.poblaciones.length} pueblos, ${e.parquesBomberos.length} parques de bomberos, ${e.hospitales.length} centros sanitarios`;
-    }),
+    // Comprobación LIGERA: una consulta mínima (nodos `place` en 2 km) en vez
+    // del entorno completo, que eran tres consultas pesadas de hasta 25 s cada
+    // una solo para pintar un punto verde.
+    medir("Overpass (OSM)", () => pingOverpass()),
     medir("OSRM", async () => {
       const r = await ruta(REFERENCIA, { lat: 40.4101, lon: -4.708 });
       return `${(r.distanciaM / 1000).toFixed(1)} km en ${Math.round(r.duracionS / 60)} min`;

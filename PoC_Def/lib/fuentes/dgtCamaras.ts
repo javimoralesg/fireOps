@@ -35,6 +35,9 @@ interface CacheCamaras {
   dgt?: { en: number; datos: Camara[] };
   todas?: { en: number; datos: Camara[] };
   imagenes: Map<string, { en: number; datos: ImagenDescargada }>;
+  /** Descargas en curso: deduplicación de vuelos (constructor T, 2026-09-19). */
+  vueloDgt?: Promise<Camara[]>;
+  vueloTodas?: Promise<Camara[]>;
 }
 type Global = typeof globalThis & { __atalayaCamaras?: CacheCamaras };
 const g = globalThis as Global;
@@ -66,11 +69,22 @@ function nombreDgt(c: CamaraDgt): string {
   return `${c.carretera ?? "Carretera"}${pk}${sentido}`;
 }
 
-/** Catálogo de cámaras de la DGT (1 h de caché; si falla se sirve la caché previa). */
-export async function listarCamarasDgt(): Promise<Camara[]> {
+/**
+ * Catálogo de cámaras de la DGT (1 h de caché; si falla se sirve la caché
+ * previa). Con deduplicación de vuelos: en arranque en frío la salud, el
+ * enriquecimiento y /api/camaras llegan a la vez y se bajaban el catálogo entero
+ * cada una.
+ */
+export function listarCamarasDgt(): Promise<Camara[]> {
   const e = est();
-  if (e.dgt && Date.now() - e.dgt.en < CACHE_LISTADO_MS) return e.dgt.datos;
+  if (e.dgt && Date.now() - e.dgt.en < CACHE_LISTADO_MS) return Promise.resolve(e.dgt.datos);
+  return (e.vueloDgt ??= descargarCamarasDgt().finally(() => {
+    e.vueloDgt = undefined;
+  }));
+}
 
+async function descargarCamarasDgt(): Promise<Camara[]> {
+  const e = est();
   let camaras: Camara[];
   try {
     const res = await fetch(URL_LISTADO, {
@@ -116,10 +130,16 @@ export async function listarCamarasDgt(): Promise<Camara[]> {
 }
 
 /** DGT + Madrid en una sola lista. Si una fuente falla, se devuelve la otra. */
-export async function listarTodasLasCamaras(): Promise<Camara[]> {
+export function listarTodasLasCamaras(): Promise<Camara[]> {
   const e = est();
-  if (e.todas && Date.now() - e.todas.en < CACHE_LISTADO_MS) return e.todas.datos;
+  if (e.todas && Date.now() - e.todas.en < CACHE_LISTADO_MS) return Promise.resolve(e.todas.datos);
+  return (e.vueloTodas ??= reunirTodasLasCamaras().finally(() => {
+    e.vueloTodas = undefined;
+  }));
+}
 
+async function reunirTodasLasCamaras(): Promise<Camara[]> {
+  const e = est();
   const [dgt, madrid] = await Promise.allSettled([listarCamarasDgt(), listarCamarasMadrid()]);
   const lista: Camara[] = [];
   if (dgt.status === "fulfilled") lista.push(...dgt.value);

@@ -102,8 +102,12 @@ export async function avisosMeteoalarmEspana(): Promise<AvisoMeteo[]> {
     const fin = Date.parse(hasta);
     if (Number.isFinite(fin) && fin < ahora) continue; // caducado
 
+    // El feed repite a veces el mismo aviso (mismo geocódigo, evento e inicio) en
+    // dos <entry>: se queda uno solo, o React avisa de claves duplicadas.
+    const id = `meteoalarm:${geocodigo.replace(/\s+/g, "")}:${evento}:${desde}`.slice(0, 160);
+    if (avisos.some((a) => a.id === id)) continue;
     avisos.push({
-      id: `meteoalarm:${geocodigo.replace(/\s+/g, "")}:${evento}:${desde}`.slice(0, 160),
+      id,
       fuente: "Meteoalarm",
       fenomeno: fenomenoEnEspanol(evento),
       nivel,

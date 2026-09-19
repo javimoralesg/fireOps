@@ -61,14 +61,33 @@ export async function entradaHappyRobot(peticion: Request, canal: CanalEntrada):
   const cuerpo = await leerCuerpo(peticion);
   if (!cuerpo) return error("El cuerpo debe ser JSON", 400);
 
-  const texto =
-    primerTexto(cuerpo, ["transcripcion", "transcript", "texto", "mensaje", "message", "body", "resumen", "summary"]) ??
-    JSON.stringify(cuerpo).slice(0, 1500);
+  // Con contenido de verdad: ni vacío, ni variable sin resolver de HappyRobot, ni una transcripción vacía ("[]").
+  const conContenido = (v: unknown): boolean =>
+    typeof v === "string" ? v.trim() !== "" && !/^\{\{\$var:/.test(v.trim()) && !/^(\[\]|\{\})$/.test(v.trim()) : typeof v === "number" || typeof v === "boolean";
+  const textoCampo = primerTexto(cuerpo, ["transcripcion", "transcript", "texto", "mensaje", "message", "body", "resumen", "summary"]);
+  const textoUtil = textoCampo && conContenido(textoCampo) ? textoCampo : undefined;
+  // Nada que registrar: la plataforma "prueba" el nodo con las variables sin resolver (todo vacío) y una
+  // llamada colgada sin hablar no trae transcripción. Antes se guardaba el JSON crudo como aviso y la
+  // centralita gastaba una llamada de IA en analizarlo (medido el 19-09: dos avisos basura).
+  if (!textoUtil && (canal === "llamada" || !Object.values(cuerpo).some(conContenido))) {
+    return json({ recibido: false, motivo: "Sin transcripción ni texto: nada que registrar" });
+  }
+  const texto = textoUtil ?? JSON.stringify(cuerpo).slice(0, 1500);
   const remitente = primerTexto(cuerpo, ["telefono", "phone_number", "from", "remitente", "caller", "email", "from_email"]);
   const referencia = primerTexto(cuerpo, ["run_id", "runId", "call_id", "id", "message_id", "referencia"]);
   const lugar = primerTexto(cuerpo, ["lugar", "ubicacion", "location", "direccion", "address"]);
   const lat = primerNumero(cuerpo, ["lat", "latitude", "latitud"]);
   const lon = primerNumero(cuerpo, ["lon", "lng", "longitude", "longitud"]);
+
+  // 112 virtual por teléfono (sesión fireops-82): si la herramienta registrar_aviso ya
+  // creó la observación de este run durante la llamada, la transcripción se ADJUNTA a
+  // ella. Misma llamada = una sola observación; nunca una segunda que el verificador
+  // tendría que descartar como duplicada.
+  if (canal === "llamada" && referencia) {
+    const { adjuntarTranscripcion } = await import("./entrante");
+    const existente = adjuntarTranscripcion(referencia, texto, remitente);
+    if (existente) return json({ recibido: true, observacionId: existente.id, impacto: existente.impacto ?? null, adjuntada: true });
+  }
 
   try {
     const { procesarEntrada } = await import("../agentes/percepcion/centralita");
@@ -116,7 +135,18 @@ export async function resultadoHappyRobot(peticion: Request): Promise<Response> 
   const accionId = primerTexto(cuerpo, ["accionId", "accion_id", "action_id"]);
   const referencia = primerTexto(cuerpo, ["ref", "run_id", "runId", "call_id", "id"]);
   const encontrado = localizar(decisionId, accionId, referencia);
-  if (!encontrado) return error(`No se encuentra la acción (decisionId=${decisionId ?? "-"}, accionId=${accionId ?? "-"}, ref=${referencia ?? "-"})`, 404);
+  if (!encontrado) {
+    // SMS del agente del 112 al teléfono del .env (lib/happyrobot/sms-avisos.ts, sesión fireops-00):
+    // detrás no hay Decision/Accion, así que el resultado se anota por la referencia del run.
+    if (referencia) {
+      const { anotarResultadoSms } = await import("./sms-avisos");
+      const okSms = esVerdadero(cuerpo.ok ?? cuerpo.success ?? cuerpo.exito) || cuerpo.status === "completed";
+      const detalleSms = primerTexto(cuerpo, ["detalle", "summary", "resumen", "error", "status"]) ?? (okSms ? "completado" : "fallido");
+      const anotado = anotarResultadoSms(referencia, cuerpo, okSms, detalleSms);
+      if (anotado) return json({ recibido: true, smsAgente: true, referencia, ok: okSms });
+    }
+    return error(`No se encuentra la acción (decisionId=${decisionId ?? "-"}, accionId=${accionId ?? "-"}, ref=${referencia ?? "-"})`, 404);
+  }
 
   const { decision, accion } = encontrado;
   const estado = obtenerEstado();

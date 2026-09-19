@@ -6,10 +6,11 @@
 // =====================================================================
 import { useState } from "react";
 import Link from "next/link";
+import { formatearTelefono } from "@/lib/happyrobot/telefono";
 
 type Estado = "editando" | "enviando" | "enviado" | "error";
 
-export default function FormularioParte({ urlLlamadaWeb }: { urlLlamadaWeb?: string }) {
+export default function FormularioParte({ urlLlamadaWeb, numeroEntrante }: { urlLlamadaWeb?: string; numeroEntrante?: string }) {
   const [texto, setTexto] = useState("");
   const [lugar, setLugar] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -107,6 +108,15 @@ export default function FormularioParte({ urlLlamadaWeb }: { urlLlamadaWeb?: str
       <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-rose-900">
         <strong>Si hay personas en peligro, llama al 112 antes que nada.</strong> Este formulario avisa a la sala de coordinación, pero no
         sustituye a la llamada de emergencia.
+        {numeroEntrante && (
+          <p className="mt-2">
+            También puedes llamar al 112 virtual de Atalaya:{" "}
+            <a href={`tel:${numeroEntrante}`} className="font-semibold underline">
+              {formatearTelefono(numeroEntrante)}
+            </a>
+            . Te atiende un operador de voz que registra el aviso en la sala.
+          </p>
+        )}
         {urlLlamadaWeb && (
           <p className="mt-2">
             <a href={urlLlamadaWeb} target="_blank" rel="noreferrer" className="font-semibold underline">

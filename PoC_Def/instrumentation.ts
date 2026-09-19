@@ -19,6 +19,10 @@ export async function register(): Promise<void> {
   }
   const { arrancarOrquestador } = await import("./lib/motor/orquestador");
   arrancarOrquestador();
+  // 112 por teléfono (sesión fireops-82): cada minuto se piden a HappyRobot las llamadas que no
+  // llegaron (túnel caído, red bloqueada) y se registran; no se pierde ninguna. Sin slug, no hace nada.
+  const { arrancarRecuperacionLlamadas } = await import("./lib/happyrobot/recuperar-llamadas");
+  arrancarRecuperacionLlamadas();
 }
 
 /** Errores del servidor al registro de diagnóstico (sin romper la petición). */

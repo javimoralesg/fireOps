@@ -207,7 +207,7 @@ export interface ContextoVoz {
 }
 
 const CONSEJO_POR_RIESGO: Record<string, string> = {
-  inminente: "Salga ya de la zona por la carretera que se aleja del humo y llame al 112 cuando esté a salvo.",
+  inminente: "Salga ya de la zona por la carretera que se aleja del humo y avise a emergencias cuando esté a salvo.",
   alto: "Prepárese para salir: cierre puertas y ventanas, moje el entorno de la casa y esté pendiente del teléfono.",
   medio: "Manténgase informado y no se acerque a la zona; deje las carreteras libres para los medios.",
   bajo: "No hay peligro inmediato en su posición; evite acercarse a la zona del incendio.",
@@ -247,8 +247,8 @@ export async function contextoParaVoz(referencia: Punto | string): Promise<Conte
     return {
       incendiosCercanos: [],
       consejoGeneral: activos.length
-        ? `No he podido situar su ubicación. Ahora mismo hay ${activos.length} incendio(s) activo(s) en España: ${activos.map((i) => i.nombre).join(", ")}. Si ve humo o llamas, llame al 112 y aléjese en dirección contraria al humo.`
-        : "No hay ningún incendio activo registrado en este momento. Si ve humo o llamas, llame al 112.",
+        ? `No he podido situar su ubicación. Ahora mismo hay ${activos.length} incendio(s) activo(s) en España: ${activos.map((i) => i.nombre).join(", ")}. Si ve humo o llamas, avise a emergencias y aléjese en dirección contraria al humo.`
+        : "No hay ningún incendio activo registrado en este momento. Si ve humo o llamas, avise a emergencias.",
     };
   }
 
@@ -264,7 +264,7 @@ export async function contextoParaVoz(referencia: Punto | string): Promise<Conte
     });
 
   const consejoGeneral = cercanos.length
-    ? `Tiene ${cercanos.length === 1 ? "un incendio" : `${cercanos.length} incendios`} activos cerca. El más próximo, ${cercanos[0].nombre}, está a ${cercanos[0].distanciaKm} kilómetros. ${cercanos[0].consejo}`
+    ? `Tiene ${cercanos.length === 1 ? "un incendio activo" : `${cercanos.length} incendios activos`} cerca. El más próximo, ${cercanos[0].nombre}, está a ${cercanos[0].distanciaKm} kilómetros. ${cercanos[0].consejo}`
     : "No hay ningún incendio activo a menos de 50 kilómetros de esa posición. Si ve humo, descríbame dónde y avisamos a los medios.";
 
   return { incendiosCercanos: cercanos, consejoGeneral };

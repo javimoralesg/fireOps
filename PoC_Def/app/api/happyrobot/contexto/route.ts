@@ -1,9 +1,13 @@
-// GET /api/happyrobot/contexto?texto=&lat=&lon= · Lo llama el agente de voz de
-// HappyRobot mientras habla con el ciudadano, para decirle si ya hay un incendio
-// conocido cerca y qué debe hacer. DUEÑO: constructor D.
+// GET|POST /api/happyrobot/contexto · Lo llama el agente de voz de HappyRobot
+// mientras habla con el ciudadano (herramienta «consultar_zona» del workflow
+// «Atalaya · 112 entrante»), para decirle si ya hay un incendio conocido cerca y
+// qué debe hacer. GET con ?texto=&lat=&lon= (compatibilidad); POST con JSON
+// {lugar|texto, lat, lon} (es lo que manda el nodo Webhook de la herramienta).
+// Solo lectura: no pide el secreto y no muta nada. DUEÑO: constructor D;
+// POST añadido por la sesión fireops-82 (2026-09-19).
 import { haversine } from "@/lib/fuentes/geo";
 import { obtenerEstado } from "@/lib/motor/estado";
-import { json } from "@/lib/motor/respuestas";
+import { error, json } from "@/lib/motor/respuestas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,11 +15,7 @@ export const dynamic = "force-dynamic";
 /** Radio en el que se consideran "cerca" los incendios (km). */
 const RADIO_KM = 50;
 
-export async function GET(peticion: Request): Promise<Response> {
-  const url = new URL(peticion.url);
-  const texto = url.searchParams.get("texto")?.trim() ?? "";
-  const lat = Number(url.searchParams.get("lat"));
-  const lon = Number(url.searchParams.get("lon"));
+async function responder(texto: string, lat: number, lon: number): Promise<Response> {
   const punto = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : undefined;
 
   // La centralita (constructor B) es la dueña de este contexto. Si aún no
@@ -36,8 +36,8 @@ export async function GET(peticion: Request): Promise<Response> {
     return json({
       incendiosCercanos: [],
       consejoGeneral: activos.length
-        ? `Hay ${activos.length} incendio(s) activo(s): ${activos.map((i) => `${i.nombre} en ${i.municipio}`).join(", ")}. Si ve humo o llamas, aléjese en dirección contraria al humo y llame al 112.`
-        : "No hay ningún incendio activo registrado ahora mismo. Si ve humo o llamas, llame al 112.",
+        ? `Hay ${activos.length} incendio(s) activo(s): ${activos.map((i) => `${i.nombre} en ${i.municipio}`).join(", ")}. Si ve humo o llamas, aléjese en dirección contraria al humo y avise a emergencias.`
+        : "No hay ningún incendio activo registrado ahora mismo. Si ve humo o llamas, avise a emergencias.",
     });
   }
 
@@ -50,7 +50,7 @@ export async function GET(peticion: Request): Promise<Response> {
       nombre: i.nombre,
       distanciaKm: +km.toFixed(1),
       estado: i.estado,
-      consejo: km <= 2 ? "Salga ya de la zona alejándose del humo y llame al 112." : km <= 5 ? "Prepárese para salir y esté pendiente del teléfono." : "No se acerque a la zona y deje las carreteras libres.",
+      consejo: km <= 2 ? "Salga ya de la zona alejándose del humo y avise a emergencias." : km <= 5 ? "Prepárese para salir y esté pendiente del teléfono." : "No se acerque a la zona y deje las carreteras libres.",
     }));
 
   return json({
@@ -59,4 +59,27 @@ export async function GET(peticion: Request): Promise<Response> {
       ? `El incendio más próximo, ${cercanos[0].nombre}, está a ${cercanos[0].distanciaKm} kilómetros. ${cercanos[0].consejo}`
       : `No hay ningún incendio activo a menos de ${RADIO_KM} kilómetros de esa posición. Si ve humo, descríbame dónde y avisamos a los medios.`,
   });
+}
+
+export async function GET(peticion: Request): Promise<Response> {
+  const url = new URL(peticion.url);
+  const texto = url.searchParams.get("texto")?.trim() ?? url.searchParams.get("lugar")?.trim() ?? "";
+  return responder(texto, Number(url.searchParams.get("lat")), Number(url.searchParams.get("lon")));
+}
+
+/** Cuerpo del nodo Webhook de la herramienta consultar_zona: {lugar} (o {texto} / {lat, lon}). */
+export async function POST(peticion: Request): Promise<Response> {
+  let bruto: unknown;
+  try {
+    bruto = await peticion.json();
+  } catch {
+    return error("El cuerpo debe ser JSON", 400);
+  }
+  const c = (bruto && typeof bruto === "object" && !Array.isArray(bruto) ? bruto : {}) as Record<string, unknown>;
+  const anidado = (c.data ?? c.payload ?? c.arguments) as Record<string, unknown> | undefined;
+  const cuerpo = anidado && typeof anidado === "object" && !Array.isArray(anidado) ? { ...anidado, ...c } : c;
+  const candidatos = [cuerpo.lugar, cuerpo.texto, cuerpo.municipio, cuerpo.ubicacion, cuerpo.location];
+  const texto = candidatos.find((v): v is string => typeof v === "string" && v.trim() !== "" && !/^\{\{\$var:/.test(v.trim()))?.trim() ?? "";
+  const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN);
+  return responder(texto, num(cuerpo.lat ?? cuerpo.latitud), num(cuerpo.lon ?? cuerpo.lng ?? cuerpo.longitud));
 }

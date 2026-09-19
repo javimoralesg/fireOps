@@ -112,3 +112,19 @@ export function buscarAgenteCompatible<T extends ConId>(agentes: readonly T[], s
   return canonico ? agentes.find((agente) => agente.id === canonico) : undefined;
 }
 
+/**
+ * Resuelve la clave con la que una ficha está registrada en el estado vivo.
+ * Conserva la precedencia del id exacto para la topología de 16 y solo usa el
+ * padre canónico cuando la capacidad histórica ya no tiene ficha propia.
+ */
+export function resolverIdAgenteCompatible<T extends ConId>(agentes: ReadonlyMap<string, T>, solicitadoId: string): string | undefined {
+  if (agentes.has(solicitadoId)) return solicitadoId;
+  const canonico = agenteCanonicoDe(solicitadoId);
+  return canonico && agentes.has(canonico) ? canonico : undefined;
+}
+
+/** Busca una ficha del estado vivo aceptando aliases históricos de capacidad. */
+export function buscarAgenteCompatibleEnMapa<T extends ConId>(agentes: ReadonlyMap<string, T>, solicitadoId: string): T | undefined {
+  const id = resolverIdAgenteCompatible(agentes, solicitadoId);
+  return id ? agentes.get(id) : undefined;
+}

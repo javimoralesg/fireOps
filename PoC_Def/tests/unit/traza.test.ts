@@ -134,6 +134,20 @@ describe("anotarLlamadaIA", () => {
     });
     expect(e.agentes.get("supervisor")?.trazas ?? []).toHaveLength(0);
   });
+
+  it("publica la traza de una capacidad histórica en su padre de cinco", async () => {
+    const e = estadoConAgente();
+    const ficha = e.agentes.get(AGENTE)!;
+    e.agentes.delete(AGENTE);
+    e.agentes.set("planificador_operativo", { ...ficha, id: "planificador_operativo", nombre: "Planificador operativo" });
+
+    await ejecutarConTraza(e, AGENTE, "evento", async () => {
+      anotarLlamadaIA(llamada("migracion"));
+      expect(agenteActual()).toBe(AGENTE);
+    });
+
+    expect(e.agentes.get("planificador_operativo")?.trazas?.[0]).toMatchObject({ motivo: "evento", estado: "ok" });
+  });
 });
 
 describe("sinTraza", () => {

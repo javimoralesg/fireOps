@@ -9,6 +9,7 @@
 // =====================================================================
 
 import type { Comunicado, Decision, Evento, Incendio, Informe, Observacion, Poblacion, TrazaCiclo, Unidad } from "../dominio/tipos";
+import { buscarAgenteCompatibleEnMapa } from "../agentes/identidad";
 import { obtenerEstado, type Estado } from "./estado";
 import { buscarTraza } from "./actas";
 
@@ -55,7 +56,7 @@ export async function cadenaDe(estado: Estado, d: Decision) {
   const { traza, origen } = await trazaDe(estado, d);
   return {
     decision: d,
-    agente: estado.agentes.get(d.agenteId) ?? null,
+    agente: buscarAgenteCompatibleEnMapa(estado.agentes, d.agenteId) ?? null,
     incendio: d.incendioId ? estado.incendios.get(d.incendioId) ?? null : null,
     historial: d.historial ?? [],
     trazaOrigen: traza ?? null,

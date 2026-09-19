@@ -1,7 +1,7 @@
 // GET/POST /api/agentes/[id] · Control humano de un agente. DUEÑO: constructor A.
 // { accion: "pausar" | "reanudar" | "asumir" | "liberar" | "ciclo" }
 import { z } from "zod";
-import { agenteCanonicoDe } from "@/lib/agentes/identidad";
+import { resolverIdAgenteCompatible } from "@/lib/agentes/identidad";
 import { obtenerEstado } from "@/lib/motor/estado";
 import { despertar } from "@/lib/motor/orquestador";
 import { cuerpoValidado, error, json } from "@/lib/motor/respuestas";
@@ -16,9 +16,7 @@ const Esquema = z.object({
 
 function resolverIdOperativo(id: string): string {
   const estado = obtenerEstado();
-  if (estado.agentes.has(id)) return id;
-  const canonico = agenteCanonicoDe(id);
-  return canonico && estado.agentes.has(canonico) ? canonico : id;
+  return resolverIdAgenteCompatible(estado.agentes, id) ?? id;
 }
 
 export async function GET(_peticion: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {

@@ -22,6 +22,7 @@
 
 import { createHash } from "node:crypto";
 import type { Accion, Decision, Informe, TrazaCiclo } from "../dominio/tipos";
+import { buscarAgenteCompatibleEnMapa } from "../agentes/identidad";
 import type { ContextoAgente } from "./contratos";
 import { obtenerEstado, type Estado } from "./estado";
 import { nuevoId } from "./ids";
@@ -86,7 +87,7 @@ function bloqueTraza(traza?: TrazaCiclo): string {
  * byte en tests/unit/actas-deterministas.test.ts. Cambio aditivo.
  */
 export function actaDecisionDeterminista(estado: Estado, d: Decision, traza?: TrazaCiclo): { titulo: string; contenido: string } {
-  const agente = estado.agentes.get(d.agenteId);
+  const agente = buscarAgenteCompatibleEnMapa(estado.agentes, d.agenteId);
   const incendio = d.incendioId ? estado.incendios.get(d.incendioId) : undefined;
   const titulo = `Acta de decisión · ${d.titulo} · ${d.estado}`;
   const contenido = [
@@ -153,7 +154,7 @@ export function actaDecisionDeterminista(estado: Estado, d: Decision, traza?: Tr
 
 /** EXPORTADA (fase F1 de la migración), mismo motivo que la anterior. */
 export function actaAccionDeterminista(estado: Estado, d: Decision, a: Accion, traza?: TrazaCiclo): { titulo: string; contenido: string } {
-  const agente = estado.agentes.get(d.agenteId);
+  const agente = buscarAgenteCompatibleEnMapa(estado.agentes, d.agenteId);
   const titulo = `Acta de acción · ${a.descripcion} · ${a.estado}`;
   const objetivo = a.objetivo ?? {};
   const destinatarios = [

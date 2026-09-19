@@ -15,13 +15,16 @@ export interface SeleccionTopologia {
  * actual; un typo falla al arrancar en vez de activar accidentalmente otra
  * topología.
  */
-export function leerTopologiaAgentes(valor = process.env.AGENT_TOPOLOGY): TopologiaAgentes {
-  const normalizado = valor?.trim().toLowerCase();
+export function leerTopologiaAgentes(valor?: string): TopologiaAgentes {
+  // Pasar `undefined` explícitamente significa "sin configuración" y permite
+  // probar el valor seguro aunque el proceso tenga AGENT_TOPOLOGY definido.
+  const entrada = arguments.length === 0 ? process.env.AGENT_TOPOLOGY : valor;
+  const normalizado = entrada?.trim().toLowerCase();
   if (!normalizado) return "legacy";
   if ((TOPOLOGIAS_AGENTES as readonly string[]).includes(normalizado)) {
     return normalizado as TopologiaAgentes;
   }
-  throw new Error(`AGENT_TOPOLOGY inválida: "${valor}". Valores permitidos: ${TOPOLOGIAS_AGENTES.join(", ")}`);
+  throw new Error(`AGENT_TOPOLOGY inválida: "${entrada}". Valores permitidos: ${TOPOLOGIAS_AGENTES.join(", ")}`);
 }
 
 /** Traduce el flag de despliegue a autoridad y ejecución paralela. */
@@ -35,4 +38,3 @@ export function seleccionarTopologia(topologia = leerTopologiaAgentes()): Selecc
       return { autoridad: "five", ejecutarSombra: false };
   }
 }
-

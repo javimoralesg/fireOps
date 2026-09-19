@@ -5,10 +5,12 @@ import {
   IDS_AGENTES_CANONICOS,
   agenteCanonicoDe,
   buscarAgenteCompatible,
+  buscarAgenteCompatibleEnMapa,
   capacidadDeAgente,
   idsHistoricosDeAgente,
   perteneceAlMismoAgente,
   resolverIdentidadAgente,
+  resolverIdAgenteCompatible,
 } from "@/lib/agentes/identidad";
 
 describe("identidad compatible de agentes", () => {
@@ -56,5 +58,16 @@ describe("identidad compatible de agentes", () => {
     expect(buscarAgenteCompatible([{ id: "observador" }], "vigia_camaras")?.id).toBe("observador");
     expect(buscarAgenteCompatible([{ id: "vigia_camaras" }], "observador")).toBeUndefined();
     expect(buscarAgenteCompatible([{ id: "observador" }], "desconocido")).toBeUndefined();
+  });
+
+  it("resuelve la clave de un Map sin sustituir una ficha legacy todavía presente", () => {
+    const legacy = new Map([["coordinador", { id: "coordinador" }]]);
+    const five = new Map([["planificador_operativo", { id: "planificador_operativo" }]]);
+
+    expect(resolverIdAgenteCompatible(legacy, "coordinador")).toBe("coordinador");
+    expect(buscarAgenteCompatibleEnMapa(legacy, "coordinador")?.id).toBe("coordinador");
+    expect(resolverIdAgenteCompatible(five, "coordinador")).toBe("planificador_operativo");
+    expect(buscarAgenteCompatibleEnMapa(five, "coordinador")?.id).toBe("planificador_operativo");
+    expect(resolverIdAgenteCompatible(five, "desconocido")).toBeUndefined();
   });
 });

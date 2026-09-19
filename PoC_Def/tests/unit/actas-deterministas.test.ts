@@ -14,6 +14,7 @@
 // =====================================================================
 import { describe, expect, it } from "vitest";
 import { actaAccionDeterminista, actaDecisionDeterminista, huellaDe } from "@/lib/motor/actas";
+import { cadenaDe } from "@/lib/motor/auditoria";
 import { Estado } from "@/lib/motor/estado";
 import type { Accion, Decision, TrazaCiclo, Unidad } from "@/lib/dominio/tipos";
 import { incendio as fabricaIncendio, unidad as fabricaUnidad } from "./ayudas/dominio";
@@ -175,6 +176,24 @@ describe("acta de decisión · los hechos que tiene que llevar siempre", () => {
     const r = actaDecisionDeterminista(vacio, { ...DECISION, incendioId: undefined }, undefined);
     expect(r.contenido).toContain("**Incendio**: —");
     expect(r.contenido).toContain("No se conserva la traza");
+  });
+});
+
+describe("actas y auditoría durante el corte de topología", () => {
+  it("atribuye una decisión legacy a su ficha lógica registrada", async () => {
+    const estado = estadoConTodo();
+    const coordinador = estado.agentes.get("coordinador")!;
+    estado.agentes.delete("coordinador");
+    estado.agentes.set("planificador_operativo", {
+      ...coordinador,
+      id: "planificador_operativo",
+      nombre: "Planificador operativo",
+    });
+
+    expect(actaDecisionDeterminista(estado, DECISION).contenido).toContain("Planificador operativo");
+    await expect(cadenaDe(estado, DECISION)).resolves.toMatchObject({
+      agente: { id: "planificador_operativo", nombre: "Planificador operativo" },
+    });
   });
 });
 

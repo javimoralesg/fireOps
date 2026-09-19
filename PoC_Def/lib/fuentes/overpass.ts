@@ -1,7 +1,7 @@
 // =====================================================================
 // Entorno OSM de un incendio vía Overpass. DUEÑO: constructor B.
 // ---------------------------------------------------------------------
-// Verificado hoy (docs/investigacion-fuentes-datos.md §5.1):
+// Verificado con curl:
 //   POST https://overpass-api.de/api/interpreter  (User-Agent OBLIGATORIO:
 //   sin él devuelve 406). Radio 30 km en Ávila: 275 elementos, 113 KB, 4,4 s.
 //   (kumi.systems era la alternativa recomendada; se ha retirado, ver abajo.)

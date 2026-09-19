@@ -298,7 +298,7 @@ export function definirNodosEntrante({ urlPublica, secreto, numero, prompt, mens
   if (!numero?.id || !numero?.number) throw new Error("Falta el número de teléfono ({id, number} de GET /phone-numbers/)");
   if (!/^https:\/\//.test(String(urlPublica || ""))) throw new Error("Falta la URL pública https (túnel o PUBLIC_BASE_URL): sin ella el agente no puede llamar a Atalaya");
   if (!secreto) throw new Error("Falta HAPPYROBOT_WEBHOOK_SECRET");
-  if (!prompt || !prompt.trim()) throw new Error("Falta el prompt del agente entrante (docs/HAPPYROBOT.md §3.4)");
+  if (!prompt || !prompt.trim()) throw new Error("Falta el prompt del agente entrante (scripts/prompts-happyrobot.mjs)");
   const u = urlsEntrante(urlPublica);
   const herramientas = definicionHerramientas({ urlPublica, secreto });
   const nodos = [

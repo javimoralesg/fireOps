@@ -1,5 +1,5 @@
 // Pruebas de lib/ia/llm.ts · lo que se puede probar sin red. DUEÑO: constructor L.
-// `esquemaJson` y `endurecer` NO están exportados (ver docs/PRUEBAS.md, fallo L-2):
+// `esquemaJson` y `endurecer` NO están exportados (fallo L-2):
 // el endurecimiento del esquema queda cubierto de forma indirecta por las pruebas
 // de integración, que sí hacen llamadas reales con `response_format: json_schema`.
 import { afterEach, describe, expect, it } from "vitest";

@@ -32,7 +32,7 @@
 //      verificador decide si declara el foco, lo confirma o lo deja registrado;
 //   7. devuelve al agente qué decirle a la persona (`mensajeParaLocutor`).
 // DUEÑO: sesión fireops-82 (2026-09-19), sobre el contrato del constructor D
-// (docs/HAPPYROBOT.md §3.4). Dependencias: centralita, verificador, nominatim,
+// (scripts/happyrobot-entrante.mjs). Dependencias: centralita, verificador, nominatim,
 // estado. NADA SIMULADO: si falta configuración se dice qué variable falta.
 // =====================================================================
 

@@ -11,7 +11,7 @@
 // en la UE — argumento de peso para una plataforma de la administración
 // española). Groq y OpenAI quedan conmutables con LLM_PROVEEDOR.
 //
-// Reglas que impone Groq y que aquí se respetan (docs/investigacion-apis-ia.md):
+// Reglas que impone Groq y que aquí se respetan (verificadas contra su documentación):
 //   · `response_format: json_schema` NO se puede combinar con `tools` ni con
 //     `stream: true`. Aquí nunca se usan tools ni streaming.
 //   · `strict: true` exige que todo objeto declare `additionalProperties:false`
@@ -152,7 +152,7 @@ function proveedorDe(papel: PapelLLM): ConfiguracionProveedor {
   return configuracion(normalizarProveedor(process.env.LLM_PROVEEDOR));
 }
 
-/** Modelos por defecto de cada proveedor, verificados en docs/investigacion-apis-ia.md. */
+/** Modelos por defecto de cada proveedor, verificados contra el catálogo de cada uno. */
 const MODELOS_POR_DEFECTO: Record<NombreProveedor, Record<PapelLLM, string>> = {
   // HelmCode: deepseek-v4-flash razona con 1M de contexto; qwen3.6 es rápido y ve.
   // MEDIDO 2026-09-19 con la clave real (misma pregunta de supervisión,

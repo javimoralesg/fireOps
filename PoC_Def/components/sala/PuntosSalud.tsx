@@ -35,11 +35,7 @@ function PuntosSaludBase({ servicios }: { servicios?: Servicios }) {
                   {v.detalle || (v.ok ? "Responde con normalidad." : "No responde. Revisa la clave o la conexión.")}
                   <br />
                   Comprobado {haceCuanto(v.en)}.{" "}
-                  {!v.ok ? (
-                    <a href="/docs/CLAVES.md" className="text-brand underline underline-offset-2">
-                      Cómo obtener la clave
-                    </a>
-                  ) : null}
+                  {!v.ok ? "Las claves van en .env.local (README, «Configuración»)." : null}
                 </>
               }
             >

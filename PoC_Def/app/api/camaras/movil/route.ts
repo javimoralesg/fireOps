@@ -1,9 +1,15 @@
 // POST /api/camaras/movil · fotograma + GPS desde la página /movil. DUEÑO: B.
 // Cuerpo: {dispositivoId, nombre?, lat, lon, precisionM?, imagenBase64, mime?}
-// Registra/actualiza una Camara "Movil" vigilada; el Vigía la analiza en su
-// siguiente ciclo (cada fotograma nuevo se analiza una sola vez).
+// Registra/actualiza una Camara "Movil" vigilada y la analiza AL MOMENTO (prioridad
+// alta en la cola del modelo de visión): el veredicto vuelve en esta misma respuesta
+// si llega en menos de ESPERA_ANALISIS_MS; si no, sigue en segundo plano y el
+// teléfono lo recibe en su siguiente envío o sondeo. Cada fotograma se analiza una vez.
+import { analizarMovilAlLlegar, conTiempoMaximo } from "@/lib/fuentes/analisisMovilInmediato";
 import { registrarFotograma } from "@/lib/fuentes/camarasMovil";
 import { obtenerEstado } from "@/lib/motor/estado";
+
+/** Cuánto espera la respuesta al análisis antes de devolver el fotograma como "analizando". */
+const ESPERA_ANALISIS_MS = 12_000;
 
 export const dynamic = "force-dynamic";
 
@@ -38,12 +44,18 @@ export async function POST(peticion: Request) {
       mime: cuerpo.mime,
     });
     estado.marcarServicio("Móvil en campo", true, `${camara.nombre} enviando desde ${camara.punto.lat.toFixed(4)}, ${camara.punto.lon.toFixed(4)}`);
+    const recibidoEn = new Date().toISOString();
+    const { valor: analisis, agotado } = await conTiempoMaximo(analizarMovilAlLlegar(camara.id), ESPERA_ANALISIS_MS);
     return Response.json({
       camaraId: camara.id,
       nombre: camara.nombre,
       punto: camara.punto,
-      ultimoAnalisis: camara.ultimoAnalisis ?? null,
-      recibidoEn: new Date().toISOString(),
+      /** Análisis de ESTE fotograma, o null si aún no está (ver `analizando`). */
+      analisis: analisis ?? null,
+      /** true si el modelo sigue con este fotograma: el resultado llegará por `ultimoAnalisis`. */
+      analizando: agotado,
+      ultimoAnalisis: analisis ?? estado.camaras.get(camara.id)?.ultimoAnalisis ?? null,
+      recibidoEn,
     });
   } catch (e) {
     const detalle = e instanceof Error ? e.message : String(e);

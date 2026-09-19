@@ -2,18 +2,21 @@
 // "Unir un móvil": QR y enlace a /movil, para que un teléfono haga de cámara en
 // directo. DUEÑO: constructor E. Dependencia: qrcode (genera el PNG en cliente).
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Copy, Smartphone } from "lucide-react";
 import QRCode from "qrcode";
 import { Boton } from "@/components/ui/Boton";
 import { Dialogo } from "@/components/ui/Dialogo";
 import { useToast } from "@/components/ui/Toast";
 
-export function DialogoMovil({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+/** `memo` (constructor R): no se repinta con cada snapshot de la sala. */
+function DialogoMovilBase({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const toast = useToast();
   const [url, setUrl] = useState("");
   const [imagen, setImagen] = useState<string>();
   const [error, setError] = useState<string>();
+  /** Motivo por el que la URL pública guardada no responde (túnel cerrado); undefined si va bien. */
+  const [tunelCaido, setTunelCaido] = useState<string>();
 
   useEffect(() => {
     if (!abierto) return;
@@ -22,16 +25,22 @@ export function DialogoMovil({ abierto, onCerrar }: { abierto: boolean; onCerrar
     // `localhost` no sirve para otro dispositivo.
     (async () => {
       let base = window.location.origin;
+      let caida: string | undefined;
       try {
-        const r = await fetch("/api/salud", { cache: "no-store" });
-        const j = (await r.json()) as { urlPublica?: { valor?: string | null } };
-        const publica = j.urlPublica?.valor;
-        if (publica && /^https:\/\//.test(publica)) base = publica.replace(/\/$/, "");
+        // /api/movil/enlace comprueba que la URL pública responde de verdad: si el túnel se cerró,
+        // la sala aún guarda su URL y un QR hacia ella no llevaría a ninguna parte.
+        const r = await fetch("/api/movil/enlace", { cache: "no-store" });
+        const j = (await r.json()) as { url?: string | null; viva?: boolean; motivo?: string };
+        if (j.url && /^https:\/\//.test(j.url)) {
+          if (j.viva) base = j.url.replace(/\/$/, "");
+          else caida = j.motivo ?? "la URL pública no contesta.";
+        }
       } catch {
-        /* sin salud: se usa el origen actual */
+        /* sin respuesta: se usa el origen actual */
       }
       const destino = `${base}/movil`;
       if (!vivo) return;
+      setTunelCaido(caida);
       try {
         const img = await QRCode.toDataURL(destino, { width: 320, margin: 1, errorCorrectionLevel: "M" });
         if (!vivo) return;
@@ -64,7 +73,12 @@ export function DialogoMovil({ abierto, onCerrar }: { abierto: boolean; onCerrar
       }
     >
       <div className="flex flex-col items-center gap-3">
-        {sinHttps ? (
+        {tunelCaido ? (
+          <p className="w-full rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-[12.5px] text-foreground" role="alert">
+            <strong>El túnel no responde</strong>: {tunelCaido} Arranca <code>scripts/tunel.sh 3000</code> en un terminal, déjalo abierto y vuelve a
+            abrir este cuadro. Mientras, el enlace de abajo es <code>localhost</code>, que el teléfono no puede abrir.
+          </p>
+        ) : sinHttps ? (
           <p className="w-full rounded-lg border border-warning/50 bg-warning/10 px-3 py-2 text-[12.5px] text-foreground" role="alert">
             <strong>Este enlace no es HTTPS</strong>: el teléfono no podrá usar la cámara ni el GPS. Lanza el túnel con{" "}
             <code>scripts/tunel.sh 3000</code> (o despliega en Railway) y vuelve a abrir este cuadro: el QR pasará a la URL pública.
@@ -99,3 +113,5 @@ export function DialogoMovil({ abierto, onCerrar }: { abierto: boolean; onCerrar
     </Dialogo>
   );
 }
+
+export const DialogoMovil = memo(DialogoMovilBase);

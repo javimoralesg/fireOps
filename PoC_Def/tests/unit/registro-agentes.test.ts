@@ -52,7 +52,10 @@ const ESPERADO: Record<string, FichaEsperada> = {
   supervisor:           { categoria: "supervision",   cadenciaSeg: 120, determinista: false, despiertaCon: ["decision_propuesta", "agente"] },
   portavoz:             { categoria: "comunicacion",  cadenciaSeg: 300, determinista: false, despiertaCon: ["poblacion_avisada", "incendio_actualizado", "decision_ejecutada", "decision_escalada"] },
   redactor:             { categoria: "comunicacion",  cadenciaSeg: 600, determinista: false, despiertaCon: ["decision_ejecutada", "decision_denegada", "decision_escalada"] },
-  memoria:              { categoria: "aprendizaje",   cadenciaSeg: 300, determinista: false, despiertaCon: ["decision_denegada", "decision_aprobada", "accion_fallida", "accion_ejecutada", "decision_escalada"] },
+  // F1b (2026-09-19): fuera `accion_ejecutada`. De que una acción salga bien no se
+  // aprende, y disparaba una llamada de razonamiento por acción. Ver
+  // tests/unit/memoria-aprende-de-fallos.test.ts.
+  memoria:              { categoria: "aprendizaje",   cadenciaSeg: 300, determinista: false, despiertaCon: ["decision_denegada", "decision_aprobada", "accion_fallida", "decision_escalada"] },
 };
 
 /** Agentes cuya cadencia depende del entorno: se comprueban por rango, no por valor. */

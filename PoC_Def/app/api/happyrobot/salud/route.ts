@@ -2,7 +2,7 @@
 // workflows existen en la plataforma y cuáles están publicados. Es la pantalla que
 // dice en rojo "HappyRobot: falta el workflow de voz". DUEÑO: constructor D.
 import { estadoCanal, entorno, listarWorkflows, slugDe, urlLlamadaWeb, urlWebhookResultado, VARIABLE_SLUG, type CanalHappyRobot } from "@/lib/happyrobot/cliente";
-import { desincronizado, estadoEntrante, urlPublicaResponde, urlRegistrarEnPlataforma } from "@/lib/happyrobot/entrante";
+import { desincronizado, estadoEntrante, leerWorkflowEntrante, urlPublicaResponde } from "@/lib/happyrobot/entrante";
 import { arrancarRecuperacionLlamadas, ultimaRecuperacion } from "@/lib/happyrobot/recuperar-llamadas";
 import { estadoSmsAvisos } from "@/lib/happyrobot/sms-avisos";
 import { urlPublica } from "@/lib/motor/entorno";
@@ -54,9 +54,13 @@ export async function GET(): Promise<Response> {
   // ejecutó «sincronizar», el agente contesta pero no puede registrar nada (medido el 19-09).
   let urlEnPlataforma: string | undefined;
   let errorPlataforma: string | undefined;
+  // ¿Está publicado y vivo? Si una sincronización falla al publicar, el número deja de atender.
+  let publicado = true;
   if (situacion.ok) {
     try {
-      urlEnPlataforma = await urlRegistrarEnPlataforma();
+      const w = await leerWorkflowEntrante();
+      urlEnPlataforma = w.urlRegistrar;
+      publicado = w.publicado && w.vivo;
     } catch (e) {
       errorPlataforma = e instanceof Error ? e.message : String(e);
     }
@@ -66,8 +70,10 @@ export async function GET(): Promise<Response> {
   const vida = situacion.ok ? await urlPublicaResponde(base) : { viva: false };
   const entrante = {
     ...situacion,
-    ok: situacion.ok && !fueraDeSitio && vida.viva,
-    detalle: fueraDeSitio
+    ok: situacion.ok && publicado && !fueraDeSitio && vida.viva,
+    detalle: !publicado
+      ? "HappyRobot: el workflow del 112 entrante NO está publicado: el número no atiende · ejecuta scripts/happyrobot-workflows.mjs sincronizar"
+      : fueraDeSitio
       ? `HappyRobot: el 112 entrante apunta a ${urlEnPlataforma} y la URL pública actual es ${base} · ejecuta scripts/happyrobot-workflows.mjs sincronizar`
       : situacion.ok && !vida.viva
         ? `HappyRobot: el 112 entrante contesta pero no puede registrar avisos · ${vida.motivo}`
@@ -77,6 +83,7 @@ export async function GET(): Promise<Response> {
       ? { consultarZona: `${base}/api/happyrobot/contexto`, registrarAviso: `${base}/api/happyrobot/aviso`, enviarSms: `${base}/api/happyrobot/sms`, alColgar: `${base}/api/webhooks/happyrobot/llamada` }
       : null,
     urlEnPlataforma: urlEnPlataforma ?? null,
+    publicado,
     desincronizado: fueraDeSitio,
     // Llamadas que no llegaron y se recuperaron de HappyRobot (lib/happyrobot/recuperar-llamadas.ts).
     recuperacion: (arrancarRecuperacionLlamadas(), ultimaRecuperacion() ?? null),

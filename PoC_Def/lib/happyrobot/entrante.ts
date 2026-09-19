@@ -141,6 +141,24 @@ interface NodoPlataforma {
  * última versión); si algo falla, lanza con el motivo real.
  */
 export async function urlRegistrarEnPlataforma(signal?: AbortSignal): Promise<string | undefined> {
+  return (await leerWorkflowEntrante(signal)).urlRegistrar;
+}
+
+export interface WorkflowEntranteEnPlataforma {
+  /** URL a la que dispara la herramienta registrar_aviso en la versión actual. */
+  urlRegistrar?: string;
+  /** La versión actual está publicada y viva: si no, el número NO atiende llamadas. */
+  publicado: boolean;
+  vivo: boolean;
+  entorno?: string;
+}
+
+/**
+ * Estado real del workflow «Atalaya · 112 entrante» en HappyRobot: a qué URL dispara y
+ * si está publicado y vivo. Medido el 19-09: una sincronización que falla al publicar deja
+ * la versión despublicada y el número deja de atender sin que nada lo avise.
+ */
+export async function leerWorkflowEntrante(signal?: AbortSignal): Promise<WorkflowEntranteEnPlataforma> {
   const clave = variable("HAPPYROBOT_API_KEY");
   const slug = slugEntrante();
   if (!clave) throw new Error("Falta HAPPYROBOT_API_KEY");
@@ -149,8 +167,10 @@ export async function urlRegistrarEnPlataforma(signal?: AbortSignal): Promise<st
   const senal = signal ?? AbortSignal.timeout(15_000);
   const rw = await fetch(`${apiBase()}/api/v2/workflows/${encodeURIComponent(slug)}`, { headers: cabeceras, cache: "no-store", signal: senal });
   if (!rw.ok) throw new Error(`HappyRobot ${rw.status} al leer el workflow ${slug}`);
-  const w = (await rw.json()) as { data?: { latest_version?: { id?: string } }; latest_version?: { id?: string } };
-  const versionId = w.data?.latest_version?.id ?? w.latest_version?.id;
+  type Version = { id?: string; is_published?: boolean; is_live?: boolean; environment?: string };
+  const w = (await rw.json()) as { data?: { latest_version?: Version }; latest_version?: Version };
+  const version = w.data?.latest_version ?? w.latest_version;
+  const versionId = version?.id;
   if (!versionId) throw new Error(`El workflow ${slug} no tiene versión`);
   const rn = await fetch(`${apiBase()}/api/v2/versions/${versionId}/nodes`, { headers: cabeceras, cache: "no-store", signal: senal });
   if (!rn.ok) throw new Error(`HappyRobot ${rn.status} al leer los nodos de ${slug}`);
@@ -158,7 +178,7 @@ export async function urlRegistrarEnPlataforma(signal?: AbortSignal): Promise<st
   const nodos = Array.isArray(bruto) ? bruto : (bruto.data ?? []);
   const nodo = nodos.find((n) => n.name === NODO_REGISTRAR);
   const texto = nodo?.configuration?.url?.map((p) => (p.children ?? []).map((c) => c.text ?? "").join("")).join("").trim();
-  return texto || undefined;
+  return { urlRegistrar: texto || undefined, publicado: Boolean(version?.is_published), vivo: Boolean(version?.is_live), entorno: version?.environment };
 }
 
 // ---------------------------------------------------------------------
@@ -321,10 +341,12 @@ export interface VeredictoLocutor {
 }
 
 const URBANO = /\b(edificio|escuela|facultad|colegio|instituto|universidad|casa|piso|vivienda|bloque|portal|nave|garaje|local|tienda|hospital|coche|furgoneta|cami[oó]n|autob[uú]s|fábrica|fabrica|almac[eé]n)\b/i;
+/** Una calle con número es casco urbano ("calle Real 1": la llamada de las 19:13 recibió el consejo del monte). */
+const CALLE_CON_NUMERO = /\b(calle|avenida|avda|plaza|paseo|glorieta|ronda|traves[ií]a|bulevar)\b[^,]*\b\d{1,4}\b/i;
 
 /** ¿El aviso habla de un edificio o de un vehículo? (decide el consejo de seguridad). */
 export function esAvisoUrbano(a: Pick<AvisoLlamada, "queVe" | "lugar">): boolean {
-  return URBANO.test(`${a.queVe ?? ""} ${a.lugar ?? ""}`);
+  return URBANO.test(`${a.queVe ?? ""} ${a.lugar ?? ""}`) || CALLE_CON_NUMERO.test(a.lugar ?? "");
 }
 
 /** Frases cortas, en español, que el agente de voz lee tal cual. Solo hechos del estado. */
@@ -556,15 +578,16 @@ export function paraVoz(texto: string): string {
 }
 
 /**
- * Frase para que el agente confirme el sitio con la persona o le pida una referencia más.
- * Con una dirección, se confirma con la calle y el número (lo que dijo la persona, en limpio);
- * con un lugar, con su nombre para la voz. Pregunta corta: "¿Es ahí?".
+ * Frase del agente tras situar. Con una DIRECCIÓN (la calle y el número que dijo la persona,
+ * encontrados tal cual) se AFIRMA y se sigue, sin pedir confirmación: en las llamadas del
+ * 19-09 esperar el "sí" costó de 20 a 45 s con silencios y repeticiones. Con un lugar
+ * aproximado sí se pregunta ("¿Es ahí?"). Nombres para la voz, sin siglas.
  */
 export function mensajeSituar(r: Pick<ResultadoSituar, "precision"> & Partial<Pick<ResultadoSituar, "nombre" | "municipio" | "consulta">>): string {
   const donde = [r.nombre ? paraVoz(r.nombre) : undefined, r.municipio && r.municipio !== r.nombre ? r.municipio : undefined].filter(Boolean).join(", ");
   switch (r.precision) {
     case "direccion":
-      return `Lo tengo en ${r.consulta ? paraVoz(r.consulta) : donde}. ¿Es ahí?`;
+      return `Localizado en ${r.consulta ? paraVoz(r.consulta) : donde}.`;
     case "lugar":
       return `Lo tengo en ${donde}. ¿Es ahí?`;
     case "barrio":

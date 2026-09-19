@@ -138,7 +138,7 @@ describe("Llamada entrante al 112 virtual · herramientas del agente de voz", ()
     expect(j.lat).toBeLessThan(40.46);
     expect(j.lon).toBeGreaterThan(-3.74);
     expect(j.lon).toBeLessThan(-3.71);
-    expect(j.mensajeParaLocutor).toBe("Lo tengo en Avenida Complutense 30, Madrid. ¿Es ahí?");
+    expect(j.mensajeParaLocutor).toBe("Localizado en Avenida Complutense 30, Madrid.");
     // Sin secreto, 401.
     expect((await post("/api/happyrobot/situar", { lugar: "Madrid" }, false)).estado).toBe(401);
   }, 120_000);

@@ -427,8 +427,8 @@ describe("preprocesado de la dirección dictada · lo que el reconocimiento de v
     );
     const r = await situarLugar(a);
     expect(r).toMatchObject({ encontrado: true, precision: "direccion", lat: 40.45287, lon: -3.72556, municipio: "Madrid", consulta: "Avenida Complutense 30, Madrid" });
-    // Con una dirección se confirma con la calle y el número, no con la etiqueta del mapa ("ETSI…").
-    expect(r.mensajeParaLocutor).toBe("Lo tengo en Avenida Complutense 30, Madrid. ¿Es ahí?");
+    // Con una dirección (la calle y el número dichos) se AFIRMA y se sigue, sin preguntar ni leer "ETSI…".
+    expect(r.mensajeParaLocutor).toBe("Localizado en Avenida Complutense 30, Madrid.");
     expect(dobles.geocodificar).toHaveBeenCalledTimes(1);
 
     // Solo el municipio: el agente tiene que pedir una referencia más.
@@ -640,5 +640,34 @@ describe("consultas de la IA · la coma antes del municipio (pausa al leerla)", 
       consultas: [{ consulta: "Avenida Complutense 30 Madrid", precision: "direccion" }, { consulta: "Madrid", precision: "municipio" }],
     });
     expect(c.map((x) => x.consulta)).toEqual(["Avenida Complutense 30, Madrid", "Madrid"]);
+  });
+});
+
+describe("comportamiento revisado con las seis llamadas de 19:13-19:51", () => {
+  it("dirección exacta → afirma sin preguntar; lugar aproximado → pregunta «¿Es ahí?»", async () => {
+    const { mensajeSituar } = await import("@/lib/happyrobot/entrante");
+    expect(mensajeSituar({ precision: "direccion", consulta: "calle Real 1, Villanueva de la Cañada", nombre: "Calle Real", municipio: "Villanueva de la Cañada" })).toBe("Localizado en calle Real 1, Villanueva de la Cañada.");
+    expect(mensajeSituar({ precision: "direccion", consulta: "calle Real 1, Villanueva de la Cañada" })).not.toMatch(/\?/);
+    expect(mensajeSituar({ precision: "lugar", nombre: "ETSI de Telecomunicación", municipio: "Madrid" })).toBe("Lo tengo en Escuela de Ingenieros de Telecomunicación, Madrid. ¿Es ahí?");
+  });
+
+  it("una calle con número es zona urbana: nada de «ladera arriba» (llamada de las 19:13)", async () => {
+    const { esAvisoUrbano } = await import("@/lib/happyrobot/entrante");
+    expect(esAvisoUrbano({ queVe: "incendio", lugar: "calle Real 1" })).toBe(true);
+    expect(esAvisoUrbano({ queVe: "mucho fuego", lugar: "Avenida Complutense 30" })).toBe(true);
+    expect(esAvisoUrbano({ queVe: "humo", lugar: "N-403 km 62" })).toBe(false);
+    expect(esAvisoUrbano({ queVe: "humo", lugar: "paraje del Pinar" })).toBe(false);
+  });
+
+  it("el cierre nombra el municipio que dijo la persona aunque el foco aún no lo tenga", async () => {
+    const e = estado();
+    dobles.verificar.mockImplementationOnce(async (id: string) => {
+      const inc = { id: "inc-sin-municipio", nombre: "Incendio en 40.451, -4.007", municipio: "", estado: "detectado", confianza: 0.7, centro: { lat: 40.45, lon: -4.0 } } as unknown as Incendio;
+      e.guardar(e.incendios, inc);
+      e.actualizar(e.observaciones, id, { impacto: "nuevo_foco", incendioId: inc.id, verificacion: "Foco nuevo declarado" });
+      return { impacto: "nuevo_foco" };
+    });
+    const r = await registrarAvisoDeLlamada({ runId: "run-1913", municipio: "Villanueva de la Cañada", lugar: "calle Real 1", queVe: "incendio", punto: { lat: 40.4509, lon: -4.0066 } }, { esperaMs: 2000 });
+    expect(r.mensajeParaLocutor).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Villanueva de la Cañada y está enviando medios. Aléjese del humo y del edificio, y no vuelva a entrar.");
   });
 });

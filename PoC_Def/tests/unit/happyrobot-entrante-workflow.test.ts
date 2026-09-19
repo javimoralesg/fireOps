@@ -231,3 +231,19 @@ describe("camposAExponer · lo que el agente ve de la respuesta de cada herramie
     expect(Object.keys(SALIDAS_MUESTRA.situar).sort()).toEqual(Object.keys(situarSinDatos()).sort());
   });
 });
+
+describe("prompt revisado con las llamadas de 19:13-19:51", () => {
+  it("no pregunta «¿humo o llamas?», no inventa datos, afirma direcciones y cuelga si todo falla", () => {
+    const raiz = fileURLToPath(new URL("../..", import.meta.url));
+    const doc = readFileSync(`${raiz}docs/HAPPYROBOT.md`, "utf8");
+    const i = doc.indexOf("**Nodo 2 · Inbound Voice Agent**");
+    const ini = doc.indexOf("```", i);
+    const finLinea = doc.indexOf("\n", ini);
+    const prompt = doc.slice(finLinea + 1, doc.indexOf("```", finLinea));
+    expect(prompt).toMatch(/no vuelvas a\s+preguntar "¿humo o llamas\?"/);
+    expect(prompt).toMatch(/nunca completes datos que no se han dicho/);
+    expect(prompt).toMatch(/Si es una afirmación[\s\S]*NO esperes respuesta/);
+    expect(prompt).toMatch(/"Su aviso ha quedado grabado y la sala lo va a recibir\. Gracias\s+por avisar\." y cuelga/);
+    expect(prompt).not.toMatch(/La sala recibe su llamada igualmente/);
+  });
+});

@@ -119,6 +119,9 @@ function iguales(a: unknown, b: unknown): boolean {
  */
 export function fundirSnapshot(nuevo: Snapshot, previo?: Snapshot): Snapshot {
   if (!previo || !nuevo) return nuevo;
+  // Otra ejecución: el Estado nuevo arranca versión y sellos desde cero, así que
+  // un sello igual no significa nada y ninguna referencia anterior sirve.
+  if (previo.ejecucion?.id !== nuevo.ejecucion?.id) return nuevo;
   const sellosN = (nuevo as SnapshotSellado).sellos;
   const sellosP = (previo as SnapshotSellado).sellos;
   const salida = nuevo as unknown as Record<string, unknown>;

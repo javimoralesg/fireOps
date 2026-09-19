@@ -37,6 +37,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { useToast } from "@/components/ui/Toast";
 import { Marca } from "@/components/marca/Logo";
 import { SelectorTema } from "@/components/marca/SelectorTema";
+import { debugActivado } from "@/lib/cliente/configuracion";
 import { ControlViento } from "./ControlViento";
 import { PuntosSalud } from "./PuntosSalud";
 
@@ -76,6 +77,7 @@ export function BarraSuperior({
   const reloj = snapshot?.reloj;
   const ejec = snapshot?.ejecucion;
   const pausado = Boolean(reloj?.pausado);
+  const mostrarSaludServicios = debugActivado(process.env.NEXT_PUBLIC_DEBUG);
   const focosActivos = (snapshot?.incendios ?? []).filter((i) => !["extinguido", "descartado", "controlado"].includes(i.estado));
   const vientoForzado = focosActivos.find((i) => i.meteoForzada);
 
@@ -268,7 +270,7 @@ export function BarraSuperior({
 
       {/* Segunda fila: salud, enlaces y tema. A 1024 px cae debajo sin scroll horizontal. */}
       <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-panel-border pt-1.5">
-        <PuntosSalud servicios={snapshot?.servicios} />
+        {mostrarSaludServicios ? <PuntosSalud servicios={snapshot?.servicios} /> : null}
         <nav aria-label="Otras pantallas" className="flex flex-wrap items-center gap-0.5">
           {ENLACES.map(({ href, etiqueta, icono: Icono }) => (
             <Link

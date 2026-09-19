@@ -26,14 +26,16 @@ const enCurso = () => (g.__atalayaAnalisisMovil ??= new Map());
 /**
  * Analiza ahora el último fotograma de la cámara móvil `camaraId`.
  * Devuelve el análisis, o undefined si no hay proveedor de visión, no queda cupo
- * este minuto o el análisis falló (el Vigía deja el fallo registrado). Si el mismo
- * fotograma ya está en análisis se comparte esa promesa en vez de repetirlo.
+ * este minuto o el análisis falló (el Vigía deja el fallo registrado). Si la cámara
+ * ya tiene un análisis en curso se comparte esa promesa: nunca corren dos análisis de
+ * la misma cámara a la vez, así que uno antiguo no puede terminar después y pisar al
+ * reciente; el fotograma más nuevo lo recoge el siguiente ciclo del Vigía.
  */
 export function analizarMovilAlLlegar(camaraId: string): Promise<AnalisisCamara | undefined> {
   const f = fotogramaDe(camaraId);
   const camara = obtenerEstado().camaras.get(camaraId);
   if (!f || !camara || !proveedorDisponible()) return Promise.resolve(undefined);
-  const clave = `${camaraId}#${f.secuencia}`;
+  const clave = camaraId;
   const pendiente = enCurso().get(clave);
   if (pendiente) return pendiente;
   if (cupoDisponible() <= 0) return Promise.resolve(undefined);

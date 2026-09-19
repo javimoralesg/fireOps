@@ -406,7 +406,13 @@ recientes del workflow entrante (`GET /workflows/{slug}/runs`, `/runs/{id}/nodes
 y registra las que falten, idempotente por run: con los datos de `registrar_aviso` si llegó a llamarla;
 si no, con el sitio de `situar_lugar` y lo que dijo la persona; si no hubo herramientas, la transcripción
 va a la centralita. Si el aviso llegó en directo pero falló el webhook de colgar, adjunta la transcripción.
-Solo llamadas terminadas, de la ejecución actual y de las últimas 6 h. Arranca en `instrumentation.ts`;
+Solo llamadas terminadas y de las últimas 6 h. El corte NO es el inicio de la ejecución sino el registro
+en disco de llamadas atendidas (`lib/happyrobot/llamadas-atendidas.ts`, `data/happyrobot-llamadas-atendidas.json`,
+lo escriben la pasada y el webhook de colgar): así una llamada recibida con el servidor parado se recupera
+al arrancar aunque la ejecución sea nueva (sin persistencia cada reinicio abre una), y lo ya atendido en la
+ejecución anterior no se importa. La primera vez que existe el registro, las llamadas anteriores al arranque
+se dan por atendidas sin importarlas. Con persistencia, la pasada espera a que la ejecución esté rehidratada
+de Supabase (`rehidratacionTerminada`, `lib/motor/persistencia.ts`). Arranca en `instrumentation.ts`;
 a demanda: `POST /api/happyrobot/recuperar` (con `x-webhook-secret`); última pasada en
 `GET /api/happyrobot/salud` → `entrante.recuperacion`. Medido el 19-09: las dos llamadas de las 18:31 y
 18:33, perdidas con el túnel caído, se recuperaron en la ETSIT (foco nuevo y su duplicado).

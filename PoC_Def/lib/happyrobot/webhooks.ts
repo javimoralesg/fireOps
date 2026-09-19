@@ -7,11 +7,12 @@
 // formas) y el enganche con la centralita viven aquí.
 // DUEÑO: constructor D.
 // =====================================================================
-import type { Accion, CanalComunicacion, Decision } from "../dominio/tipos";
+import type { Accion, CanalComunicacion, Decision, EstadoAviso } from "../dominio/tipos";
 import { obtenerEstado } from "../motor/estado";
 import { emitir } from "../motor/orquestador";
 import { error, json } from "../motor/respuestas";
 import { verificarWebhook } from "./cliente";
+import { marcarLlamadaAtendida } from "./llamadas-atendidas";
 
 export type CanalEntrada = "llamada" | "sms" | "email";
 
@@ -86,7 +87,11 @@ export async function entradaHappyRobot(peticion: Request, canal: CanalEntrada):
   if (canal === "llamada" && referencia) {
     const { adjuntarTranscripcion } = await import("./entrante");
     const existente = adjuntarTranscripcion(referencia, texto, remitente);
-    if (existente) return json({ recibido: true, observacionId: existente.id, impacto: existente.impacto ?? null, adjuntada: true });
+    if (existente) {
+      // La llamada llegó entera: la recuperación (lib/happyrobot/recuperar-llamadas.ts) no tiene que volver a mirarla.
+      marcarLlamadaAtendida(referencia);
+      return json({ recibido: true, observacionId: existente.id, impacto: existente.impacto ?? null, adjuntada: true });
+    }
   }
 
   try {
@@ -98,6 +103,7 @@ export async function entradaHappyRobot(peticion: Request, canal: CanalEntrada):
       referenciaExterna: referencia,
       punto: lat !== undefined && lon !== undefined ? { lat, lon } : undefined,
     });
+    if (canal === "llamada" && referencia) marcarLlamadaAtendida(referencia);
     return json({ recibido: true, observacionId: observacion.id, impacto: observacion.impacto ?? null });
   } catch (e) {
     return error(`No se pudo procesar la entrada de HappyRobot: ${e instanceof Error ? e.message : String(e)}`, 500);

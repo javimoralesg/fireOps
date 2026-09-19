@@ -84,6 +84,8 @@ interface EstadoPersistencia {
   trazasEnviadas: Set<string>;
   volcando: boolean;
   arrancada: boolean;
+  /** true cuando `arrancarPersistencia` ya cargó (o intentó cargar) la ejecución activa: el Estado es el definitivo. */
+  rehidratada: boolean;
   huellaPolitica?: string;
   huellaEjecucion?: string;
 }
@@ -102,6 +104,7 @@ function pers(): EstadoPersistencia {
       trazasEnviadas: new Set(),
       volcando: false,
       arrancada: false,
+      rehidratada: false,
     };
   }
   return globalThis.__atalayaPersistencia;
@@ -407,6 +410,7 @@ export async function arrancarPersistencia(): Promise<void> {
         ? "Esta instancia no guarda la ejecución (SUPABASE_PERSISTIR sin activar): vive solo en memoria"
         : "Sin SUPABASE_URL o sin SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY: la ejecución vive solo en memoria",
     );
+    p.rehidratada = true;
     return;
   }
 
@@ -426,12 +430,23 @@ export async function arrancarPersistencia(): Promise<void> {
   } catch (e) {
     estado.marcarServicio("Supabase", false, mensajeDe(e));
   }
+  p.rehidratada = true;
 
   // Nota: `cargarEjecucionActiva` rellena los mapas directamente (sin pasar por
   // `guardar`), así que lo recuperado de la base no queda marcado como cambio y
   // no se re-sube. Solo se suben las mutaciones posteriores.
   engancharPersistencia(estado);
   await volcar();
+}
+
+/**
+ * true cuando el Estado en memoria ya es el definitivo: sin persistencia, siempre; con ella,
+ * cuando `arrancarPersistencia` ha cargado (o intentado cargar) la ejecución activa. La
+ * recuperación de llamadas al 112 (lib/happyrobot/recuperar-llamadas.ts) espera a esto:
+ * una llamada atendida en directo y aún no rehidratada parecería perdida y se registraría dos veces.
+ */
+export function rehidratacionTerminada(): boolean {
+  return !hayPersistencia() || pers().rehidratada;
 }
 
 /** Fuerza un volcado inmediato (al cerrar una ejecución o desde scripts). */

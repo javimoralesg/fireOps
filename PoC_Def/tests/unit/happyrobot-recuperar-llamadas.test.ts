@@ -3,12 +3,17 @@
 // Las transcripciones son las de las dos llamadas reales de las 18:31 y 18:33 del 19-09, que
 // no llegaron porque el túnel estaba caído. La API de HappyRobot, Nominatim, la centralita y el
 // verificador van con dobles (sin red); el Estado es el REAL, en memoria.
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Observacion } from "@/lib/dominio/tipos";
 
 const dobles = vi.hoisted(() => ({
   estado: undefined as unknown,
   contador: 0,
+  /** Con persistencia: ¿ya está cargada la ejecución activa? (sin persistencia siempre lo está). */
+  rehidratada: true,
   procesarEntrada: vi.fn(),
   verificar: vi.fn(),
   geocodificar: vi.fn(),
@@ -26,8 +31,10 @@ vi.mock("@/lib/agentes/analisis/verificador", () => ({ verificarObservacionAhora
 vi.mock("@/lib/fuentes/nominatim", () => ({ geocodificar: (...a: unknown[]) => dobles.geocodificar(...a) }));
 vi.mock("@/lib/ia/llm", () => ({ proveedorDisponible: () => false, completarJson: vi.fn() }));
 vi.mock("@/lib/happyrobot/sms-avisos", () => ({ enviarSmsAvisoRegistrado: (...a: unknown[]) => dobles.sms(...a) }));
+vi.mock("@/lib/motor/persistencia", async (importar) => ({ ...(await importar<typeof import("@/lib/motor/persistencia")>()), rehidratacionTerminada: () => dobles.rehidratada }));
 
 import { Estado } from "@/lib/motor/estado";
+import { llamadaAtendida, marcarLlamadaAtendida, reiniciarRegistroDeLlamadas, VARIABLE_RUTA_ATENDIDAS } from "@/lib/happyrobot/llamadas-atendidas";
 import {
   argumentosHerramienta,
   leerTranscripcion,
@@ -78,9 +85,25 @@ function fetchDeHappyRobot(url: string): Response {
   return new Response("no encontrado", { status: 404 });
 }
 
+// Registro en disco de llamadas atendidas: un archivo nuevo por prueba (el módulo lo cachea por ruta).
+const DIR_REGISTRO = mkdtempSync(join(tmpdir(), "atalaya-llamadas-"));
+let numPrueba = 0;
+const rutaRegistro = () => process.env[VARIABLE_RUTA_ATENDIDAS] as string;
+/** Simula un reinicio del servidor sin persistencia: proceso nuevo (cachés fuera) y ejecución nueva; el archivo en data/ se queda. */
+function reiniciarServidor(): void {
+  delete (globalThis as { __atalayaRecuperacion?: unknown }).__atalayaRecuperacion;
+  delete (globalThis as { __atalayaSituadoPorRun?: unknown }).__atalayaSituadoPorRun;
+  reiniciarRegistroDeLlamadas();
+  dobles.estado = new Estado();
+}
+
 beforeEach(() => {
   delete (globalThis as { __atalayaRecuperacion?: unknown }).__atalayaRecuperacion;
   delete (globalThis as { __atalayaSituadoPorRun?: unknown }).__atalayaSituadoPorRun;
+  process.env[VARIABLE_RUTA_ATENDIDAS] = join(DIR_REGISTRO, `atendidas-${++numPrueba}.json`);
+  rmSync(rutaRegistro(), { force: true });
+  reiniciarRegistroDeLlamadas();
+  dobles.rehidratada = true;
   process.env.HAPPYROBOT_API_KEY = "sk_live_prueba";
   process.env.HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE = "dzftt0y1041x";
   dobles.estado = new Estado();
@@ -198,7 +221,7 @@ describe("recuperarLlamadasPerdidas · contra la API de HappyRobot (doble)", () 
     expect(dobles.procesarEntrada).not.toHaveBeenCalled();
   });
 
-  it("no toca llamadas en curso, ni anteriores al inicio de la ejecución, ni silenciosas", async () => {
+  it("no toca llamadas en curso ni silenciosas; en el PRIMER arranque (sin registro en disco) las anteriores a la ejecución se dan por atendidas", async () => {
     estado().ejecucion.inicio = haceMin(30);
     dobles.runs = [
       { id: "run-en-curso", status: "running", timestamp: haceMin(1), completed_at: null },
@@ -206,10 +229,68 @@ describe("recuperarLlamadasPerdidas · contra la API de HappyRobot (doble)", () 
       { id: "run-muda", status: "completed", timestamp: haceMin(5), completed_at: haceMin(4) },
     ];
     dobles.salidas.set("run-muda", { from: "+34600000000", transcript: [{ role: "assistant", content: "Emergencias, dígame." }] });
+    expect(existsSync(rutaRegistro())).toBe(false);
     const r = await recuperarLlamadasPerdidas();
     expect(r.revisadas).toBe(1);
     expect(r.recuperadas).toHaveLength(0);
+    expect(r.anterioresAlArranque).toBe(1);
     expect(estado().observaciones.size).toBe(0);
+    // El registro queda en disco: la vieja y la muda constan como atendidas; la que sigue en curso, no.
+    const guardado = JSON.parse(readFileSync(rutaRegistro(), "utf8")) as { llamadas: Record<string, string> };
+    expect(Object.keys(guardado.llamadas).sort()).toEqual(["run-muda", "run-vieja"]);
+    expect(llamadaAtendida("run-en-curso")).toBe(false);
+  });
+
+  it("reinicio sin persistencia: la llamada recibida con el servidor parado se recupera aunque sea anterior al inicio de la nueva ejecución", async () => {
+    // Primera vida del servidor: pasada limpia que deja el registro en disco.
+    dobles.runs = [];
+    await recuperarLlamadasPerdidas();
+    expect(existsSync(rutaRegistro())).toBe(true);
+    // El servidor cae; durante la caída entra la llamada de las 18:33; al arrancar hay una ejecución nueva.
+    reiniciarServidor();
+    expect(Date.parse(estado().ejecucion.inicio)).toBeGreaterThan(Date.now() - 1000);
+    dobles.runs = [{ id: "run-1833", status: "failed", timestamp: haceMin(3), completed_at: haceMin(2) }];
+    dobles.salidas.set("run-1833", { from: "+34653070926", transcript: JSON.stringify(LLAMADA_1833) });
+    const r = await recuperarLlamadasPerdidas();
+    expect(r.error).toBeUndefined();
+    expect(r.anterioresAlArranque).toBeUndefined();
+    expect(r.recuperadas.map((x) => x.runId)).toEqual(["run-1833"]);
+    expect(observacionDeLlamada(estado(), "run-1833")?.impacto).toBe("nuevo_foco");
+    expect(estado().eventos.find((e) => e.datos?.recuperada === true)?.mensaje).toMatch(/servidor estaba parado/);
+    expect(dobles.sms).toHaveBeenCalledTimes(1);
+  });
+
+  it("lo que ya se atendió (recuperado o en directo) no se vuelve a registrar tras reiniciar, aunque la ejecución nueva esté vacía", async () => {
+    dobles.runs = [
+      { id: "run-1833", status: "failed", timestamp: haceMin(5), completed_at: haceMin(4) },
+      { id: "run-directo", status: "completed", timestamp: haceMin(6), completed_at: haceMin(5) },
+    ];
+    dobles.salidas.set("run-1833", { from: "+34653070926", transcript: JSON.stringify(LLAMADA_1833) });
+    dobles.salidas.set("run-directo", { from: "+34653070926", transcript: JSON.stringify(LLAMADA_1831) });
+    // run-directo llegó entera en directo: el webhook de colgar la marcó (lib/happyrobot/webhooks.ts).
+    marcarLlamadaAtendida("run-directo");
+    const r1 = await recuperarLlamadasPerdidas();
+    expect(r1.recuperadas.map((x) => x.runId)).toEqual(["run-1833"]);
+
+    reiniciarServidor();
+    const r2 = await recuperarLlamadasPerdidas();
+    expect(r2.revisadas).toBe(0);
+    expect(r2.recuperadas).toHaveLength(0);
+    expect(estado().observaciones.size).toBe(0);
+    expect(dobles.procesarEntrada).toHaveBeenCalledTimes(1);
+  });
+
+  it("con persistencia, no revisa nada hasta que la ejecución está rehidratada de Supabase", async () => {
+    dobles.rehidratada = false;
+    dobles.runs = [{ id: "run-1833", status: "failed", timestamp: haceMin(5), completed_at: haceMin(4) }];
+    const r = await recuperarLlamadasPerdidas();
+    expect(r.error).toMatch(/rehidrataci/);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(existsSync(rutaRegistro())).toBe(false);
+    dobles.rehidratada = true;
+    dobles.salidas.set("run-1833", { from: "+34653070926", transcript: JSON.stringify(LLAMADA_1833) });
+    const r2 = await recuperarLlamadasPerdidas();
+    expect(r2.recuperadas).toHaveLength(1);
   });
 
   it("sin slug o sin clave no llama a la API y lo dice", async () => {

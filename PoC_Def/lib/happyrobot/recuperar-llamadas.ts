@@ -12,14 +12,21 @@
 //     dictó al agente (o, si no llegó a dictarlo, con la transcripción);
 //   · observación sin transcripción (falló solo el webhook de colgar) → se adjunta.
 // Idempotente por run de HappyRobot (misma referencia externa que usa el
-// registro en directo): una llamada nunca se registra dos veces.
+// registro en directo): una llamada nunca se registra dos veces. El corte NO es
+// el inicio de la ejecución (revisión del PR, 19-09: sin persistencia, un reinicio
+// abre otra ejecución y las llamadas recibidas con el servidor parado quedaban
+// antes de su inicio y no se recuperaban nunca) sino el registro en disco de
+// llamadas atendidas (lib/happyrobot/llamadas-atendidas.ts), que sobrevive al
+// reinicio. Con persistencia, la pasada espera a que la ejecución esté rehidratada
+// de Supabase: si no, una llamada atendida en directo parecería perdida.
 // Se ejecuta cada minuto en el propio servidor (`arrancarRecuperacionLlamadas`,
 // desde instrumentation.ts) y a demanda en POST /api/happyrobot/recuperar, que
 // además llama el guardián del túnel (scripts/tunel-vigilado.sh) al recuperarse.
-// DUEÑO: sesión fireops-82 (2026-09-19). Dependencias: lib/happyrobot/entrante.ts,
+// DUEÑO: sesión fireops-82 (2026-09-19); revisión del PR por fireops-f4. Dependencias: lib/happyrobot/entrante.ts,
 // API v2 de HappyRobot (GET /workflows/{slug}/runs, /runs/{id}/nodes, /runs/{id}/outputs/{id}).
 // =====================================================================
 import { obtenerEstado } from "../motor/estado";
+import { rehidratacionTerminada } from "../motor/persistencia";
 import { apiBase } from "./cliente";
 import {
   adjuntarTranscripcion,
@@ -31,6 +38,7 @@ import {
   slugEntrante,
   type AvisoLlamada,
 } from "./entrante";
+import { hayRegistroDeLlamadas, llamadaAtendida, marcarLlamadasAtendidas } from "./llamadas-atendidas";
 
 /** Nombre del nodo del agente en el workflow (scripts/happyrobot-entrante.mjs, NOMBRES_NODOS.agente). */
 const NODO_AGENTE = "Centralita 112";
@@ -119,13 +127,15 @@ export interface ResultadoRecuperacion {
   revisadas: number;
   recuperadas: { runId: string; como: string; observacionId?: string; impacto?: string | null }[];
   transcripcionesAdjuntadas: string[];
+  /** Solo en el primer arranque sin registro en disco: llamadas anteriores a la ejecución que se dan por atendidas sin importarlas. */
+  anterioresAlArranque?: number;
   error?: string;
 }
 
 type Global = typeof globalThis & {
-  __atalayaRecuperacion?: { hechas: Set<string>; enCurso: boolean; ultima?: ResultadoRecuperacion; intervalo?: ReturnType<typeof setInterval> };
+  __atalayaRecuperacion?: { enCurso: boolean; sembrado: boolean; ultima?: ResultadoRecuperacion; intervalo?: ReturnType<typeof setInterval> };
 };
-const est = () => ((globalThis as Global).__atalayaRecuperacion ??= { hechas: new Set<string>(), enCurso: false });
+const est = () => ((globalThis as Global).__atalayaRecuperacion ??= { enCurso: false, sembrado: false });
 
 /** Resultado de la última pasada (para la pantalla de salud). */
 export const ultimaRecuperacion = (): ResultadoRecuperacion | undefined => est().ultima;
@@ -134,7 +144,9 @@ const terminada = (r: RunApi) => Boolean(r.completed_at) || ["completed", "faile
 
 /**
  * Una pasada: revisa las llamadas recientes del workflow entrante y registra lo
- * que falte en Atalaya. Nunca registra dos veces la misma llamada.
+ * que falte en Atalaya. Nunca registra dos veces la misma llamada: el corte lo
+ * pone el registro en disco de llamadas atendidas (no el inicio de la ejecución),
+ * así que una llamada recibida con el servidor parado se recupera al arrancar.
  */
 export async function recuperarLlamadasPerdidas(opciones: { ahora?: number } = {}): Promise<ResultadoRecuperacion> {
   const e = est();
@@ -148,21 +160,37 @@ export async function recuperarLlamadasPerdidas(opciones: { ahora?: number } = {
     resultado.error = "Ya hay una pasada en curso";
     return resultado;
   }
+  // Con persistencia, el Estado no es el definitivo hasta que se carga la ejecución activa de Supabase:
+  // una llamada atendida en directo y aún no rehidratada parecería perdida y se registraría dos veces.
+  if (!rehidratacionTerminada()) {
+    resultado.error = "Esperando a que termine la rehidratación de la ejecución desde Supabase";
+    return (e.ultima = resultado);
+  }
   e.enCurso = true;
   try {
     const estado = obtenerEstado();
     const ahora = opciones.ahora ?? Date.now();
-    // Solo llamadas de ESTA ejecución: una ejecución nueva no hereda avisos de la anterior.
-    const inicioEjecucion = Date.parse(estado.ejecucion?.inicio ?? "") || 0;
-    const desdeMs = Math.max(inicioEjecucion, ahora - VENTANA_MS);
+    const desdeMs = ahora - VENTANA_MS;
     const runs = lista<RunApi>(await pedir(`/workflows/${encodeURIComponent(slug)}/runs?page_size=${LIMITE_RUNS}`));
+    const cuandoDe = (r: RunApi): number => Date.parse(r.timestamp ?? "");
+    // PRIMER arranque con registro (aún no hay archivo en data/): las llamadas anteriores a esta ejecución
+    // no son de nadie y se dan por atendidas sin importarlas (un servidor recién estrenado no se traga
+    // media tarde de pruebas). A partir de ahí manda el registro: una llamada que no esté en él se
+    // recupera aunque sea anterior al inicio de la ejecución actual (servidor parado, reinicio sin
+    // persistencia). Marcar una lista vacía crea el archivo: la siembra ocurre una sola vez.
+    if (!e.sembrado && !hayRegistroDeLlamadas()) {
+      const inicioEjecucion = Date.parse(estado.ejecucion?.inicio ?? "") || 0;
+      const previas = runs.filter((r) => r?.id && terminada(r) && cuandoDe(r) < inicioEjecucion && !llamadaAtendida(r.id)).map((r) => r.id);
+      marcarLlamadasAtendidas(previas, new Date(ahora));
+      resultado.anterioresAlArranque = previas.length;
+    }
+    e.sembrado = true;
     for (const run of runs) {
-      if (!run?.id || e.hechas.has(`${estado.ejecucion?.id}:${run.id}`)) continue;
-      const cuando = Date.parse(run.timestamp ?? "");
+      if (!run?.id || llamadaAtendida(run.id)) continue;
+      const cuando = cuandoDe(run);
       if (!Number.isFinite(cuando) || cuando < desdeMs) continue;
       if (!terminada(run)) continue; // sigue en curso: la herramienta en directo puede llegar todavía
       resultado.revisadas += 1;
-      const clave = `${estado.ejecucion?.id}:${run.id}`;
       const existente = observacionDeLlamada(estado, run.id);
       const { desde, msgs } = await datosDeLlamada(run.id);
       if (existente) {
@@ -171,12 +199,12 @@ export async function recuperarLlamadasPerdidas(opciones: { ahora?: number } = {
           adjuntarTranscripcion(run.id, textoTranscripcion(msgs), desde);
           resultado.transcripcionesAdjuntadas.push(run.id);
         }
-        e.hechas.add(clave);
+        marcarLlamadasAtendidas([run.id], new Date(ahora));
         continue;
       }
       const plan = planRecuperacion(run.id, desde, msgs);
       if (plan.tipo === "nada") {
-        e.hechas.add(clave);
+        marcarLlamadasAtendidas([run.id], new Date(ahora));
         continue;
       }
       const hora = new Date(cuando).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
@@ -186,7 +214,7 @@ export async function recuperarLlamadasPerdidas(opciones: { ahora?: number } = {
         adjuntarTranscripcion(run.id, textoTranscripcion(msgs), desde);
         estado.registrarEvento(
           "observacion",
-          `Llamada al 112 de ${desde ?? "un ciudadano"} (${hora}) recuperada de HappyRobot: el enlace con Atalaya falló durante la llamada y se ha registrado ahora con lo que dictó la persona (${plan.fuente}).`,
+          `Llamada al 112 de ${desde ?? "un ciudadano"} (${hora}) recuperada de HappyRobot: no constaba en Atalaya (el enlace falló durante la llamada o el servidor estaba parado) y se ha registrado ahora con lo que dictó la persona (${plan.fuente}).`,
           { agenteId: "centralita", incendioId: r.foco?.id, nivel: "aviso", datos: { observacionId: r.observacionId, referenciaExterna: run.id, recuperada: true, fuente: plan.fuente } },
         );
         // Mismo SMS que el registro en directo (lib/happyrobot/sms-avisos.ts, sesión fireops-00); tolerante.
@@ -202,12 +230,12 @@ export async function recuperarLlamadasPerdidas(opciones: { ahora?: number } = {
         const obs = await procesarEntrada({ canal: "llamada", texto: `${MARCA_TRANSCRIPCION}\n${plan.texto}`, remitente: desde, referenciaExterna: run.id });
         estado.registrarEvento(
           "observacion",
-          `Llamada al 112 de ${desde ?? "un ciudadano"} (${hora}) recuperada de HappyRobot: el agente no llegó a registrarla y se ha entregado la transcripción a la centralita.`,
+          `Llamada al 112 de ${desde ?? "un ciudadano"} (${hora}) recuperada de HappyRobot: no constaba en Atalaya (el enlace falló durante la llamada o el servidor estaba parado); el agente no llegó a registrarla y se ha entregado la transcripción a la centralita.`,
           { agenteId: "centralita", nivel: "aviso", datos: { observacionId: obs.id, referenciaExterna: run.id, recuperada: true, fuente: "transcripcion" } },
         );
         resultado.recuperadas.push({ runId: run.id, como: "transcripción", observacionId: obs.id, impacto: obs.impacto ?? null });
       }
-      e.hechas.add(clave);
+      marcarLlamadasAtendidas([run.id], new Date(ahora));
     }
   } catch (err) {
     resultado.error = err instanceof Error ? err.message : String(err);

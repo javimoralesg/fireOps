@@ -5,15 +5,24 @@
 // prensa, redes, satélite, cámaras) en focos reales. Deduplica por espacio
 // y tiempo, cruza con los incendios ya activos y, cuando la señal se
 // sostiene, declara un foco nuevo con el orquestador.
+// Vía inmediata (sesión fireops-2a): `verificarObservacionAhora(id)` verifica UNA
+// observación fuera del ciclo; la llama el Vigía al ver fuego en una cámara para
+// que el foco se declare o confirme en el acto. Una cámara que ve LLAMAS con
+// fiabilidad ≥ 0,8 es confirmación visual: confirma el foco (aunque el origen sea
+// otra cámara) y, si lo crea, nace ya "confirmado".
 // DUEÑO: constructor D.
 // Dependencias: lib/motor/orquestador (declararFoco), lib/ia/llm (modelo
-// rápido, solo cuando la regla determinista no basta), lib/fuentes/geo.
+// rápido, solo cuando la regla determinista no basta), lib/fuentes/geo,
+// lib/dominio/fuentes-deteccion (fuentes apagadas por el escenario del mando:
+// sus avisos se registran pero no crean ni confirman focos).
 // =====================================================================
 import { z } from "zod";
 import type { Incendio, Observacion } from "../../dominio/tipos";
 import type { Agente, ContextoAgente, ResultadoCiclo } from "../../motor/contratos";
+import { canalPuedeDeclararFoco, fuenteQueBloquea } from "../../dominio/fuentes-deteccion";
 import { haversine } from "../../fuentes/geo";
 import { completarJson, modeloPara, proveedorDisponible } from "../../ia/llm";
+import { describirFueraEspana, enEspana } from "../../dominio/espana";
 
 /** Radio (km) dentro del cual dos avisos del mismo canal se consideran el mismo. */
 const KM_DUPLICADA = 2;
@@ -60,6 +69,15 @@ function minutosMundoEntre(isoA: string, isoB: string, factor: number): number {
 
 const CANALES_FIABLES: Observacion["canal"][] = ["satelite", "camara", "manual"];
 
+/** Cámara que ve LLAMAS con fiabilidad alta: confirmación visual, no un indicio más. */
+function evidenciaVisual(obs: Observacion): boolean {
+  return obs.canal === "camara" && obs.extraccion?.tipo === "llamas" && (obs.extraccion?.fiabilidad ?? 0) >= 0.8;
+}
+
+/** Observaciones que se están verificando ahora mismo (ciclo o vía inmediata): ninguna se procesa dos veces. */
+type Global = typeof globalThis & { __atalayaVerificando?: Set<string> };
+const enVerificacion = (): Set<string> => ((globalThis as Global).__atalayaVerificando ??= new Set());
+
 export const verificador: Agente = {
   id: "verificador",
   nombre: "Verificador",
@@ -79,29 +97,20 @@ export const verificador: Agente = {
     }
 
     ctx.informarTarea(`Verificando ${pendientes.length} aviso(s)`);
-    const factor = estado.reloj.factor || 12;
-    const activos = estado.incendiosActivos();
     let nuevos = 0;
     let confirmadas = 0;
     let descartadas = 0;
 
     for (const obs of pendientes) {
       if (ctx.abortSignal.aborted) break;
-      const resultado = await verificarUna(obs, todas, activos, factor, ctx);
-      estado.actualizar(estado.observaciones, obs.id, {
-        impacto: resultado.impacto,
-        verificacion: resultado.verificacion,
-        incendioId: resultado.incendioId ?? obs.incendioId,
-      });
+      // Se recalculan focos y observaciones en cada aviso: el anterior puede haber
+      // creado el foco que este debe confirmar (antes se calculaban una vez por ciclo
+      // y dos avisos del mismo fuego en el mismo ciclo abrían dos focos).
+      const resultado = await procesarObservacion(obs, ctx);
+      if (!resultado) continue; // ya la está verificando la vía inmediata
       if (resultado.impacto === "nuevo_foco") nuevos += 1;
       else if (resultado.impacto === "confirma" || resultado.impacto === "agrava") confirmadas += 1;
       else if (resultado.impacto === "ruido" || resultado.impacto === "duplicada") descartadas += 1;
-
-      ctx.registrar("observacion", resultado.verificacion, {
-        incendioId: resultado.incendioId,
-        nivel: resultado.impacto === "nuevo_foco" ? "critico" : resultado.impacto === "agrava" ? "aviso" : "info",
-        datos: { observacionId: obs.id, canal: obs.canal, impacto: resultado.impacto },
-      });
     }
 
     return {
@@ -116,6 +125,49 @@ interface Veredicto {
   incendioId?: string;
 }
 
+/**
+ * Verifica una observación pendiente, guarda el veredicto en ella y lo registra.
+ * Devuelve undefined si otra vía la está verificando ya (o acaba de hacerlo).
+ */
+async function procesarObservacion(obs: Observacion, ctx: ContextoAgente): Promise<Veredicto | undefined> {
+  const { estado } = ctx;
+  const enCurso = enVerificacion();
+  if (enCurso.has(obs.id) || estado.observaciones.get(obs.id)?.impacto) return undefined;
+  enCurso.add(obs.id);
+  try {
+    const todas = [...estado.observaciones.values()];
+    const resultado = await verificarUna(obs, todas, estado.incendiosActivos(), estado.reloj.factor || 12, ctx);
+    estado.actualizar(estado.observaciones, obs.id, {
+      impacto: resultado.impacto,
+      verificacion: resultado.verificacion,
+      incendioId: resultado.incendioId ?? obs.incendioId,
+    });
+    ctx.registrar("observacion", resultado.verificacion, {
+      incendioId: resultado.incendioId,
+      nivel: resultado.impacto === "nuevo_foco" ? "critico" : resultado.impacto === "agrava" ? "aviso" : "info",
+      datos: { observacionId: obs.id, canal: obs.canal, impacto: resultado.impacto },
+    });
+    return resultado;
+  } finally {
+    enCurso.delete(obs.id);
+  }
+}
+
+/**
+ * Verifica UNA observación ahora mismo, fuera del ciclo del agente. La llama el
+ * Vigía al ver fuego en una cámara: así el foco se declara o confirma segundos
+ * después, sin esperar al hueco mínimo del orquestador. Devuelve undefined si la
+ * observación no existe, ya estaba verificada o la está verificando el ciclo.
+ */
+export async function verificarObservacionAhora(obsId: string): Promise<Veredicto | undefined> {
+  const { contextoParaSistema } = await import("../../motor/orquestador");
+  const ctx = contextoParaSistema("verificador", AbortSignal.timeout(30_000));
+  const obs = ctx.estado.observaciones.get(obsId);
+  if (!obs || obs.impacto) return undefined;
+  ctx.informarTarea(`Verificando en el acto el aviso de ${obs.remitente ?? obs.canal}`, obs.incendioId);
+  return procesarObservacion(obs, ctx);
+}
+
 async function verificarUna(
   obs: Observacion,
   todas: Observacion[],
@@ -123,8 +175,34 @@ async function verificarUna(
   factor: number,
   ctx: ContextoAgente,
 ): Promise<Veredicto> {
-  // 1. Duplicada: mismo canal, cerca y reciente.
-  if (obs.punto) {
+  // 0. Fuente apagada por el escenario del mando: queda registrada y no toca
+  //    ningún foco (ni lo crea, ni lo confirma, ni le sube la confianza).
+  const bloqueo = fuenteQueBloquea(ctx.estado.ejecucion, obs);
+  if (bloqueo) {
+    return {
+      impacto: "registrada",
+      verificacion: `Fuente apagada por el escenario (${bloqueo.nombre}): el aviso queda registrado y no crea ni confirma focos. No se volverá a verificar aunque la fuente se reactive.`,
+    };
+  }
+
+  // 0b. Fuera de España: el sistema solo trabaja el territorio español. Queda
+  //     como ruido con el motivo y no crea ni confirma nada.
+  if (obs.punto && !enEspana(obs.punto)) {
+    return { impacto: "ruido", verificacion: `${describirFueraEspana(obs.punto)} No crea ni confirma focos.` };
+  }
+
+  // ¿Cae sobre un incendio que ya conocemos? (se calcula antes de la regla de
+  // duplicadas: una cámara que sigue viendo el fuego de un foco conocido debe
+  // confirmarlo o agravarlo, no descartarse como repetida).
+  const cercano = obs.punto
+    ? activos
+        .map((i) => ({ i, km: haversine(i.centro, obs.punto as { lat: number; lon: number }) }))
+        .filter((x) => x.km < kmConfirmaDe(obs.canal))
+        .sort((a, b) => a.km - b.km)[0]
+    : undefined;
+
+  // 1. Duplicada: mismo canal, cerca y reciente (salvo cámara sobre foco conocido).
+  if (obs.punto && !(obs.canal === "camara" && cercano)) {
     const gemela = todas.find(
       (o) =>
         o.id !== obs.id &&
@@ -142,23 +220,18 @@ async function verificarUna(
     }
   }
 
-  // 2. ¿Cae sobre un incendio que ya conocemos?
-  const cercano = obs.punto
-    ? activos
-        .map((i) => ({ i, km: haversine(i.centro, obs.punto as { lat: number; lon: number }) }))
-        .filter((x) => x.km < kmConfirmaDe(obs.canal))
-        .sort((a, b) => a.km - b.km)[0]
-    : undefined;
-
+  // 2. Confirma o agrava el incendio conocido.
   if (cercano) {
     const grave = obs.extraccion?.gravedad === "grave" || obs.extraccion?.gravedad === "critica";
     const { estado } = ctx;
-    // Solo confirma una fuente de familia distinta (una noticia no confirma otra noticia).
-    const mismaFamilia = familiaCanal(obs.canal) === familiaCanal(cercano.i.origen);
+    const visual = evidenciaVisual(obs);
+    // Solo confirma una fuente de familia distinta (una noticia no confirma otra noticia),
+    // salvo LLAMAS vistas por una cámara: es confirmación visual sea cual sea el origen.
+    const mismaFamilia = !visual && familiaCanal(obs.canal) === familiaCanal(cercano.i.origen);
     // Misma familia (p. ej. otra noticia): suma poco y nunca pasa de 0,7; otra familia sí puede confirmar.
     const confianza = mismaFamilia
       ? Math.min(0.7, +(cercano.i.confianza + 0.05).toFixed(2))
-      : Math.min(1, +(cercano.i.confianza + 0.15).toFixed(2));
+      : Math.min(1, +Math.max(cercano.i.confianza + 0.15, visual ? (obs.extraccion?.fiabilidad ?? 0) : 0).toFixed(2));
     const nuevoEstado = !mismaFamilia && cercano.i.estado === "detectado" && confianza >= 0.7 ? "confirmado" : cercano.i.estado;
     estado.actualizar(estado.incendios, cercano.i.id, {
       confianza,
@@ -167,7 +240,7 @@ async function verificarUna(
       actualizadoEn: ctx.ahoraMundo,
     });
     if (nuevoEstado !== cercano.i.estado) {
-      ctx.registrar("incendio_actualizado", `${cercano.i.nombre} pasa a confirmado: ${confianza.toFixed(2)} de confianza tras cruzar fuentes.`, {
+      ctx.registrar("incendio_actualizado", `${cercano.i.nombre} pasa a confirmado: ${confianza.toFixed(2)} de confianza tras ${visual ? "ver llamas la cámara" : "cruzar fuentes"}.`, {
         incendioId: cercano.i.id,
         nivel: "aviso",
       });
@@ -195,7 +268,10 @@ async function verificarUna(
       o.punto &&
       o.canal !== obs.canal &&
       haversine(o.punto, obs.punto as { lat: number; lon: number }) < KM_CORROBORA &&
-      o.impacto !== "ruido",
+      o.impacto !== "ruido" &&
+      // Un aviso de una fuente apagada tampoco corrobora: si no, un píxel de
+      // satélite "registrado" seguiría convirtiendo una llamada en foco.
+      canalPuedeDeclararFoco(ctx.estado.ejecucion, o),
   );
 
   const extraccionFiable = obs.extraccion?.esIncendio === true && (obs.extraccion?.fiabilidad ?? 0) >= 0.6;
@@ -237,14 +313,17 @@ async function verificarUna(
       fuenteUrl: obs.urlFuente,
       areaHa: obs.extraccion?.areaHa,
       nivelGravedad: obs.extraccion?.nivelDeclarado,
-      estadoInicial: obs.extraccion?.situacion === "estabilizado" ? "estabilizado" : undefined,
+      // Llamas vistas por una cámara: el foco nace confirmado (la imagen está en la sala).
+      estadoInicial: obs.extraccion?.situacion === "estabilizado" ? "estabilizado" : evidenciaVisual(obs) ? "confirmado" : undefined,
       mediosExternos: obs.extraccion?.mediosMencionados,
     });
-    const motivo = corroboran.length
-      ? `${corroboran.length + 1} fuentes independientes a menos de ${KM_CORROBORA} km`
-      : canalFiable
-        ? `fuente ${obs.canal}`
-        : `extracción fiable (${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)})`;
+    const motivo = evidenciaVisual(obs)
+      ? `llamas visibles en cámara (fiabilidad ${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)}): nace confirmado`
+      : corroboran.length
+        ? `${corroboran.length + 1} fuentes independientes a menos de ${KM_CORROBORA} km`
+        : canalFiable
+          ? `fuente ${obs.canal}`
+          : `extracción fiable (${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)})`;
     return {
       impacto: "nuevo_foco",
       incendioId: incendio.id,

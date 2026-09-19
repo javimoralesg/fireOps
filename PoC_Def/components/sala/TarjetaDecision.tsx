@@ -3,9 +3,9 @@
 // se va a hacer, qué dice el supervisor y los botones grandes de Aprobar/Denegar.
 // DUEÑO: constructor E.
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, BookOpen, Bot, Check, Crosshair, ExternalLink, FileText, Gavel, Scale, ScrollText, ThumbsDown, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Bot, Check, Crosshair, ExternalLink, FileText, Gavel, MapPin, Scale, ScrollText, ThumbsDown, X } from "lucide-react";
 import type { Accion, Decision, Incendio, Informe } from "@/lib/dominio/tipos";
 import { aprobarDecision, denegarDecision, mensajeDeError } from "@/lib/cliente/api";
 import { fechaHora, haceCuanto, numero, recortar } from "@/lib/cliente/formato";
@@ -29,6 +29,14 @@ import { DialogoInforme } from "./DialogoInforme";
 /** Quién firma las aprobaciones desde esta pantalla. */
 export const QUIEN = "Sala de mando";
 
+/** Objetivo de una acción (pueblo avisado, cámara, unidad o punto) que se puede llevar al mapa. */
+export type ObjetivoAccion = NonNullable<Accion["objetivo"]>;
+
+/** true si el objetivo de la acción tiene algo que centrar en el mapa. */
+export function objetivoLocalizable(o: Accion["objetivo"]): o is ObjetivoAccion {
+  return Boolean(o && (o.punto || o.poblacionId || o.camaraId || o.unidadId));
+}
+
 const MOTIVOS_RAPIDOS = [
   "Los medios propuestos no están disponibles",
   "El pueblo ya ha sido avisado por otra vía",
@@ -37,19 +45,31 @@ const MOTIVOS_RAPIDOS = [
   "Demasiado agresivo para el nivel actual",
 ];
 
-export function LineaAccion({
+/** `memo` (constructor R): una línea de acción solo se repinta si cambia SU acción. */
+function LineaAccionBase({
   accion,
   onAbrirActa,
   onCentrarUnidad,
+  onCentrarObjetivo,
 }: {
   accion: Accion;
   onAbrirActa?: (informeId: string) => void;
   /** "Ver en el mapa": centra en la unidad que mueve esta acción. */
   onCentrarUnidad?: (unidadId: string) => void;
+  /** "Ver en el mapa" para el resto de objetivos: pueblo avisado, cámara o punto. */
+  onCentrarObjetivo?: (objetivo: ObjetivoAccion) => void;
 }) {
   const Icono = ICONO_ACCION[accion.tipo] ?? AlertTriangle;
   const r = accion.resultado;
   const unidadId = accion.objetivo?.unidadId;
+  const objetivo = accion.objetivo;
+  /** Qué hace "Ver en el mapa" en esta línea: la unidad si la hay; si no, el pueblo/cámara/punto. */
+  const verEnMapa =
+    unidadId && onCentrarUnidad
+      ? () => onCentrarUnidad(unidadId)
+      : objetivoLocalizable(objetivo) && onCentrarObjetivo
+        ? () => onCentrarObjetivo(objetivo)
+        : undefined;
   return (
     <li className="flex items-start gap-2 py-1">
       <Icono className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
@@ -68,10 +88,10 @@ export function LineaAccion({
             {r.referencia ? <span className="text-subtle"> · ref. {r.referencia}</span> : null}
           </p>
         ) : null}
-        {unidadId && onCentrarUnidad ? (
+        {verEnMapa ? (
           <button
             type="button"
-            onClick={() => onCentrarUnidad(unidadId)}
+            onClick={verEnMapa}
             className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-brand/45 bg-brand/10 px-2 py-0.5 text-[10.5px] font-medium text-brand hover:bg-brand/20"
           >
             <Crosshair className="size-3" aria-hidden /> Ver en el mapa
@@ -93,13 +113,20 @@ export function LineaAccion({
   );
 }
 
-export function TarjetaDecision({
+export const LineaAccion = memo(LineaAccionBase);
+
+/**
+ * `memo` (constructor R): con el contrato de identidad del cliente, una tarjeta
+ * cuya decisión no ha cambiado no se repinta aunque llegue un snapshot nuevo.
+ */
+function TarjetaDecisionBase({
   decision,
   incendio,
   informes,
   onTrasDecidir,
   onCentrarIncendio,
   onCentrarUnidad,
+  onCentrarObjetivo,
   conEnlaceAuditoria = true,
 }: {
   decision: Decision;
@@ -109,6 +136,8 @@ export function TarjetaDecision({
   onTrasDecidir?: () => void;
   onCentrarIncendio?: (id: string) => void;
   onCentrarUnidad?: (id: string) => void;
+  /** Centra el mapa en el objetivo de una acción (pueblo avisado, cámara, unidad o punto). */
+  onCentrarObjetivo?: (objetivo: ObjetivoAccion) => void;
   conEnlaceAuditoria?: boolean;
 }) {
   const toast = useToast();
@@ -171,6 +200,18 @@ export function TarjetaDecision({
 
   const evaluacion = decision.evaluacion;
 
+  /**
+   * "Dónde": el foco de la decisión o, si no tiene foco, el objetivo de la
+   * primera acción que se pueda situar (pueblo avisado, cámara, unidad, punto).
+   */
+  const objetivoSituable = decision.acciones.map((a) => a.objetivo).find(objetivoLocalizable);
+  const centrarEnMapa =
+    incendio && onCentrarIncendio
+      ? () => onCentrarIncendio(incendio.id)
+      : objetivoSituable && onCentrarObjetivo
+        ? () => onCentrarObjetivo(objetivoSituable)
+        : undefined;
+
   return (
     <article
       className={[
@@ -219,16 +260,30 @@ export function TarjetaDecision({
               <ScrollText className="size-3" aria-hidden /> Ver auditoría
             </Link>
           ) : null}
-          {incendio ? (
-            <button
-              type="button"
-              onClick={() => onCentrarIncendio?.(incendio.id)}
-              className="inline-flex items-center gap-1 rounded-full border border-panel-border-strong bg-panel-2 px-2 py-0.5 text-[10.5px] font-medium text-muted hover:text-brand"
-            >
-              {incendio.nombre} <ExternalLink className="size-3" aria-hidden />
-            </button>
-          ) : null}
         </div>
+
+        {/* Dónde es: el foco (o el objetivo de la acción) y el botón que lleva el mapa allí. */}
+        {incendio || centrarEnMapa ? (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-panel-border bg-panel-2 px-2 py-1.5">
+            <MapPin className="size-4 shrink-0 text-brand" aria-hidden />
+            <p className="min-w-0 flex-1 text-[12px] leading-snug text-muted">
+              <span className="font-semibold text-foreground">Dónde:</span> {incendio ? incendio.nombre : "el objetivo de la acción"}
+            </p>
+            {centrarEnMapa ? (
+              <Boton tamano="sm" variante="primario" icono={<Crosshair />} onClick={centrarEnMapa} title="Lleva el mapa a este punto" className="shrink-0">
+                Centrar en el mapa
+              </Boton>
+            ) : incendio ? (
+              <Link
+                href={`/?foco=${encodeURIComponent(incendio.id)}`}
+                title="Abrir la sala con el mapa centrado en este foco"
+                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-panel-border-strong bg-panel px-2.5 text-[13px] font-medium text-foreground hover:bg-panel-2"
+              >
+                <ExternalLink className="size-3.5" aria-hidden /> Ver en el mapa
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
       </header>
 
       {decision.alertasLegales?.length ? (
@@ -250,7 +305,9 @@ export function TarjetaDecision({
           {decision.acciones.length === 0 ? (
             <li className="py-1 text-[13px] text-muted">Sin acciones asociadas.</li>
           ) : (
-            decision.acciones.map((a) => <LineaAccion key={a.id} accion={a} onAbrirActa={abrirActa} onCentrarUnidad={onCentrarUnidad} />)
+            decision.acciones.map((a) => (
+              <LineaAccion key={a.id} accion={a} onAbrirActa={abrirActa} onCentrarUnidad={onCentrarUnidad} onCentrarObjetivo={onCentrarObjetivo} />
+            ))
           )}
         </ul>
       </div>
@@ -421,3 +478,5 @@ export function TarjetaDecision({
     </article>
   );
 }
+
+export const TarjetaDecision = memo(TarjetaDecisionBase);

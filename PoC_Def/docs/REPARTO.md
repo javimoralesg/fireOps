@@ -40,6 +40,71 @@ Módulos de referencia reutilizables (leer y adaptar, no copiar a ciegas):
 
 (añadir aquí, con fecha y letra)
 
+### 2026-09-19 · sesión "solo España" (ámbito territorial) → todos (sin cambios de contrato)
+
+Petición de Javi: nada de fuera de España puede aparecer (focos, avisos, cámaras, medios).
+Sin tocar `tipos.ts` ni `contratos.ts`:
+
+- **Nuevo** `lib/dominio/espana.ts` (isomorfo, sin dependencias): contorno administrativo de
+  OSM simplificado a ≈1 km (17 anillos: península, Baleares, Canarias, Ceuta, Melilla, Llívia,
+  plazas de soberanía), `enEspana(punto)`, `describirFueraEspana(punto)` y `CAJA_ESPANA`.
+  Pruebas en `tests/unit/espana.test.ts` (parejas de pueblos a ambos lados de la frontera).
+- Líneas tocadas en archivos de otros, siempre un `if` con `enEspana`: `lib/fuentes/firms.ts`
+  (`parsearCsv` descarta píxeles de Portugal/Francia/Marruecos que trae la caja),
+  `lib/fuentes/overpass.ts` (pueblos y medios del otro lado de la frontera no entran),
+  `lib/fuentes/nominatim.ts` (`geocodificar` devuelve `undefined` si el lugar cae fuera),
+  `lib/fuentes/camarasMovil.ts` (móvil fuera → error), `lib/motor/orquestador.ts`
+  (`declararFoco` lanza error si el punto cae fuera), `lib/agentes/analisis/verificador.ts`
+  (paso 0b: observación fuera → `ruido`), `lib/agentes/percepcion/centralita.ts`
+  (`procesarEntrada` rechaza ubicación fuera), rutas `POST /api/focos`,
+  `/api/ingesta/observacion`, `/api/fuentes/centralita` y `/api/unidades/[id]/ordenar` (400 con
+  el mismo mensaje), `app/page.tsx` (clic fuera → toast, no abre el diálogo) y
+  `components/mapa/{geo.ts,MapaCliente.tsx}` (`LIMITES_NAVEGACION` como `maxBounds`).
+- **Máscara roja "fuera de España"**: nuevo `components/mapa/CapaFueraEspana.tsx` (polígono
+  mundo + 17 agujeros con los anillos reales, `evenodd`, no interactivo) y capa `fueraEspana`
+  en `PanelCapas.ClaveCapa`, `CAPAS_POR_DEFECTO`, filas y leyenda de `MapaCliente.tsx`;
+  `components/publico/MapaFocos.tsx` pinta la misma máscara con Leaflet directo.
+  `lib/dominio/espana.ts` exporta `ANILLOS_ESPANA` para eso.
+- **Saneamiento de lo heredado**: nuevo `lib/motor/saneamientoEspana.ts`
+  (`sanearFueraEspana(estado, {forzar?, cerrar?})`): focos abiertos fuera → `cerrarIncendio(…,
+  "descartado")`; unidades con base fuera, pueblos, hospitales, cámaras y detecciones fuera →
+  `estado.eliminar`; avisos con punto fuera → `impacto: "ruido"`. El orquestador lo llama tras
+  `arrancarPersistencia()` (forzado) y en `tick` tras `sincronizarAgentesConEscenario` (un
+  minuto entre pasadas). Prueba en `tests/unit/saneamiento-espana.test.ts`. OJO: la
+  persistencia no borra filas en Supabase (solo deja de enviarlas), así que lo eliminado
+  vuelve al hidratar y se vuelve a quitar en el arranque; el servidor `next dev` que ya
+  estaba en marcha necesita reiniciarse para que el tick nuevo lo ejecute.
+
+### 2026-09-19 · sesión actual (modo desarrollo + fuentes conmutables) → todos (contrato ampliado)
+
+Todo ADITIVO, nada renombrado ni borrado:
+
+- `lib/dominio/tipos.ts`: **nuevo tipo `FuenteDeteccion`** (`"satelite" | "prensa_redes" |
+  "camaras_fijas" | "avisos_ciudadanos"`), **`Ejecucion.fuentesDesactivadas?:
+  FuenteDeteccion[]`** (ausente/vacío = operación real; se hereda entre ejecuciones como la
+  política) y **`EstadoAgenteApp.desactivadoPorEscenario?: string`** (nombre legible de la
+  fuente apagada que deja al agente sin ciclos; distinto de `pausado`).
+- **Nuevos** `lib/dominio/fuentes-deteccion.ts` (catálogo y reglas puras, isomorfo) y
+  `lib/motor/escenario.ts` (`cambiarFuentesDesactivadas`, `sincronizarAgentesConEscenario`).
+- **`/api/ejecucion`**: acción nueva `fuentes` (`{fuentesDesactivadas: [...], quien?}`) y
+  `nueva` acepta `fuentesDesactivadas` (**L**: `ejecucionNueva` de `tests/integracion/ayudas.ts`
+  ya manda `[]`). **`POST /api/camaras/[id]/vigilar`** → 409 al armar una fija con la fuente
+  apagada.
+- Líneas tocadas en archivos de otros: `lib/motor/orquestador.ts` (`tick`: guarda y
+  `sincronizarAgentesConEscenario`; `nuevaEjecucion(nombre?, fuentesDesactivadas?)`),
+  `lib/agentes/analisis/verificador.ts` (paso 0 de `verificarUna` + filtro de `corroboran`),
+  `lib/agentes/percepcion/vigiaCamaras.ts` (`elegirCamaras` solo móviles con fijas apagadas),
+  `lib/motor/enriquecer.ts` (paso (e): fijas con `vigilada: false` si están apagadas),
+  `components/sala/{BarraSuperior,TarjetaAgente,DialogoAtajos,PestanaFocos}.tsx`,
+  `components/mapa/MapaCliente.tsx` (texto del estado vacío), `app/agentes/[id]/page.tsx`,
+  `lib/cliente/api.ts` (`ejecucion(accion, extra?)`, `cambiarFuentesDeteccion`),
+  `tests/ui/humo.test.ts` (enciende el modo desarrollo antes de buscar el botón).
+- **E/H (sala)**: el modo desarrollo es una preferencia del navegador
+  (`lib/cliente/useModoDesarrollo.ts`, `components/sala/ConmutadorDesarrollo.tsx`). Sin él se
+  ocultan los botones del reloj (Pausar, ×N, +1 h), el desplegable de ejecución, PARAR TODO,
+  Declarar foco y Viento global; quedan la hora de mundo (solo lectura) y la insignia de
+  fuentes apagadas. Detalle en `docs/ARQUITECTURA.md` §6.1, §7 y §8.
+
 ### 2026-09-19 08:46 · M → G y N · REINICIO del servidor de desarrollo :3100
 
 He reiniciado `next dev -p 3100` a las 08:46. Motivo: `next dev` NO recarga en caliente
@@ -550,6 +615,94 @@ usa ya 4 minutos de presupuesto. Lo dejo anotado por si para la demo interesa qu
 `proteccion_poblacion` no proponga avisos a pueblos a 16 y 27 km (que es lo que el
 supervisor le está afeando): son ciclos de razonamiento gastados y decisiones que
 acaban en la bandeja del humano sin necesidad.
+
+### 2026-09-19 · P, Q, S y T (rendimiento) → todos · la sala iba lenta: canal en vivo, mapa, motor y fuentes
+
+Auditoría medida a mediodía: snapshot de 2,1 MB enviado entero a cada pestaña cada ~1,4 s,
+mapa con ~2000 marcadores reconstruidos en cada envío (~500 ms de hilo principal por
+actualización, 29 % del tiempo bloqueado, +113 k nodos DOM desprendidos en 30 s),
+`tocar()` reconstruyendo el snapshot completo en cada mutación, embeddings y reescritura
+de `lecciones.json` (1,3 MB) en cada ciclo de cada agente, Overpass con hasta 200 s por
+consulta. Cuatro constructores en paralelo, cada uno en sus archivos; sin commits.
+
+**P · `lib/motor/estado.ts` (aditivo), `app/api/estado*`, `lib/cliente/useEstado.ts`.**
+`tocar()` pasa a ser O(1) y notifica de forma **coalescida y asíncrona** (un aviso por vuelta
+del bucle, con la versión final); el Snapshot se construye perezosamente en `snapshot()` y se
+cachea por versión. Nuevos métodos opcionales: `lote(fn)`, `snapshotTexto()` (JSON cacheado
+por versión, lo comparten SSE y GET /api/estado), `marcarCambio(coleccion, id)` y
+`consumirCambios(): Map<string, Set<string>>` (registro de cambios para la persistencia;
+`coleccion` = nombre de propiedad de Estado). `suscribir(fn, { real: true })` entrega el
+Snapshot materializado; por defecto llega un Snapshot **perezoso** (Proxy: se lee y se
+serializa con JSON, pero NO admite `structuredClone`). Campo opcional del Snapshot:
+`sellos: { coleccion, item }`. Contrato para el cliente: **un item con el mismo id y sin
+cambios conserva la misma referencia entre snapshots; un array sin cambios conserva su
+referencia** (`fundirSnapshot`, exportada desde `lib/cliente/useEstado.ts`). GET /api/estado
+responde ETag/304 (`obtenerEstadoSiCambio(version)` en `lib/cliente/api.ts`); el stream envía
+como mucho una vez cada 2 s y serializa una sola vez por versión; `useEstado()` comparte **un
+solo EventSource** por pestaña. Quien mute una entidad **en sitio** (sin `guardar`/
+`actualizar`) debe llamar `estado.marcarCambio(coleccion, id)`. Medido: `tocar()` de 3,9 ms
+a 0,001 ms; fusión en cliente 2-4 ms.
+
+**Q · `components/mapa/**`, `lib/cliente/formato.ts`.** Reglas al tocar el mapa: (1) un
+componente `React.memo` por item, nunca `.map()` con JSX suelto; (2) los iconos salen de
+`iconos.ts` (`iconoDiv`) y los trazos de `estilos.ts` — react-leaflet compara `icon` y
+`pathOptions` por referencia y `setIcon`/`setStyle` reconstruyen el DOM; (3) el movimiento de
+las unidades no pasa por React: `animacion.ts` (`moverMarcador`), y la prop `position` del
+`Marker` no cambia nunca; (4) el contenido de popups y tooltips va en un componente hijo,
+nunca en línea en el JSX; (5) todo `<Popup>` lleva `autoPan={false}`: `colocarPopups.ts`
+(instalado por `ColocadorPopups`, y a pelo en `publico/MapaFocos.tsx`) lo coloca ENTERO sin
+mover el mapa (encima del marcador y, si no cabe, debajo o a un lado, corrido por el borde,
+esquivando panel de capas, leyenda, zoom y avisos; si aun así no entra, recortado con scroll
+dentro, o suelto sin punta en el hueco libre más cercano); el lado va en `data-lado` y la
+punta en `--punta-x`/`--punta-y` (CSS en `globals.css`). `formato.ts` cachea los `Intl.NumberFormat`; `extras.ts` añade
+`listaZonasCruda()`/`zonasPeligroDeLista()` (aditivo). Medido: el mapa pasa de ~196 ms a
+~25 ms de hilo principal por snapshot y de +113 k a −3,5 k nodos DOM en 30 s.
+Fluidez de las unidades (`animacion.ts`, tras la queja de Javi): el despachador mueve las
+unidades cada 5 s y con una animación fija de 1,4 s el camión corría y se quedaba clavado
+3,6 s; ahora cada marcador anima durante la cadencia con la que le llegan posiciones
+(acotada 0,8–8 s, lineal para encadenar tramos) y, si la unidad lleva `ruta`, sigue la
+carretera entre el progreso anterior y el nuevo (`moverMarcador(marcador, destino, ruta?)`).
+Pruebas en `tests/unit/animacion.test.ts`.
+
+**R · `app/page.tsx`, `components/sala/**`, `components/ui/{Pestanas,Desplegable}.tsx`.**
+`React.memo` en panel, barra, tira de métricas, pestañas, vista de agentes, tarjetas y
+diálogos; todos los callbacks de `page.tsx` son `useCallback` y el mapa va envuelto en
+`memo(Mapa)` (sin tocar `MapaProps`). **Contrato: memoizar por PORCIONES del snapshot
+(`snapshot.unidades`, `snapshot.decisiones`…), nunca por `snapshot` entero**, que es un
+objeto nuevo en cada tick del SSE; se apoya en la conservación de identidades de
+`lib/cliente/useEstado.ts` (P). Quien añada props a estos componentes debe pasarlas estables
+(`useCallback`/`useMemo`) o el mapa volverá a repintar sus ~2000 capas en cada clic.
+`Desplegable` monta su contenido de forma perezosa (primera apertura) y "Focos"/"Registro"
+montan de forma escalonada. Medido con Playwright: JS de hilo principal ≤ 67 ms por
+interacción y 0 ms de render del mapa ante cambios de UI de la sala. Aviso al autor del
+filtro por zona (`lib/cliente/zona.ts`): con una zona dibujada las listas filtradas se
+recrean en cada snapshot aunque no cambien, lo que rompe estos memos mientras el filtro
+esté activo; conviene cachear el resultado anterior.
+
+**S · aprendizaje, persistencia, orquestador, actas, `lib/ia/llm.ts`.** `leccionesPara`
+cachea por (agenteId, k) 60 s + LRU de embeddings; los agentes deterministas ya no piden
+lecciones; `lecciones.json` solo se reescribe con lección nueva (los `vecesAplicada` van
+agrupados, ≤ 1 vez/min). `persistencia.ts` consume `estado.consumirCambios()`, reencola solo
+el lote fallido con retroceso y sigue los eventos por id (arreglado el corte silencioso a los
+5000). Actas: narrativa de IA solo en el estado final y por el carril `prioridad: "baja"` de
+`llm.ts` (hueco propio, `LLM_CONCURRENCIA_BAJA`); `generarActaAccion` ya no bloquea
+`aprobarDecision`. El orquestador mantiene al agente en `ocupados` hasta que acaba el ciclo
+real, limita los despertares por evento a `max(cadencia/3, 10 s)` y poda memoria
+(`MEMORIA_MAX_DECISIONES/INFORMES/OBSERVACIONES`). `/api/aprendizaje` con ETag y `?desde=`.
+**`next dev` no recarga el orquestador en caliente: tras tocar `lib/motor/*` o
+`lib/fuentes/*` hay que reiniciar el servidor.**
+
+**T · `lib/fuentes/**`, `app/api/fuentes/**`, `app/api/salud`, `app/api/decisiones`,
+`lib/motor/enriquecer.ts`.** Overpass: topes por servidor (`maps.mail.ru` primero, 26 s;
+kumi retirado), cortacircuitos (3 fallos blandos o 1 duro; 90 s si es el último espejo vivo),
+presupuesto de 34 s por consulta, dedup de vuelos, caché de fallos 2 min, reutilización de
+celda ≤ 5 km, cola de 2. `/api/fuentes/salud` cacheado 60 s con refresco en segundo plano y
+tope de 5 s por fuente; `/api/salud` con el recuento de Supabase cacheado 30 s.
+`/api/decisiones` limita a 50 y admite `?campos=resumen`; **nueva ruta
+`GET /api/decisiones/[id]`** con el detalle íntegro. En `enriquecer.ts` se corrige el
+`const fallos` interno que tapaba al externo (los fallos de medios nunca reintentaban).
+Pendiente de L: la prueba (l) de `10-conocimiento-politica-salud` exige `servicios["Overpass"]`,
+que solo se escribe al enriquecer un foco con el código nuevo.
 
 ## Entregas
 
@@ -1694,7 +1847,9 @@ agentes y todo se pause» y «tampoco hay comunicados ni nada en el portal».
   construyendo línea a X m/min · control estimado en ~M min" y los hitos con
   hora de mundo. En el mapa, el tramo de perímetro ya controlado se pinta en
   **negro discontinuo proporcional a la fracción**. `estabilizado` pasa a ámbar
-  y `controlado`/`extinguido` a verde.
+  y `controlado`/`extinguido` a verde. Un foco `controlado` o `extinguido`
+  desaparece del mapa a los 5 s de verse así (`components/mapa/useOcultarTerminados.ts`);
+  sigue en la pestaña Focos y sus unidades conservan el enlace al foco.
 - `fusionado`: no cuenta como activo en ningún filtro; en el mapa queda un punto
   gris con *"unido a <nombre>"*, el superviviente lleva la insignia **"Fusión de
   N focos"** y en la pestaña Focos hay un desplegable **"Absorbidos"**.
@@ -1912,3 +2067,79 @@ desde la tarjeta: en las tres pasadas las decisiones salieron `autonoma`/`propue
 haber una `pendiente_humano` dentro de la ventana de prueba (el foco sí se declaró por la interfaz y
 `/auditoria?decision=…` quedó verificada). Durante la prueba se puso `desplegar_unidad` en modo
 "humano" y **se ha restaurado a "supervisada"** (comprobado con `GET /api/politica`).
+
+### 2026-09-19 · E · Filtro por zona en la sala (recuadro y lazo)
+
+**Hecho.** El mando puede dibujar sobre el mapa un **recuadro** o un **lazo** a mano alzada y la
+sala pasa a enseñar SOLO lo de esa zona: los focos que caen dentro (por centro o por perímetro) y
+todo lo que cuelga de ellos (pueblos, unidades, decisiones, registro, informes, partes, clústeres);
+lo que solo tiene posición y ningún foco (unidades en base, cámaras, hospitales, satélite, zonas de
+peligro) se filtra por su punto; lo que no cuelga de ningún foco (decisión general, evento del
+sistema) y agentes, lecciones, avisos meteo, política y reloj no se tocan. La zona **se guarda en
+`localStorage` (`atalaya:zona`) y sobrevive a recargas**: solo se va con el botón **"Quitar filtro"**
+(banda superior del mapa, con "N de M focos", y banda del panel derecho), que borra la zona y
+devuelve todos los filtros a cero. Mientras hay zona, el mapa atenúa lo de fuera y la encuadra una
+vez; Esc sale del modo de dibujo; un arrastre minúsculo no crea nada; funciona con ratón, lápiz y
+dedo (eventos de puntero con captura).
+Archivos: `lib/cliente/zona.ts` (tipo `ZonaSeleccion`, `crearPruebaZona`/`puntoEnZona`,
+`filtrarSnapshotPorZona` —conserva referencias de lo que no cambia—, persistencia),
+`components/mapa/SeleccionZona.tsx` (`DibujoZona`, `CapaZona`, `ControlesZona`, avisos),
+`tests/unit/zona.test.ts` (12 pruebas). Ediciones puntuales en `app/page.tsx` (estado `zona`,
+`snapshotZona` recortado para mapa y panel; los atajos A/D actúan sobre lo visible),
+`components/mapa/MapaCliente.tsx` (props `zona`, `focosTotales`, `onZonaDibujada`, `onQuitarZona`;
+bloques marcados "Filtro por zona"), `components/mapa/PanelCapas.tsx` (prop `extra`),
+`components/sala/PanelDerecho.tsx` (props `filtroZona`, `onQuitarZona` + banda),
+`components/sala/DialogoAtajos.tsx` (Esc) y `app/globals.css` (`.mapa-dibujando`).
+Verificado con Playwright contra el `next dev` del :3000 (recuadro → recarga → lazo → Esc → quitar).
+**Ningún commit** (petición de Javi).
+
+### 2026-09-19 · sesión riesgo-fundado → todos (riesgo de pueblos sin fundamento y satélite)
+
+Lo que vio Javi en Tarragona: decenas de pueblos con **"Riesgo inminente · Sin avisar"** sin ningún
+foco a la vista, ni frente, ni meteo. Causa medida: un grupo de píxeles de **NASA FIRMS** (la
+refinería de la Pobla de Mafumet, 10 píxeles, 64 MW, visible 3 de los últimos 5 días) entraba como
+foco **"detectado"**; `enriquecerIncendio` creaba sus pueblos con el riesgo bruto por distancia
+(`< 3 km inminente, < 8 alto, < 15 medio`) y el analista de propagación **nunca los refinaba**
+porque solo procesa focos operativos. Encima, apagar "Satélite (NASA FIRMS)" en el escenario no
+retiraba los focos que ya había creado. Cambios (todos aditivos, sin commits):
+- `lib/dominio/tipos.ts`: `Poblacion.motivoRiesgo?: string` (OPCIONAL). Lo escribe el enriquecimiento
+  ("riesgo provisional por distancia…", y si el foco está sin confirmar lo dice) y lo reescribe el
+  analista de propagación cada ciclo (explicación del modelo + frente + viento/HR/temperatura).
+- `lib/motor/enriquecer.ts`: el riesgo inicial usa el MISMO `riesgoPorDistancia` del modelo
+  (`lib/simulacion/propagacion.ts`: < 1 km alto, < 3 km medio, resto bajo). "Inminente" solo lo
+  pone el analista (ETA < 60 min o frente encima). Sigue exportado con el mismo nombre.
+- `lib/simulacion/propagacion.ts`: la `explicacion` de `evaluarPoblaciones` dice cuándo manda la
+  proximidad ("a 1,6 km basta un giro del viento…") para que "fuera del cono" y "medio" no choquen.
+- `lib/motor/escenario.ts`: al apagar una fuente se **descartan los focos que siguen `detectado` y
+  que SOLO sostenía esa fuente** (origen apagado y ninguna observación en memoria de una fuente
+  activa; una cámara sin observación cuenta como móvil si `fuenteDeteccion` acaba en «(Movil)») y
+  se sueltan sus pueblos: pasan al foco vivo más cercano que los tenga en su radio operativo o, si
+  no hay, se borran (`descartarFocosDeFuentesApagadas`, `focosSoloDeFuentesApagadas`,
+  `fuenteQueSosteniaSola`, `quitarPoblacionesDe`); el evento «humano» cuenta cuántos y de qué
+  fuente. Empezó solo con el satélite (sesión riesgo-fundado); se generalizó a las cuatro fuentes
+  el 19-09-2026 porque el «Simulacro» dejaba en el mapa focos de prensa sin confirmar. Apagar el
+  satélite vacía además `Estado.focosSatelite` (las detecciones crudas de la capa «Satélite (FRP)»);
+  al encenderlo el agente las vuelve a traer. Con efectos externos pasa por `cerrarIncendio`; en
+  pruebas, solo memoria.
+- `components/sala/BarraSuperior.tsx` + `components/marca/Logo.tsx` (`Marca.compacta`): la primera
+  fila de la barra no se parte en dos líneas desde 1280 px (`xl:flex-nowrap`). Medido en modo
+  desarrollo: con todos los textos completos hacen falta ~1800 px, así que por debajo de 1840 px
+  (`min-[1840px]:`) va la forma compacta: marca sin organismo, «Ejecución» sin el nombre largo (el
+  nombre va en `title` y como primera línea del desplegable), insignia «SIMULACRO» / «Sin satélite» /
+  «N fuentes apagadas», «Viento / Agentes / Móvil» y PARAR TODO en tamaño `md`. Siempre icono +
+  texto; el texto completo queda en `title`. Si aun así falta sitio solo trunca la insignia.
+- `lib/motor/orquestador.ts` (`cerrarIncendio`): un foco **descartado** suelta sus pueblos (al foco
+  vivo más cercano, o borrados del estado y de Supabase con `borrarLote`, nuevo en
+  `lib/db/repositorio.ts`, tolerante). Extinguido los conserva.
+- `lib/fuentes/firms.ts`: caché por (días, Canarias) en vez de una sola entrada; `MAX_DIAS_FIRMS = 5`
+  (medido: el endpoint responde `Invalid day range. Expects [1..5]`, no 10); `diasConDeteccion`,
+  `esFuenteEstatica` (≥ 3 días distintos a < 2 km) — medido hoy: 30 grupos en España, 14 son
+  fuentes estáticas (refinerías, acerías), 0 falsos positivos entre los de un solo día.
+- `lib/agentes/percepcion/satelite.ts`: pide además el histórico de 5 días y **no crea aviso** para
+  fuentes estáticas ni para grupos con todos los píxeles de confianza baja (evento «satelite» de
+  nivel info explicándolo una vez por grupo).
+- `components/mapa/MapaCliente.tsx`: solo se pintan los pueblos de focos que se están DIBUJANDO
+  (`poblacionesVisibles`); el popup del pueblo dice de qué foco es, su estado ("Foco sin confirmar"),
+  el **"Por qué"** (`motivoRiesgo`) y la meteo del foco con enlace a Open-Meteo. `PestanaFocos.tsx`:
+  el motivo va en el `title` de la insignia de riesgo.
+- Pruebas: `tests/unit/escenario.test.ts` (+4) y `tests/unit/firms.test.ts` (nuevo, 5). 275 unitarias en verde.

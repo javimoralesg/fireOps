@@ -14,12 +14,14 @@
 // =====================================================================
 
 import type {
+  Accion,
   NivelGravedad,
   Decision,
   EstadoAgenteApp,
   EstadoIncendio,
   Evento,
   EvaluacionSupervisor,
+  FuenteDeteccion,
   Incendio,
   Leccion,
   MetricasEjecucion,
@@ -29,13 +31,19 @@ import type {
   TipoEvento,
 } from "../dominio/tipos";
 import type { Agente, ContextoAgente, ResultadoCiclo } from "./contratos";
+import { listaFuentes, normalizarFuentes } from "../dominio/fuentes-deteccion";
+import { agenteDesactivadoPorEscenario, quitarPoblacionesDe, sincronizarAgentesConEscenario } from "./escenario";
 import { establecerEstado, obtenerEstado, Estado } from "./estado";
 import { nuevoId } from "./ids";
 import { actualizarReloj, minutosMundoEntre, reiniciarAncla } from "./reloj";
-import { areaHaCirculo, circulo, distanciaKm, enriquecerIncendio, mensajeDe, RADIO_CAMARAS_KM } from "./enriquecer";
+import { areaHaCirculo, distanciaKm, enriquecerIncendio, mensajeDe, RADIO_CAMARAS_KM } from "./enriquecer";
+import { areaHa as areaDePoligono } from "../simulacion/geometria";
+import { perimetroDeSuperficie } from "../simulacion/propagacion";
 import { evaluarCompetencia } from "../dominio/politica";
 import { anotarTraza, ejecutarConTraza, resumir, sinTraza, trazaActual } from "./traza";
 import { generarActaAccion, generarActaDecision } from "./actas";
+import { describirFueraEspana, enEspana } from "../dominio/espana";
+import { sanearFueraEspana } from "./saneamientoEspana";
 
 // ---------------------------------------------------------------------
 // Contrato público (no cambiar: lo usan B, C, D y la API)
@@ -129,6 +137,25 @@ function esRazonamiento(agente: Agente): boolean {
   if (m.includes("razon")) return true;
   const razonamiento = process.env.LLM_MODELO_RAZONAMIENTO?.trim().toLowerCase();
   return !!razonamiento && m === razonamiento;
+}
+
+/**
+ * Un agente determinista no llama a ningún modelo: no tiene dónde inyectar una
+ * lección, así que pedirlas era tirar un embedding (160-510 ms) y una RPC a
+ * Supabase por ciclo. Y los deterministas son los que más ciclan: despachador
+ * cada 5 s, satélite, propagación y meteorólogo cada 30-60 s.
+ */
+function esDeterminista(agente: Agente): boolean {
+  return (agente.modelo ?? "").trim().toLowerCase() === "determinista";
+}
+
+/**
+ * Hueco mínimo entre dos ciclos del mismo agente disparados POR EVENTO. Sin
+ * esto, el coordinador se despertaba con cada `incendio_actualizado` (el
+ * enriquecimiento emite dos por foco) e ignoraba por completo su cadencia.
+ */
+function huecoMinimoMs(agente: Agente): number {
+  return Math.max((Math.max(1, agente.cadenciaSeg) * 1000) / 3, 10_000);
 }
 
 function limiteMsDe(agente: Agente): number {
@@ -256,6 +283,9 @@ export function arrancarOrquestador(): void {
     try {
       const { arrancarPersistencia } = await import("./persistencia");
       await arrancarPersistencia();
+      // Lo hidratado de Supabase puede traer focos y medios de fuera de España
+      // (anteriores a la restricción): fuera del mapa antes del primer tick.
+      await sanearFueraEspana(obtenerEstado(), { forzar: true });
     } catch (e) {
       obtenerEstado().marcarServicio("Supabase", false, mensajeDe(e));
     }
@@ -397,16 +427,34 @@ async function tick(): Promise<void> {
     }
     levantarPausaGlobal(estado);
     caducarPendientes(estado);
+    void podarMemoria(estado);
+    // Fuentes apagadas por el escenario del mando (lib/motor/escenario.ts): sus
+    // agentes no corren y sus fichas lo dicen. Se comprueba AQUÍ y no en
+    // `ejecutarCiclo` porque todas las demás entradas (despertar, reanudar,
+    // forzar ciclo) solo encolan: este bucle es el único sitio que arranca ciclos.
+    sincronizarAgentesConEscenario(estado);
+    // Ámbito España (lib/motor/saneamientoEspana.ts): descarta lo que quede
+    // fuera del territorio. Barato: deja un minuto entre pasadas.
+    void sanearFueraEspana(estado);
 
     const ahoraReal = Date.now();
     for (const agente of n.agentes) {
       const ficha = estado.agentes.get(agente.id);
       if (!ficha || ficha.pausado) continue;
+      if (agenteDesactivadoPorEscenario(estado.ejecucion, agente.id)) {
+        // Sin vaciar la cola, /api/salud lo enseñaría "en cola" para siempre.
+        n.cola.delete(agente.id);
+        n.motivoDespertar.delete(agente.id);
+        continue;
+      }
       if (n.ocupados.has(agente.id)) continue; // exclusión mutua
       const despertado = n.cola.has(agente.id);
       const ultimo = n.ultimoCicloReal.get(agente.id) ?? 0;
       const vencido = ahoraReal - ultimo >= Math.max(1, agente.cadenciaSeg) * 1000;
       if (!despertado && !vencido) continue;
+      // Despertado por evento demasiado pronto: NO se descarta, se deja en la
+      // cola y entrará en un tick posterior, cuando haya pasado el hueco mínimo.
+      if (despertado && !vencido && ahoraReal - ultimo < huecoMinimoMs(agente)) continue;
       const motivo = despertado ? n.motivoDespertar.get(agente.id) ?? "evento" : "cadencia";
       n.cola.delete(agente.id);
       n.motivoDespertar.delete(agente.id);
@@ -423,8 +471,23 @@ async function tick(): Promise<void> {
 // Ciclo de un agente
 // ---------------------------------------------------------------------
 
-/** Una frase con lo que el agente tiene delante al empezar el ciclo (va a la traza). */
+/**
+ * Una frase con lo que el agente tiene delante al empezar el ciclo (va a la traza).
+ * Se memoriza durante un tick: recorre incendios, unidades, decisiones y
+ * poblaciones, y en un mismo tick pueden arrancar varios agentes con la misma foto.
+ */
+let entradasCache: { en: number; version: number; texto: string } | undefined;
+
 function entradasDe(estado: Estado): string {
+  if (entradasCache && entradasCache.version === estado.version && Date.now() - entradasCache.en < TICK_MS) {
+    return entradasCache.texto;
+  }
+  const texto = calcularEntradas(estado);
+  entradasCache = { en: Date.now(), version: estado.version, texto };
+  return texto;
+}
+
+function calcularEntradas(estado: Estado): string {
   const activos = estado.incendiosActivos();
   const libres = [...estado.unidades.values()].filter((u) => u.estado === "disponible").length;
   const pendientes = estado.decisionesPendientesHumano().length;
@@ -443,6 +506,14 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
   const limite = limiteMsDe(agente);
   const desde = n.ultimoCicloMundo.get(agente.id) ?? estado.reloj.ahoraMundo;
   let temporizador: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * La promesa REAL del ciclo (no la del `Promise.race`). Si el agente ignora
+   * `abortSignal`, al saltar el tiempo máximo seguía corriendo mientras el
+   * `finally` lo sacaba de `ocupados`: el siguiente tick arrancaba una segunda
+   * copia y se apilaban agotando los huecos de LLM. Ahora el agente no se libera
+   * hasta que ESTA promesa se asienta.
+   */
+  let promesaCiclo: Promise<unknown> | undefined;
 
   tocarFicha(estado, agente.id, {
     estado: esRazonamiento(agente) ? "razonando" : "observando",
@@ -457,7 +528,9 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
     await ejecutarConTraza(estado, agente.id, motivo, async () => {
       anotarTraza({ entradas: resumir(entradasDe(estado)) });
 
-      const lecciones = await cargarLecciones(agente.id, contextoBreve(estado, agente));
+      // Los deterministas no tienen prompt: pedir lecciones solo gastaba un
+      // embedding y una RPC por ciclo (ver `esDeterminista`).
+      const lecciones = esDeterminista(agente) ? [] : await cargarLecciones(agente.id, contextoBreve(estado, agente));
 
       const ctx: ContextoAgente = {
         estado,
@@ -470,8 +543,13 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
         abortSignal: controlador.signal,
       };
 
+      promesaCiclo = Promise.resolve(agente.ciclo(ctx));
+      // Sin este `catch` de cortesía, el rechazo tardío del ciclo (cuando el
+      // race ya devolvió) saldría como "unhandled rejection".
+      void promesaCiclo.catch(() => undefined);
+
       const resultado = (await Promise.race([
-        Promise.resolve(agente.ciclo(ctx)),
+        promesaCiclo,
         new Promise<never>((_, rechazar) => {
           temporizador = setTimeout(() => {
             controlador.abort();
@@ -511,8 +589,31 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
   } finally {
     if (temporizador) clearTimeout(temporizador);
     controladoresEnCurso.delete(agente.id);
-    n.ocupados.delete(agente.id);
     n.ultimoCicloMundo.set(agente.id, estado.reloj.ahoraMundo);
+
+    // Exclusión mutua de verdad: se libera cuando termina el ciclo REAL, no
+    // cuando vence el Promise.race. Si el agente ignoró el abort y sigue vivo,
+    // el orquestador se salta sus turnos hasta que acabe (y lo deja escrito).
+    // Nota: `ultimoCicloReal` se dejó sellado al ARRANCAR el ciclo, para no
+    // alargar la cadencia con la duración del propio ciclo.
+    const liberar = () => n.ocupados.delete(agente.id);
+    if (promesaCiclo) {
+      const tardio = Date.now();
+      void promesaCiclo.then(
+        () => { avisarSiTardio(agente, tardio); liberar(); },
+        () => { avisarSiTardio(agente, tardio); liberar(); },
+      );
+    } else {
+      liberar();
+    }
+  }
+}
+
+/** Deja constancia en consola de un ciclo que siguió vivo después del tiempo máximo. */
+function avisarSiTardio(agente: Agente, desde: number): void {
+  const extra = Date.now() - desde;
+  if (extra > 1000) {
+    console.warn(`[orquestador] ${agente.id}: el ciclo siguió ${Math.round(extra / 1000)} s tras cerrarse la traza (ignora abortSignal); no se ha solapado con otro`);
   }
 }
 
@@ -780,7 +881,13 @@ function caducarPendientes(estado: Estado): void {
   const ahora = Date.now();
   for (const d of estado.decisiones.values()) {
     if (d.estado !== "pendiente_humano" && d.estado !== "escalada") continue;
-    const desde = [...(d.historial ?? [])].reverse().find((h) => h.estado === d.estado)?.en ?? d.creadaEn;
+    // Recorrido hacia atrás SIN copiar el historial (antes: un array nuevo por
+    // decisión y por tick).
+    const historial = d.historial ?? [];
+    let desde = d.creadaEn;
+    for (let i = historial.length - 1; i >= 0; i--) {
+      if (historial[i].estado === d.estado) { desde = historial[i].en; break; }
+    }
     const esperando = (ahora - Date.parse(desde)) / 60_000;
     if (!Number.isFinite(esperando) || esperando <= limite) continue;
     cambiarEstadoDecision(estado, d.id, "caducada", "sistema", `Sin respuesta humana tras ${Math.round(esperando)} min reales (límite ${limite})`);
@@ -790,6 +897,111 @@ function caducarPendientes(estado: Estado): void {
       nivel: "aviso",
       datos: { decisionId: d.id, minutosEsperando: Math.round(esperando) },
     });
+  }
+}
+
+/**
+ * Cambia UNA acción de una decisión releyendo siempre el estado vivo. Antes el
+ * bucle de ejecución llevaba su propia copia del array y la reescribía entera,
+ * así que pisaba lo que el acta (asíncrona) acababa de escribir en la acción.
+ */
+function mutarAccion(estado: Estado, decisionId: string, accionId: string, cambios: Partial<Accion>): Accion | undefined {
+  const actual = estado.decisiones.get(decisionId);
+  if (!actual) return undefined;
+  let mutada: Accion | undefined;
+  const acciones = actual.acciones.map((a) => {
+    if (a.id !== accionId) return a;
+    mutada = { ...a, ...cambios };
+    return mutada;
+  });
+  if (!mutada) return undefined;
+  estado.actualizar(estado.decisiones, decisionId, { acciones });
+  return mutada;
+}
+
+// ---------------------------------------------------------------------
+// Poda de memoria (constructor S, 2026-09-19)
+// ---------------------------------------------------------------------
+// Las colecciones vivas no tenían techo: decisiones cerradas con su historial,
+// informes con el Markdown completo (decenas de miles de caracteres) y
+// observaciones se acumulaban hasta que el proceso pasaba de 2,7 GB. Lo que se
+// poda ya está en Supabase (y los informes se sirven por /api/informes/[id],
+// que cae al repositorio si no están en memoria), así que no se pierde nada.
+// Si NO hay persistencia no se poda: sería tirar datos.
+
+/** Decisiones cerradas que se conservan en memoria. */
+const MAX_DECISIONES_CERRADAS = Number(process.env.MEMORIA_MAX_DECISIONES ?? 300);
+/** Informes que se conservan en memoria (el snapshot enseña los últimos 100). */
+const MAX_INFORMES = Number(process.env.MEMORIA_MAX_INFORMES ?? 300);
+/** Observaciones que se conservan en memoria. */
+const MAX_OBSERVACIONES = Number(process.env.MEMORIA_MAX_OBSERVACIONES ?? 1000);
+/** Edad mínima (ms reales) para poder podar: muy por encima del debounce de la persistencia. */
+const EDAD_MINIMA_PODA_MS = Number(process.env.MEMORIA_EDAD_PODA_MS ?? 600_000);
+/** Una pasada de poda por minuto basta. */
+const INTERVALO_PODA_MS = 60_000;
+
+const ESTADOS_DECISION_CERRADOS: ReadonlySet<Decision["estado"]> = new Set<Decision["estado"]>([
+  "ejecutada",
+  "denegada",
+  "fallida",
+  "caducada",
+]);
+
+let ultimaPoda = 0;
+
+async function podarMemoria(estado: Estado): Promise<void> {
+  const ahora = Date.now();
+  if (ahora - ultimaPoda < INTERVALO_PODA_MS) return;
+  ultimaPoda = ahora;
+  try {
+    const { hayPersistencia } = await import("../db/repositorio");
+    if (!hayPersistencia()) return;
+    const { esperandoPersistencia } = await import("./persistencia");
+
+    const viejo = (iso?: string) => !!iso && ahora - Date.parse(iso) > EDAD_MINIMA_PODA_MS;
+
+    // --- decisiones cerradas -------------------------------------------
+    const cerradas = [...estado.decisiones.values()]
+      .filter((d) => ESTADOS_DECISION_CERRADOS.has(d.estado) && viejo(d.decididaEn ?? d.creadaEn))
+      .sort((a, b) => (a.decididaEn ?? a.creadaEn).localeCompare(b.decididaEn ?? b.creadaEn));
+    let quitadas = 0;
+    for (const d of cerradas) {
+      if (estado.decisiones.size <= MAX_DECISIONES_CERRADAS) break;
+      if (esperandoPersistencia("decisiones", d.id)) continue;
+      estado.eliminar(estado.decisiones, d.id);
+      quitadas += 1;
+    }
+
+    // --- informes (el texto completo es lo que más pesa) ---------------
+    const informes = [...estado.informes.values()].sort((a, b) => a.generadoEn.localeCompare(b.generadoEn));
+    let informesFuera = 0;
+    for (const i of informes) {
+      if (estado.informes.size <= MAX_INFORMES) break;
+      if (!viejo(i.generadoEn)) break; // están ordenados: si este es reciente, los siguientes también
+      if (esperandoPersistencia("informes", i.id)) continue;
+      estado.eliminar(estado.informes, i.id);
+      informesFuera += 1;
+    }
+
+    // --- observaciones --------------------------------------------------
+    const observaciones = [...estado.observaciones.values()].sort((a, b) => a.recibidaEn.localeCompare(b.recibidaEn));
+    let observacionesFuera = 0;
+    for (const o of observaciones) {
+      if (estado.observaciones.size <= MAX_OBSERVACIONES) break;
+      if (!viejo(o.recibidaEn)) break;
+      if (esperandoPersistencia("observaciones", o.id)) continue;
+      estado.eliminar(estado.observaciones, o.id);
+      observacionesFuera += 1;
+    }
+
+    if (quitadas || informesFuera || observacionesFuera) {
+      console.log(
+        `[orquestador] poda de memoria: ${quitadas} decisiones cerradas, ${informesFuera} informes y ` +
+          `${observacionesFuera} observaciones salen de RAM (siguen en Supabase)`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[orquestador] no se pudo podar la memoria: ${mensajeDe(e)}`);
   }
 }
 
@@ -821,15 +1033,14 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     estado.marcarServicio("Ejecutor de acciones", false, mensajeDe(e));
   }
 
-  let acciones = [...(estado.decisiones.get(id)?.acciones ?? [])];
+  const idsAcciones = (estado.decisiones.get(id)?.acciones ?? []).map((a) => a.id);
   let algunaBien = false;
-  for (let i = 0; i < acciones.length; i++) {
+  for (const accionId of idsAcciones) {
     // Sello de auditoría de la acción: quién la autorizó y cuándo se ordenó.
     const ordenadaEn = new Date().toISOString();
-    acciones = acciones.map((a, j) => (j === i ? { ...a, autorizadaPor: quien, ordenadaEn } : a));
-    estado.actualizar(estado.decisiones, id, { acciones });
-    const accion = acciones[i];
-    let resultado = accion;
+    let accion = mutarAccion(estado, id, accionId, { autorizadaPor: quien, ordenadaEn });
+    if (!accion) continue;
+    let resultado: Accion = accion;
     if (!ejecutor || !ejecutor.soporta(accion.tipo)) {
       resultado = {
         ...accion,
@@ -839,8 +1050,7 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
       };
     } else {
       // marcamos "ejecutando" para que la sala lo vea en vivo
-      acciones = acciones.map((a, j) => (j === i ? { ...a, estado: "ejecutando" as const } : a));
-      estado.actualizar(estado.decisiones, id, { acciones });
+      accion = mutarAccion(estado, id, accionId, { estado: "ejecutando" }) ?? accion;
       try {
         resultado = await ejecutor.ejecutar(accion, estado.decisiones.get(id) ?? inicial, ctx);
       } catch (e) {
@@ -852,8 +1062,7 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
         };
       }
     }
-    acciones = acciones.map((a, j) => (j === i ? resultado : a));
-    estado.actualizar(estado.decisiones, id, { acciones });
+    mutarAccion(estado, id, accionId, resultado);
 
     const exito = resultado.estado === "ejecutada" && resultado.resultado?.exito !== false;
     if (exito) algunaBien = true;
@@ -864,17 +1073,22 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
       nivel: exito ? "info" : "aviso",
       datos: { decisionId: id, accionId: resultado.id, tipo: resultado.tipo, referencia: resultado.resultado?.referencia },
     });
-    // Acta de ESTA acción (haya ido bien o mal): se audita todo.
-    await generarActaAccion(id, resultado.id);
+    // Acta de ESTA acción (haya ido bien o mal): se audita todo, pero SIN
+    // esperarla. Redactarla puede costar una llamada de razonamiento de ~25 s
+    // y aquí bloqueaba la ejecución de las acciones siguientes y el cierre de
+    // la decisión. El acta escribe `informeId` dentro de la acción por su
+    // cuenta; por eso todas las mutaciones de acciones pasan por `mutarAccion`,
+    // que relee el estado y no pisa lo que haya escrito mientras tanto.
+    void sinTraza(() => generarActaAccion(id, resultado.id)).catch((e) =>
+      console.error(`[orquestador] no se pudo redactar el acta de la acción ${resultado.id}: ${mensajeDe(e)}`),
+    );
     if (exito && resultado.tipo === "llamar") sumarMetrica(estado, "llamadasRealizadas");
     if (exito && (resultado.tipo === "avisar_poblacion" || resultado.tipo === "confinar_poblacion" || resultado.tipo === "evacuar_poblacion")) {
       sumarMetrica(estado, "poblacionesAvisadas");
     }
-    // El acta ha escrito `informeId` dentro de la acción: se recoge para no
-    // perderlo en la siguiente vuelta del bucle.
-    acciones = [...(estado.decisiones.get(id)?.acciones ?? acciones)];
   }
 
+  const acciones = estado.decisiones.get(id)?.acciones ?? [];
   const estadoFinal: Decision["estado"] = acciones.length === 0 ? "ejecutada" : algunaBien ? "ejecutada" : "fallida";
   const final = cambiarEstadoDecision(estado, id, estadoFinal, quien, `${acciones.filter((a) => a.estado === "ejecutada").length} de ${acciones.length} acciones con éxito`) ?? inicial;
   estado.registrarEvento("decision_ejecutada", `${estadoFinal === "ejecutada" ? "Ejecutada" : "Fallida"}: ${inicial.titulo}`, {
@@ -927,9 +1141,17 @@ const RADIO_INICIAL_M = 60;
  * enriquecimiento con fuentes reales continúa en segundo plano.
  */
 export async function declararFoco(d: DeclaracionFoco): Promise<Incendio> {
+  // Ámbito: SOLO España. Vale para la mano, el verificador y cualquier fuente.
+  if (!enEspana(d.punto)) throw new Error(describirFueraEspana(d.punto));
   const estado = obtenerEstado();
   const ahoraMundo = estado.reloj.ahoraMundo;
   const id = nuevoId("inc");
+  // Superficie REAL (sesión superficie-real, 2026-09-19): el perímetro se
+  // construye para que MIDA las hectáreas de la fuente (o las del punto
+  // inicial) y `areaHa` sale del propio polígono, con la misma fórmula con la
+  // que el mapa mide lo que dibuja. Nunca se guarda una cifra copiada de la
+  // fuente que no se corresponda con el trazado.
+  const perimetroDeclarado = perimetroDeSuperficie(d.punto, d.areaHa && d.areaHa > 0 ? d.areaHa : areaHaCirculo(RADIO_INICIAL_M));
   const incendio: Incendio = {
     id,
     nombre: d.nombre?.trim() || `Incendio en ${d.punto.lat.toFixed(3)}, ${d.punto.lon.toFixed(3)}`,
@@ -943,9 +1165,10 @@ export async function declararFoco(d: DeclaracionFoco): Promise<Incendio> {
     confianza: d.confianza ?? (d.origen === "manual" ? 1 : 0.5),
     detectadoEn: ahoraMundo,
     actualizadoEn: ahoraMundo,
-    // Si la fuente da una superficie, el perímetro inicial es un círculo de esa área.
-    perimetro: circulo(d.punto, d.areaHa && d.areaHa > 0 ? Math.sqrt((d.areaHa * 10_000) / Math.PI) : RADIO_INICIAL_M, 24),
-    areaHa: d.areaHa && d.areaHa > 0 ? d.areaHa : areaHaCirculo(RADIO_INICIAL_M),
+    // Si la fuente da una superficie, el perímetro inicial es un círculo de esa
+    // área; la cifra guardada es la MEDIDA sobre ese polígono.
+    perimetro: perimetroDeclarado,
+    areaHa: +areaDePoligono(perimetroDeclarado).toFixed(2),
     observaciones: d.observacionId ? [d.observacionId] : [],
     radioOperativoKm: 30,
     notas: d.notas,
@@ -1063,15 +1286,37 @@ export async function cerrarIncendio(
     }
   }
 
+  // Descartado = falsa alarma: sus pueblos no corren riesgo de nada. Se van del
+  // estado (y de Supabase, tolerante) para que el mapa y las métricas no sigan
+  // contando "riesgo" de un foco que no existe. Un extinguido los conserva para
+  // el post-mortem. (sesión riesgo-fundado, 2026-09-19)
+  let pueblosQuitados = 0;
+  let pueblosReasignados = 0;
+  if (nuevoEstado === "descartado") {
+    const { eliminados, reasignados } = quitarPoblacionesDe(estado, id);
+    pueblosQuitados = eliminados.length;
+    pueblosReasignados = reasignados;
+    if (eliminados.length) {
+      try {
+        const { borrarLote } = await import("../db/repositorio");
+        await borrarLote("poblaciones", eliminados);
+      } catch (e) {
+        estado.marcarServicio("Supabase", false, `No se pudieron borrar los pueblos del foco descartado: ${mensajeDe(e)}`);
+      }
+    }
+  }
+
   emitir(
     "incendio_cerrado",
     `${incendio.nombre} pasa a ${nuevoEstado} (${quien}). ${enRegreso} unidades regresan a su base por carretera` +
       (liberadas ? `, ${liberadas} liberadas en base` : "") +
-      `, ${apagadas} cámaras fuera de vigilancia`,
+      `, ${apagadas} cámaras fuera de vigilancia` +
+      (pueblosQuitados ? `, ${pueblosQuitados} pueblos retirados del mapa` : "") +
+      (pueblosReasignados ? `, ${pueblosReasignados} pueblos pasan a otro foco cercano` : ""),
     {
       incendioId: id,
       nivel: "info",
-      datos: { estado: nuevoEstado, quien, liberadas, enRegreso, apagadas },
+      datos: { estado: nuevoEstado, quien, liberadas, enRegreso, apagadas, pueblosQuitados, pueblosReasignados },
     },
   );
   return final;
@@ -1119,7 +1364,26 @@ export async function cerrarEjecucion(): Promise<void> {
     estado.marcarServicio("Aprendizaje", false, mensajeDe(e));
   }
 
-  // Post-mortem: una "decisión sintética" sirve de percha para el redactor.
+  await redactarPostmortem();
+
+  try {
+    const { guardarEjecucion, volcarTodo } = await import("../db/repositorio");
+    await volcarTodo(estado);
+    await guardarEjecucion(estado.ejecucion);
+  } catch (e) {
+    estado.marcarServicio("Supabase", false, mensajeDe(e));
+  }
+
+  estado.registrarEvento("sistema", `Ejecución cerrada: ${estado.ejecucion.nombre}`, { nivel: "info" });
+}
+
+/**
+ * Post-mortem de la ejecución actual (ya cerrada): una "decisión sintética" sirve
+ * de percha para el redactor. También se llama a mano si el cierre se quedó sin
+ * él (p. ej. el proveedor de IA no respondió).
+ */
+export async function redactarPostmortem(): Promise<void> {
+  const estado = obtenerEstado();
   try {
     const { redactarInforme } = await import("../agentes/informes/redactor");
     const sintetica: Decision = {
@@ -1139,11 +1403,16 @@ export async function cerrarEjecucion(): Promise<void> {
       creadaEn: new Date().toISOString(),
       creadaEnMundo: estado.reloj.ahoraMundo,
     };
-    // Tope de 12 s: el acta determinista sale enseguida; la narrativa de IA no debe bloquear el cierre.
-    const informe = await Promise.race([
-      redactarInforme(sintetica, contextoParaSistema("redactor")),
-      new Promise<never>((_, rechazar) => setTimeout(() => rechazar(new Error("post-mortem: tiempo máximo de 12 s")), 12_000)),
-    ]);
+    // Tope de 12 s para la narrativa de IA: se aborta la petición (no se descarta
+    // el informe), así el redactor devuelve al menos el acta determinista.
+    const corte = new AbortController();
+    const temporizador = setTimeout(() => corte.abort(), 12_000);
+    let informe;
+    try {
+      informe = await redactarInforme(sintetica, contextoParaSistema("redactor", corte.signal));
+    } finally {
+      clearTimeout(temporizador);
+    }
     if (informe) {
       const guardado = { ...informe, id: informe.id || nuevoId("inf"), tipo: "postmortem" as const, ejecucionId: estado.ejecucion.id };
       estado.guardar(estado.informes, guardado);
@@ -1153,24 +1422,19 @@ export async function cerrarEjecucion(): Promise<void> {
   } catch (e) {
     estado.marcarServicio("Redactor de informes", false, mensajeDe(e));
   }
-
-  try {
-    const { guardarEjecucion, volcarTodo } = await import("../db/repositorio");
-    await volcarTodo(estado);
-    await guardarEjecucion(estado.ejecucion);
-  } catch (e) {
-    estado.marcarServicio("Supabase", false, mensajeDe(e));
-  }
-
-  estado.registrarEvento("sistema", `Ejecución cerrada: ${estado.ejecucion.nombre}`, { nivel: "info" });
 }
 
 /** Cierra la actual y empieza una ejecución limpia (estado nuevo, agentes re-registrados). */
-export async function nuevaEjecucion(nombre?: string): Promise<Estado> {
+export async function nuevaEjecucion(nombre?: string, fuentesDesactivadas?: FuenteDeteccion[]): Promise<Estado> {
   await cerrarEjecucion();
   const anterior = obtenerEstado();
   const nuevo = new Estado();
   if (nombre?.trim()) nuevo.ejecucion = { ...nuevo.ejecucion, nombre: nombre.trim() };
+  // El escenario (fuentes de detección apagadas) lo fija el mando y se hereda entre
+  // ejecuciones, como la política. Se puede fijar explícitamente al crearla: las
+  // pruebas mandan [] para no arrastrar un simulacro que alguien dejó puesto.
+  const fuentes = normalizarFuentes(fuentesDesactivadas ?? anterior.ejecucion.fuentesDesactivadas);
+  if (fuentes.length) nuevo.ejecucion = { ...nuevo.ejecucion, fuentesDesactivadas: fuentes };
   // La política la fija el humano y NO se pierde entre ejecuciones... pero solo si
   // de verdad la ha tocado alguien. Si sigue siendo la de fábrica ("sistema"), se
   // toma la del código: si no, cambiar `politica-defecto.ts` no tenía ningún efecto
@@ -1215,7 +1479,11 @@ export async function nuevaEjecucion(nombre?: string): Promise<Estado> {
     nuevo.marcarServicio("Supabase", false, mensajeDe(e));
   }
 
-  nuevo.registrarEvento("sistema", `Nueva ejecución: ${nuevo.ejecucion.nombre} (${lecciones.length} lecciones heredadas)`, { nivel: "info" });
+  nuevo.registrarEvento(
+    "sistema",
+    `Nueva ejecución: ${nuevo.ejecucion.nombre} (${lecciones.length} lecciones heredadas)${fuentes.length ? ` · fuentes de detección apagadas: ${listaFuentes(fuentes)}` : ""}`,
+    { nivel: fuentes.length ? "aviso" : "info" },
+  );
   return nuevo;
 }
 

@@ -13,7 +13,11 @@ const URL_KML = "https://informo.madrid.es/informo/tmadrid/CCTV.kml";
 const TIMEOUT_MS = 20_000;
 const CACHE_MS = 60 * 60_000;
 
-type Global = typeof globalThis & { __atalayaCamarasMadrid?: { en: number; datos: Camara[] } };
+type Global = typeof globalThis & {
+  __atalayaCamarasMadrid?: { en: number; datos: Camara[] };
+  /** Descarga en curso: deduplicación de vuelos (constructor T, 2026-09-19). */
+  __atalayaCamarasMadridVuelo?: Promise<Camara[]>;
+};
 const g = globalThis as Global;
 
 export const urlImagenMadrid = (numero: string): string => `https://informo.madrid.es/cameras/Camara${numero}.jpg`;
@@ -58,10 +62,20 @@ export function parsearKml(kml: string): Camara[] {
   return camaras;
 }
 
-/** Catálogo de cámaras de Madrid (1 h de caché). */
-export async function listarCamarasMadrid(): Promise<Camara[]> {
+/**
+ * Catálogo de cámaras de Madrid (1 h de caché). En arranque en frío varias
+ * peticiones caen a la vez (salud, /api/camaras, enriquecimiento) y cada una
+ * se bajaba el KML entero: ahora comparten la misma descarga.
+ */
+export function listarCamarasMadrid(): Promise<Camara[]> {
   const c = g.__atalayaCamarasMadrid;
-  if (c && Date.now() - c.en < CACHE_MS) return c.datos;
+  if (c && Date.now() - c.en < CACHE_MS) return Promise.resolve(c.datos);
+  return (g.__atalayaCamarasMadridVuelo ??= descargarCamarasMadrid().finally(() => {
+    g.__atalayaCamarasMadridVuelo = undefined;
+  }));
+}
+
+async function descargarCamarasMadrid(): Promise<Camara[]> {
   const res = await fetch(URL_KML, { signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
   if (!res.ok) throw new Error(`CCTV.kml ${res.status} ${res.statusText}`);
   const camaras = parsearKml(await res.text());

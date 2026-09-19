@@ -7,12 +7,13 @@
 // que se ve sale del Snapshot que llega por SSE: si el servidor no responde, la
 // pantalla lo dice y sigue siendo navegable.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PauseOctagon, Play, WifiOff } from "lucide-react";
 import type { Poblacion, Punto, Unidad } from "@/lib/dominio/tipos";
 import { useEstado } from "@/lib/cliente/useEstado";
 import { conModificadores, escribiendo } from "@/lib/cliente/teclado";
+import { filtrarSnapshotPorZona, guardarZona, leerZonaGuardada, type ZonaSeleccion } from "@/lib/cliente/zona";
 import {
   actualizarFoco,
   ajustarReloj,
@@ -24,15 +25,27 @@ import {
   vigilarCamara,
 } from "@/lib/cliente/api";
 import { Boton } from "@/components/ui/Boton";
-import { Mapa } from "@/components/mapa/Mapa";
+import { Mapa, type PeticionEncuadre } from "@/components/mapa/Mapa";
 import { BarraSuperior } from "@/components/sala/BarraSuperior";
 import { DialogoAtajos } from "@/components/sala/DialogoAtajos";
 import { DialogoDeclararFoco } from "@/components/sala/DialogoDeclararFoco";
 import { DialogoMovil } from "@/components/sala/DialogoMovil";
 import { PanelDerecho, type ClavePestana } from "@/components/sala/PanelDerecho";
-import { QUIEN } from "@/components/sala/TarjetaDecision";
+import { SeparadorPaneles } from "@/components/sala/SeparadorPaneles";
+import { QUIEN, type ObjetivoAccion } from "@/components/sala/TarjetaDecision";
 import { aprobarDecision } from "@/lib/cliente/api";
 import { useToast } from "@/components/ui/Toast";
+import { enEspana } from "@/lib/dominio/espana";
+
+/**
+ * RENDIMIENTO (constructor R): el mapa monta ~2000 capas de Leaflet. Envuelto en
+ * `memo`, un cambio de estado de la sala (pestaña, panel plegado, diálogo
+ * abierto) ya no lo re-renderiza: sus props son las mismas referencias porque
+ * todos los callbacks de abajo son `useCallback`. Solo vuelve a pintarse cuando
+ * cambia de verdad algo suyo (snapshot nuevo, foco resaltado, encuadre, modo).
+ * No cambia la firma de `MapaProps` (dueño: constructor B).
+ */
+const MapaMemo = memo(Mapa);
 
 export default function SalaDeMando() {
   const router = useRouter();
@@ -41,24 +54,59 @@ export default function SalaDeMando() {
 
   const [pestana, setPestana] = useState<ClavePestana>("decisiones");
   const [plegado, setPlegado] = useState(false);
+  /** Panel a pantalla completa: el mapa se oculta y las secciones se reparten en columnas. */
+  const [ampliado, setAmpliado] = useState(false);
   const [declarando, setDeclarando] = useState(false);
   const [puntoFoco, setPuntoFoco] = useState<Punto | null>(null);
   const [declarandoFoco, setDeclarandoFoco] = useState(false);
   const [atajos, setAtajos] = useState(false);
   const [movil, setMovil] = useState(false);
   const [seleccionado, setSeleccionado] = useState<string>();
-  const [centrarEn, setCentrarEn] = useState<{ lat: number; lon: number; sello: number }>();
+  const [centrarEn, setCentrarEn] = useState<PeticionEncuadre>();
   /** Unidad a la que se le está eligiendo destino con un clic en el mapa. */
   const [unidadOrdenando, setUnidadOrdenando] = useState<Unidad>();
 
+  /**
+   * Filtro por zona: un recuadro o un lazo dibujado sobre el mapa. El snapshot
+   * completo sigue llegando por SSE; aquí se recorta (lib/cliente/zona.ts) y
+   * el mapa y el panel reciben SOLO lo que cae dentro. La zona se guarda en
+   * localStorage y sobrevive a recargas: solo se va con "Quitar filtro".
+   */
+  const [zona, setZona] = useState<ZonaSeleccion | null>(null);
+  useEffect(() => {
+    // localStorage no existe en el render del servidor: se lee tras hidratar.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setZona(leerZonaGuardada());
+  }, []);
+  const fijarZona = useCallback((z: ZonaSeleccion) => {
+    guardarZona(z);
+    setZona(z);
+  }, []);
+  const quitarZona = useCallback(() => {
+    guardarZona(null);
+    setZona(null);
+  }, []);
+  const snapshotZona = useMemo(() => filtrarSnapshotPorZona(snapshot, zona), [snapshot, zona]);
+  /** Focos que cuentan (ni descartados ni absorbidos): para "N de M en la zona". */
+  const focosTotales = useMemo(
+    () => (snapshot?.incendios ?? []).filter((i) => i.estado !== "descartado" && i.estado !== "fusionado").length,
+    [snapshot?.incendios],
+  );
+  const focosEnZona = useMemo(
+    () => (snapshotZona?.incendios ?? []).filter((i) => i.estado !== "descartado" && i.estado !== "fusionado").length,
+    [snapshotZona?.incendios],
+  );
+  const filtroZona = useMemo(() => (zona ? { dentro: focosEnZona, total: focosTotales } : undefined), [zona, focosEnZona, focosTotales]);
+
   const pausado = Boolean(snapshot?.reloj.pausado);
 
+  // Con una zona puesta, los atajos A/D actúan sobre lo que se ve, no sobre lo oculto.
   const pendientes = useMemo(
     () =>
-      (snapshot?.decisiones ?? [])
+      (snapshotZona?.decisiones ?? [])
         .filter((d) => d.estado === "pendiente_humano" || d.estado === "escalada")
         .sort((a, b) => a.prioridad - b.prioridad || a.creadaEn.localeCompare(b.creadaEn)),
-    [snapshot?.decisiones],
+    [snapshotZona?.decisiones],
   );
 
   // --- Eventos críticos: también se anuncian como toast (una sola vez) -------
@@ -80,12 +128,37 @@ export default function SalaDeMando() {
   }, [snapshot?.eventos, toast]);
 
   // --- Acciones -------------------------------------------------------------
+  //
+  // Todos los manejadores que bajan a los hijos memoizados son estables: si
+  // fueran flechas en línea, cada render de la sala les cambiaría las props y
+  // `memo` no serviría de nada (el mapa volvería a pintar sus 2000 capas).
+
+  const alternarDeclarar = useCallback(() => setDeclarando((v) => !v), []);
+  const abrirAtajos = useCallback(() => setAtajos(true), []);
+  const cerrarAtajos = useCallback(() => setAtajos(false), []);
+  const abrirMovil = useCallback(() => setMovil(true), []);
+  const cerrarMovil = useCallback(() => setMovil(false), []);
+  const alternarPlegado = useCallback(() => setPlegado((v) => !v), []);
+  const alternarAmpliado = useCallback(() => {
+    setAmpliado((v) => !v);
+    setPlegado(false);
+  }, []);
+  const cerrarPuntoFoco = useCallback(() => setPuntoFoco(null), []);
+  const ordenarUnidad_ = useCallback((u: Unidad) => setUnidadOrdenando(u), []);
+
+  /** Clic en un foco del mapa: lo selecciona y abre la pestaña "Focos". */
+  const seleccionarDesdeMapa = useCallback((id: string) => {
+    setSeleccionado(id);
+    setPestana("focos");
+    setPlegado(false);
+  }, []);
 
   const centrarIncendio = useCallback(
     (id: string) => {
       const inc = snapshot?.incendios.find((i) => i.id === id);
       if (!inc) return;
       setSeleccionado(id);
+      setAmpliado(false); // "Ver en el mapa" solo tiene sentido con el mapa a la vista
       setCentrarEn({ lat: inc.centro.lat, lon: inc.centro.lon, sello: Date.now() });
     },
     [snapshot?.incendios],
@@ -99,9 +172,36 @@ export default function SalaDeMando() {
         toast.aviso("Esa unidad ya no está en el mapa", "Puede que haya vuelto a su base o que la ejecución sea otra.");
         return;
       }
-      setCentrarEn({ lat: u.posicion.lat, lon: u.posicion.lon, sello: Date.now() });
+      setAmpliado(false);
+      // La unidad viaja con la petición: el mapa la pinta y la resalta aunque
+      // siga en su base (el filtro "solo las desplegadas" la ocultaría) o quede
+      // fuera de la zona. Zoom mínimo 13: un parque a 8 km del foco se distingue.
+      setCentrarEn({ lat: u.posicion.lat, lon: u.posicion.lon, sello: Date.now(), zoomMinimo: 13, unidad: u });
     },
     [snapshot?.unidades, toast],
+  );
+
+  /**
+   * "Centrar en el mapa" desde una decisión SIN foco (o desde una acción): lleva
+   * el mapa al pueblo avisado, a la cámara, a la unidad o al punto de la acción.
+   */
+  const centrarObjetivo = useCallback(
+    (o: ObjetivoAccion) => {
+      // Una unidad va por su camino: se pinta y se resalta aunque esté en base.
+      if (!o.punto && !o.poblacionId && !o.camaraId && o.unidadId) return centrarUnidad(o.unidadId);
+      const punto =
+        o.punto ??
+        (o.poblacionId ? snapshot?.poblaciones.find((p) => p.id === o.poblacionId)?.centro : undefined) ??
+        (o.camaraId ? snapshot?.camaras.find((c) => c.id === o.camaraId)?.punto : undefined) ??
+        (o.unidadId ? snapshot?.unidades.find((u) => u.id === o.unidadId)?.posicion : undefined);
+      if (!punto) {
+        toast.aviso("Ese punto ya no está en el mapa", "Puede que el pueblo, la cámara o la unidad ya no formen parte de la ejecución.");
+        return;
+      }
+      setAmpliado(false);
+      setCentrarEn({ lat: punto.lat, lon: punto.lon, sello: Date.now() });
+    },
+    [snapshot?.poblaciones, snapshot?.camaras, snapshot?.unidades, toast, centrarUnidad],
   );
 
   /**
@@ -160,6 +260,27 @@ export default function SalaDeMando() {
       }
     },
     [refrescar, seleccionado, snapshot?.incendios, toast],
+  );
+
+  /**
+   * Un clic en el mapa sirve para dos cosas según el modo: declarar un foco o
+   * fijar el destino de la unidad que se está ordenando.
+   */
+  const clicEnMapa = useCallback(
+    (p: Punto) => {
+      if (!enEspana(p)) {
+        toast.aviso("Ese punto está fuera de España", "El sistema solo trabaja con el territorio español: elige un punto dentro.");
+        return;
+      }
+      if (unidadOrdenando) {
+        const u = unidadOrdenando;
+        setUnidadOrdenando(undefined);
+        void confirmarDestinoUnidad(u, p);
+        return;
+      }
+      setPuntoFoco(p);
+    },
+    [confirmarDestinoUnidad, toast, unidadOrdenando],
   );
 
   const retirar = useCallback(
@@ -242,6 +363,11 @@ export default function SalaDeMando() {
         setUnidadOrdenando(undefined);
         return;
       }
+      // Los diálogos capturan su propio Esc antes de llegar aquí.
+      if (e.key === "Escape" && ampliado) {
+        setAmpliado(false);
+        return;
+      }
       if (tecla === "f") {
         e.preventDefault();
         setDeclarando((v) => !v);
@@ -251,6 +377,9 @@ export default function SalaDeMando() {
       } else if (tecla === "g") {
         e.preventDefault();
         router.push("/agentes");
+      } else if (tecla === "p") {
+        e.preventDefault();
+        alternarAmpliado();
       } else if (e.code === "Space") {
         e.preventDefault();
         await alternarPausa();
@@ -280,17 +409,17 @@ export default function SalaDeMando() {
     }
     document.addEventListener("keydown", alTeclado);
     return () => document.removeEventListener("keydown", alTeclado);
-  }, [alternarPausa, declarando, pendientes, refrescar, router, toast, unidadOrdenando]);
+  }, [alternarAmpliado, alternarPausa, ampliado, declarando, pendientes, refrescar, router, toast, unidadOrdenando]);
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
       <BarraSuperior
         snapshot={snapshot}
         onRefrescar={refrescar}
-        onDeclararFoco={() => setDeclarando((v) => !v)}
+        onDeclararFoco={alternarDeclarar}
         declarando={declarando}
-        onAtajos={() => setAtajos(true)}
-        onUnirMovil={() => setMovil(true)}
+        onAtajos={abrirAtajos}
+        onUnirMovil={abrirMovil}
       />
 
       {/* PAUSA GLOBAL: banda a todo el ancho. Mientras esté, NINGÚN agente
@@ -324,54 +453,53 @@ export default function SalaDeMando() {
       ) : null}
 
       <main className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="relative min-h-[45vh] flex-1 lg:min-h-0">
-          <Mapa
-            snapshot={snapshot}
+        <div className={ampliado ? "hidden" : "relative min-h-[45vh] flex-1 lg:min-h-0"}>
+          <MapaMemo
+            snapshot={snapshotZona}
             incendioSeleccionado={focoResaltado}
-            onSeleccionarIncendio={(id) => {
-              setSeleccionado(id);
-              setPestana("focos");
-              setPlegado(false);
-            }}
+            onSeleccionarIncendio={seleccionarDesdeMapa}
             modoDeclarar={declarando}
-            onClicMapa={(p) => {
-              // Un clic sirve para dos cosas según el modo: declarar un foco o
-              // fijar el destino de la unidad que se está ordenando.
-              if (unidadOrdenando) {
-                const u = unidadOrdenando;
-                setUnidadOrdenando(undefined);
-                void confirmarDestinoUnidad(u, p);
-                return;
-              }
-              setPuntoFoco(p);
-            }}
+            onClicMapa={clicEnMapa}
             onAvisarPoblacion={avisar}
             onVigilarCamara={vigilar}
             centrarEn={centrarEfectivo}
             unidadOrdenando={unidadOrdenando}
-            onOrdenarUnidad={(u) => setUnidadOrdenando(u)}
+            onOrdenarUnidad={ordenarUnidad_}
             onRetirarUnidad={retirar}
             onCambiarEstadoFoco={cambiarEstadoFoco}
             onRefrescar={refrescar}
+            zona={zona}
+            focosTotales={focosTotales}
+            focosEnZona={focosEnZona}
+            onZonaDibujada={fijarZona}
+            onQuitarZona={quitarZona}
           />
         </div>
 
+        {/* SEPARADOR arrastrable mapa/panel: fija --ancho-panel en este <main>. Solo con panel abierto. */}
+        {!ampliado && !plegado ? <SeparadorPaneles /> : null}
+
         <PanelDerecho
-          snapshot={snapshot}
+          snapshot={snapshotZona}
           activa={pestana}
           onCambiarPestana={setPestana}
           plegado={plegado}
-          onPlegar={() => setPlegado((v) => !v)}
+          onPlegar={alternarPlegado}
+          ampliado={ampliado}
+          onAmpliar={alternarAmpliado}
           onRefrescar={refrescar}
           onCentrarIncendio={centrarIncendio}
           onCentrarUnidad={centrarUnidad}
+          onCentrarObjetivo={centrarObjetivo}
           incendioSeleccionado={focoResaltado}
+          filtroZona={filtroZona}
+          onQuitarZona={quitarZona}
         />
       </main>
 
-      <DialogoDeclararFoco punto={puntoFoco} onCerrar={() => setPuntoFoco(null)} onConfirmar={confirmarFoco} ocupado={declarandoFoco} />
-      <DialogoAtajos abierto={atajos} onCerrar={() => setAtajos(false)} />
-      <DialogoMovil abierto={movil} onCerrar={() => setMovil(false)} />
+      <DialogoDeclararFoco punto={puntoFoco} onCerrar={cerrarPuntoFoco} onConfirmar={confirmarFoco} ocupado={declarandoFoco} />
+      <DialogoAtajos abierto={atajos} onCerrar={cerrarAtajos} />
+      <DialogoMovil abierto={movil} onCerrar={cerrarMovil} />
     </div>
   );
 }

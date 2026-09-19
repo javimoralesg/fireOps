@@ -14,6 +14,7 @@ import type {
   Leccion,
   TrazaCiclo,
   Ejecucion,
+  FuenteDeteccion,
   Incendio,
   Informe,
   PoliticaAutonomia,
@@ -91,14 +92,48 @@ async function pedir<T>(ruta: string, { metodo = "GET", cuerpo, signal, timeoutM
 
 export const obtenerEstado = (signal?: AbortSignal) => pedir<Snapshot>("/api/estado", { signal, timeoutMs: 15_000 });
 
+/**
+ * Snapshot solo si cambió (constructor P): manda `If-None-Match` con la versión
+ * que ya se tiene y devuelve `undefined` si el servidor contesta 304. El polling
+ * de respaldo así no descarga megas ni repinta cuando no hay novedades.
+ */
+export async function obtenerEstadoSiCambio(version: number, signal?: AbortSignal): Promise<Snapshot | undefined> {
+  const ruta = "/api/estado";
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(ruta, {
+      cache: "no-store",
+      headers: version >= 0 ? { "if-none-match": `W/"${version}"` } : undefined,
+      signal: signal ?? AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    throw new ErrorApi(mensajeDeError(e), 0, ruta);
+  }
+  if (respuesta.status === 304) return undefined;
+  const texto = await respuesta.text();
+  if (!respuesta.ok) throw new ErrorApi(texto.slice(0, 200) || `Error ${respuesta.status}`, respuesta.status, ruta);
+  try {
+    return JSON.parse(texto) as Snapshot;
+  } catch {
+    throw new ErrorApi("El servidor devolvió un snapshot ilegible.", respuesta.status, ruta);
+  }
+}
+
 export const obtenerSalud = () => pedir<Record<string, { ok: boolean; detalle?: string; en: string }>>("/api/salud");
 
 /** Pausa/reanuda, cambia el factor o avanza minutos de mundo. */
 export const ajustarReloj = (cambio: { factor?: number; pausado?: boolean; avanzarMin?: number }) =>
   pedir<{ reloj: Reloj }>("/api/reloj", { metodo: "POST", cuerpo: cambio });
 
-export const ejecucion = (accion: "nueva" | "cerrar") =>
-  pedir<{ ejecucion: Ejecucion }>("/api/ejecucion", { metodo: "POST", cuerpo: { accion }, timeoutMs: 60_000 });
+export const ejecucion = (accion: "nueva" | "cerrar", extra: { nombre?: string; fuentesDesactivadas?: FuenteDeteccion[] } = {}) =>
+  pedir<{ ejecucion: Ejecucion }>("/api/ejecucion", { metodo: "POST", cuerpo: { accion, ...extra }, timeoutMs: 60_000 });
+
+/**
+ * Apaga/enciende fuentes de detección de la ejecución activa (escenario del
+ * mando). Se manda la lista COMPLETA de apagadas; [] = operación real.
+ */
+export const cambiarFuentesDeteccion = (fuentesDesactivadas: FuenteDeteccion[]) =>
+  pedir<{ ejecucion: Ejecucion; cambiado: boolean }>("/api/ejecucion", { metodo: "POST", cuerpo: { accion: "fuentes", fuentesDesactivadas } });
 
 // --- Focos ------------------------------------------------------------------
 
@@ -301,9 +336,11 @@ export const urlExportarAuditoria = (decisionId: string) =>
 /** Todo junto, por comodidad al importar. */
 export const api = {
   obtenerEstado,
+  obtenerEstadoSiCambio,
   obtenerSalud,
   ajustarReloj,
   ejecucion,
+  cambiarFuentesDeteccion,
   declararFoco,
   actualizarFoco,
   cerrarFoco,

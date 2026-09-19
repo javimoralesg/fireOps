@@ -11,9 +11,31 @@
 // AMPLIADO (constructor H, 2026-09-19): capa "Cámaras de España", iconos de
 // unidad por cuerpo con ruta recorrida y flecha de sentido, capa "Bases",
 // focos "detectado" en hueco con confirmar/descartar y control de viento.
+//
+// RENDIMIENTO (constructor Q, 2026-09-19). Con ~2.000 marcadores y un snapshot
+// cada 1,4 s, el mapa se repintaba ENTERO en cada actualización. Cuatro reglas
+// que hay que respetar al tocar este archivo:
+//  1. UN COMPONENTE MEMOIZADO POR ELEMENTO (`UnidadMarker`, `PuebloMarker`…).
+//     El motor conserva la identidad de cada item entre snapshots, así que
+//     `React.memo` por referencia basta para no volver a pintar lo que no ha
+//     cambiado. Todo lo demás debe ser barato aunque la identidad se pierda.
+//  2. ICONOS Y TRAZOS POR CACHÉ (`./iconos`, `./estilos`): react-leaflet compara
+//     `icon` y `pathOptions` POR REFERENCIA y llama a `setIcon`/`setStyle`, que
+//     reconstruyen el DOM y reinician las animaciones.
+//  3. EL MOVIMIENTO DE LAS UNIDADES NO PASA POR REACT (`./animacion`): la prop
+//     `position` del marcador no cambia nunca y se mueve con `setLatLng`.
+//  4. EL CONTENIDO DE POPUPS Y TOOLTIPS VA EN UN COMPONENTE HIJO, nunca en línea
+//     dentro del JSX: react-leaflet solo lo monta cuando se abre, y así no se
+//     formatean miles de textos que nadie está mirando.
+//  5. TODO <Popup> LLEVA autoPan={false}: los coloca ./colocarPopups.ts (encima,
+//     debajo o a un lado del marcador, siempre enteros y sin mover el mapa).
+//
+// AMPLIADO (constructor E, 2026-09-19): filtro por zona (recuadro o lazo
+// dibujado sobre el mapa, ./SeleccionZona.tsx). El snapshot ya llega recortado
+// desde la sala (lib/cliente/zona.ts); aquí solo se dibuja, se pinta y se quita.
 
 import "leaflet/dist/leaflet.css";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import {
   Circle,
@@ -29,9 +51,20 @@ import {
   useMapEvents,
   ZoomControl,
 } from "react-leaflet";
-import { Flame, MapPin, Maximize2, Megaphone, Navigation, TriangleAlert } from "lucide-react";
-import type { Camara, Incendio, Poblacion, Punto, Snapshot, Unidad } from "@/lib/dominio/tipos";
-import { LIMITES_ESPANA, aLatLng, circulo, destino as puntoDestino, flechaViento, interpolar, limitesDe, partirRuta, rejillaViento } from "./geo";
+import { Crosshair, Flame, MapPin, Maximize2, Megaphone, Navigation, TriangleAlert } from "lucide-react";
+import type { Camara, FocoSatelite, Incendio, Poblacion, Punto, Snapshot, Unidad } from "@/lib/dominio/tipos";
+import {
+  LIMITES_ESPANA,
+  LIMITES_NAVEGACION,
+  aLatLng,
+  circulo,
+  destino as puntoDestino,
+  flechaViento,
+  limitesDe,
+  partirRuta,
+  rejillaViento,
+  type FlechaViento,
+} from "./geo";
 import {
   CONTORNOS,
   ICONO_UNIDAD,
@@ -44,14 +77,37 @@ import {
   marcadorHtml,
   radioRiesgoM,
 } from "./simbologia";
+import { iconoDiv, rumboRedondeado } from "./iconos";
+import { moverMarcador, olvidarMarcador } from "./animacion";
+import { useOcultarTerminados } from "./useOcultarTerminados";
+import {
+  trazoLineaControl,
+  trazoPerimetro,
+  trazoPrediccion,
+  trazoPuebloBajo,
+  trazoPueblo,
+  trazoPuntaRuta,
+  trazoPuntoFusionado,
+  trazoPuntoSatelite,
+  trazoPuntoZona,
+  trazoRutaRecorrida,
+  trazoRutaRestante,
+  trazoViento,
+} from "./estilos";
 import { useColoresTema, type ColoresTema } from "./useColoresTema";
 import { PanelCapas, Leyenda, type ClaveCapa, type FilaCapa } from "./PanelCapas";
+import { hospitalesParticipantes, leerFiltros, guardarFiltros, TEXTO_FILTRO, unidadParticipa, type CapaFiltrable } from "./filtroParticipantes";
 import { PopupCamara } from "./PopupCamara";
+import { instalarColocadorPopups } from "./colocarPopups";
 import { CapaCamarasEspana } from "./CamarasEspana";
 import { useCamarasEspana } from "./useCamarasEspana";
 import { FichaUnidad, type AccionesUnidad } from "./FichaUnidad";
-import { zonasPeligroDe } from "./extras";
-import { distancia, haceCuanto, hectareas, minutos, numero, rumboFrase, viento } from "@/lib/cliente/formato";
+import { AvisoDibujoZona, AvisoZonaVacia, BandaZona, CapaZona, ControlesZona, DibujoZona } from "./SeleccionZona";
+import { CapaFueraEspana } from "./CapaFueraEspana";
+import { limitesZona, type TipoZona, type ZonaSeleccion } from "@/lib/cliente/zona";
+import { listaZonasCruda, zonasPeligroDeLista, type ZonaPeligroMapa } from "./extras";
+import { superficieDibujadaHa } from "./superficie";
+import { distancia, haceCuanto, hectareas, hora, minutos, numero, rumboFrase, viento } from "@/lib/cliente/formato";
 import { urlOsm, urlOsmPunto } from "@/lib/cliente/enlaces";
 import { conModificadores, escribiendo } from "@/lib/cliente/teclado";
 import { EnlaceExterno } from "@/components/ui/Enlace";
@@ -84,10 +140,12 @@ import {
 const CLAVE_CAPAS = "atalaya:capas";
 /** Si el usuario ha movido el mapa hace menos de esto, no se le roba el control. */
 const RESPETO_USUARIO_MS = 20_000;
-/** Duración de la animación de una unidad entre dos snapshots. */
-const ANIMACION_MS = 1400;
 /** Cuántos pueblos llevan el nombre siempre visible (el resto, al pasar el ratón). */
 const MAX_ETIQUETAS_PUEBLOS = 8;
+/** Constantes izadas: si fueran literales del JSX cambiarían de referencia cada render. */
+const DESPLAZAMIENTO_14: [number, number] = [0, -14];
+const DESPLAZAMIENTO_10: [number, number] = [0, -10];
+const SIN_POBLACIONES: Poblacion[] = [];
 
 const CAPAS_POR_DEFECTO: Record<ClaveCapa, boolean> = {
   focos: true,
@@ -101,7 +159,28 @@ const CAPAS_POR_DEFECTO: Record<ClaveCapa, boolean> = {
   viento: true,
   satelite: false,
   avisos: true,
+  fueraEspana: true,
 };
+
+/**
+ * Petición de encuadre desde fuera del mapa ("Ver en el mapa", foco de la URL…).
+ * `sello` distingue peticiones: solo se aplica cuando cambia. Con `unidad`, esa
+ * unidad se pinta y se resalta aunque el filtro "solo las desplegadas", la capa
+ * apagada o la zona la tuvieran oculta: desde una decisión pendiente la unidad
+ * suele seguir en su base y, sin esto, el mapa iba a un parque vacío y parecía
+ * que el botón no hacía nada.
+ */
+export interface PeticionEncuadre {
+  lat: number;
+  lon: number;
+  sello: number;
+  /** Zoom exacto al que ir; si no, se conserva el actual con un mínimo. */
+  zoom?: number;
+  /** Zoom mínimo al conservar el actual (12 si no se indica). */
+  zoomMinimo?: number;
+  /** Unidad que se quiere ver: se dibuja y se resalta aunque estuviera oculta. */
+  unidad?: Unidad;
+}
 
 export interface MapaProps {
   snapshot?: Snapshot;
@@ -113,8 +192,8 @@ export interface MapaProps {
   onClicMapa?: (punto: Punto) => void;
   onAvisarPoblacion?: (poblacion: Poblacion) => void | Promise<void>;
   onVigilarCamara?: (id: string, vigilar: boolean) => void | Promise<void>;
-  /** Petición externa de encuadre: cambia el `sello` para que se aplique. */
-  centrarEn?: { lat: number; lon: number; sello: number; zoom?: number };
+  /** Petición externa de encuadre (ver `PeticionEncuadre`). */
+  centrarEn?: PeticionEncuadre;
   /** Unidad a la que se le está eligiendo destino: el próximo clic lo fija. */
   unidadOrdenando?: Unidad;
   /** Pide entrar en ese modo desde la ficha de una unidad. */
@@ -124,6 +203,18 @@ export interface MapaProps {
   onCambiarEstadoFoco?: (id: string, estado: "confirmado" | "descartado") => void | Promise<void>;
   /** Tras fijar o quitar el viento de un foco. */
   onRefrescar?: () => void;
+  /**
+   * Filtro por zona (recuadro o lazo). La sala guarda la zona y ya manda el
+   * snapshot recortado a ella; aquí solo se dibuja, se pinta y se quita.
+   */
+  zona?: ZonaSeleccion | null;
+  /** Focos que hay en total sin filtrar y cuántos caen en la zona (mismos números que el panel). */
+  focosTotales?: number;
+  focosEnZona?: number;
+  /** Se ha terminado de dibujar una zona nueva. */
+  onZonaDibujada?: (zona: ZonaSeleccion) => void;
+  /** "Quitar filtro": borra la zona y vuelve a verse todo. */
+  onQuitarZona?: () => void;
   /** Contenido extra que se superpone al mapa (banda de conexión, etc.). */
   children?: React.ReactNode;
 }
@@ -132,22 +223,39 @@ export interface MapaProps {
 // Ayudantes de mapa
 // ---------------------------------------------------------------------------
 
+/**
+ * Envuelve una callback del padre en otra que NO cambia de referencia. Sin esto,
+ * una función anónima escrita en `app/page.tsx` invalidaría el `React.memo` de
+ * los ~2.000 marcadores en cada render de la sala. Se conserva la distinción
+ * entre "hay callback" y "no hay" porque las fichas enseñan u ocultan botones
+ * según eso.
+ */
+function useEstable<F extends (...args: never[]) => unknown>(fn: F | undefined): F | undefined {
+  const ultima = useRef(fn);
+  useEffect(() => {
+    ultima.current = fn;
+  }, [fn]);
+  const hay = fn !== undefined;
+  return useMemo(() => (hay ? (((...args: never[]) => ultima.current?.(...args)) as F) : undefined), [hay]);
+}
+
 /** Marca cuándo el usuario ha movido el mapa a mano. */
 function DetectorGestos({ alMover }: { alMover: () => void }) {
-  useMapEvents({
-    dragstart: alMover,
-    zoomstart: alMover,
-    mousedown: alMover,
-  });
+  const manejadores = useMemo(() => ({ dragstart: alMover, zoomstart: alMover, mousedown: alMover }), [alMover]);
+  useMapEvents(manejadores);
   return null;
 }
 
 function CapturaClic({ activo, onClic }: { activo: boolean; onClic?: (p: Punto) => void }) {
-  useMapEvents({
-    click: (e) => {
-      if (activo && onClic) onClic({ lat: e.latlng.lat, lon: e.latlng.lng });
-    },
-  });
+  const manejadores = useMemo(
+    () => ({
+      click: (e: L.LeafletMouseEvent) => {
+        if (activo && onClic) onClic({ lat: e.latlng.lat, lon: e.latlng.lng });
+      },
+    }),
+    [activo, onClic],
+  );
+  useMapEvents(manejadores);
   return null;
 }
 
@@ -168,6 +276,92 @@ function AjusteTamano() {
     };
   }, [map]);
   return null;
+}
+
+/**
+ * Coloca cada popup donde quepa entero (./colocarPopups.ts): encima del
+ * marcador y, si no entra, debajo o a un lado, esquivando paneles y controles.
+ * Va con `autoPan={false}` en todos los <Popup>: el mapa no se mueve.
+ */
+function ColocadorPopups() {
+  const map = useMap();
+  useEffect(() => instalarColocadorPopups(map), [map]);
+  return null;
+}
+
+/**
+ * El popup de Leaflet solo mide su contenido y se encaja en el mapa (autoPan)
+ * al abrirse. Si el contenido crece después, como al desplegar «Viento
+ * (ejercicio)» en la ficha del foco, el popup se sale por arriba del mapa y
+ * queda cortado. Este envoltorio vigila la altura del contenido y, cuando
+ * cambia, pide al popup que se vuelva a medir y a encajar; si lo que ha
+ * crecido es un desplegable, lo sube a la vista.
+ *
+ * El tope de altura y el scroll los lleva el propio envoltorio, no la opción
+ * `maxHeight` de Leaflet: al medirse, Leaflet pone la altura del contenido a
+ * «auto» un instante y el navegador devolvería el scroll a cero en cada
+ * remedición (react-leaflet remide con cada snapshot). Si el sitio donde lo
+ * coloca ./colocarPopups.ts deja menos alto (`--popup-alto-max`), manda ese.
+ */
+function AjustePopup({
+  popup,
+  altoMaximo = 460,
+  children,
+}: {
+  popup: React.RefObject<L.Popup | null>;
+  altoMaximo?: number;
+  children: React.ReactNode;
+}) {
+  const zona = useRef<HTMLDivElement>(null);
+  const contenido = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const z = zona.current;
+    const el = contenido.current;
+    if (!z || !el) return;
+    let alto = el.offsetHeight;
+    // Desplegable recién abierto, y hasta cuándo merece la pena subirlo a la
+    // vista: su contenido se monta en un render posterior al `toggle`, así que
+    // el primer reajuste puede llegar antes de que haya scroll.
+    let pendiente: { nodo: HTMLElement; hasta: number } | null = null;
+    let cuadro = 0;
+    const obs = new ResizeObserver(() => {
+      // Solo la altura importa: el ancho lo fija el propio popup al medirse.
+      if (el.offsetHeight === alto) return;
+      alto = el.offsetHeight;
+      cancelAnimationFrame(cuadro);
+      cuadro = requestAnimationFrame(() => {
+        popup.current?.update();
+        if (!pendiente) return;
+        if (z.scrollHeight > z.clientHeight) {
+          // Ya con scroll: el desplegable recién abierto sube hasta arriba
+          // para que se vea entero, no solo su cabecera.
+          z.scrollTop += pendiente.nodo.getBoundingClientRect().top - z.getBoundingClientRect().top;
+          pendiente = null;
+        } else if (performance.now() > pendiente.hasta) {
+          pendiente = null;
+        }
+      });
+    });
+    obs.observe(el);
+    // `toggle` no burbujea, pero la fase de captura sí pasa por el envoltorio.
+    const alDesplegar = (e: Event) => {
+      const d = e.target as HTMLDetailsElement;
+      pendiente = d.open ? { nodo: d, hasta: performance.now() + 1500 } : null;
+    };
+    el.addEventListener("toggle", alDesplegar, true);
+    return () => {
+      obs.disconnect();
+      el.removeEventListener("toggle", alDesplegar, true);
+      cancelAnimationFrame(cuadro);
+    };
+  }, [popup]);
+  // `whitespace-normal` a propósito: Leaflet mide el ancho con `nowrap` en el
+  // nodo padre y, si se heredase, el contenido se reordenaría en cada medición.
+  return (
+    <div ref={zona} className="overflow-y-auto whitespace-normal" style={{ maxHeight: `min(${altoMaximo}px, var(--popup-alto-max, ${altoMaximo}px))` }}>
+      <div ref={contenido}>{children}</div>
+    </div>
+  );
 }
 
 /** Cursor de cruz mientras se declara un foco. */
@@ -192,10 +386,13 @@ function Encuadre({
   limitesFocos,
   centrarEn,
   ultimoGesto,
+  alCentrar,
 }: {
   limitesFocos: [[number, number], [number, number]] | null;
-  centrarEn?: { lat: number; lon: number; sello: number; zoom?: number };
+  centrarEn?: PeticionEncuadre;
   ultimoGesto: React.RefObject<number>;
+  /** Se avisa cuando la petición se ha aplicado de verdad (acuse de recibo). */
+  alCentrar?: (peticion: PeticionEncuadre) => void;
 }) {
   const map = useMap();
   const yaEncuadrado = useRef(false);
@@ -214,77 +411,38 @@ function Encuadre({
   useEffect(() => {
     if (!centrarEn || centrarEn.sello === selloCentrar.current) return;
     selloCentrar.current = centrarEn.sello;
-    map.stop();
-    map.setView([centrarEn.lat, centrarEn.lon], centrarEn.zoom ?? Math.max(map.getZoom(), 12), { animate: true });
-  }, [map, centrarEn]);
+    const ir = () => {
+      map.stop();
+      map.setView([centrarEn.lat, centrarEn.lon], centrarEn.zoom ?? Math.max(map.getZoom(), centrarEn.zoomMinimo ?? 12), { animate: true });
+      // En pantallas estrechas (mapa arriba, panel debajo) la sala puede haber
+      // quedado desplazada con el mapa fuera de la vista (p. ej. tras enfocar
+      // un campo de un diálogo): se trae el mapa a la vista para que el
+      // encuadre se VEA. En escritorio, con el mapa ya visible, no mueve nada.
+      map.getContainer().scrollIntoView({ block: "nearest", inline: "nearest" });
+      alCentrar?.(centrarEn);
+    };
+    // Leaflet IGNORA un setView mientras anima un zoom (rueda, fitBounds…) y
+    // stop() no corta esa animación: si el clic llega en ese momento, se espera
+    // al final del zoom en vez de perder la petición.
+    if ((map as unknown as { _animatingZoom?: boolean })._animatingZoom) {
+      map.once("zoomend", ir);
+      return () => {
+        map.off("zoomend", ir);
+      };
+    }
+    ir();
+  }, [map, centrarEn, alCentrar]);
 
   return null;
 }
 
-/**
- * Posiciones interpoladas de las unidades para que no "salten" entre snapshots.
- * Solo anima cuando alguna unidad se ha movido de verdad, y a ~20 fotogramas por
- * segundo: repintar el mapa entero a 60 fps con decenas de capas no compensa.
- */
-function usePosicionesAnimadas(unidades: Unidad[]): Record<string, [number, number]> {
-  const [posiciones, setPosiciones] = useState<Record<string, [number, number]>>({});
-  const origen = useRef<Record<string, [number, number]>>({});
-  const destinoRef = useRef<Record<string, [number, number]>>({});
-  const actuales = useRef<Record<string, [number, number]>>({});
-
-  useEffect(() => {
-    const nuevoDestino: Record<string, [number, number]> = {};
-    for (const u of unidades) nuevoDestino[u.id] = [u.posicion.lat, u.posicion.lon];
-
-    const anterior = destinoRef.current;
-    const mismosIds =
-      Object.keys(anterior).length === Object.keys(nuevoDestino).length &&
-      Object.keys(nuevoDestino).every((id) => anterior[id] !== undefined);
-    const seMueve = Object.keys(nuevoDestino).some(
-      (id) => !anterior[id] || Math.abs(anterior[id][0] - nuevoDestino[id][0]) > 1e-7 || Math.abs(anterior[id][1] - nuevoDestino[id][1]) > 1e-7,
-    );
-    destinoRef.current = nuevoDestino;
-
-    if (!seMueve && mismosIds) return; // nada se ha movido: no repintamos
-
-    const nuevoOrigen: Record<string, [number, number]> = {};
-    for (const id of Object.keys(nuevoDestino)) nuevoOrigen[id] = actuales.current[id] ?? anterior[id] ?? nuevoDestino[id];
-    origen.current = nuevoOrigen;
-
-    const inicio = performance.now();
-    let temporizador: ReturnType<typeof setInterval> | null = null;
-
-    const paso = () => {
-      const k = Math.min(1, (performance.now() - inicio) / ANIMACION_MS);
-      const salida: Record<string, [number, number]> = {};
-      for (const id of Object.keys(destinoRef.current)) {
-        salida[id] = interpolar(origen.current[id] ?? destinoRef.current[id], destinoRef.current[id], k);
-      }
-      actuales.current = salida;
-      setPosiciones(salida);
-      if (k >= 1 && temporizador) {
-        clearInterval(temporizador);
-        temporizador = null;
-      }
-    };
-
-    paso();
-    temporizador = setInterval(paso, 50);
-    return () => {
-      if (temporizador) clearInterval(temporizador);
-    };
-  }, [unidades]);
-
-  return posiciones;
-}
-
 // ---------------------------------------------------------------------------
-// Capas
+// Capa de focos
 // ---------------------------------------------------------------------------
 
-function CapaFocos({
+const CapaFocos = memo(function CapaFocos({
   incendios,
-  poblaciones,
+  poblacionesPorFoco,
   colores,
   seleccionado,
   onSeleccionar,
@@ -293,7 +451,7 @@ function CapaFocos({
   onRefrescar,
 }: {
   incendios: Incendio[];
-  poblaciones: Poblacion[];
+  poblacionesPorFoco: Map<string, Poblacion[]>;
   colores: ColoresTema;
   seleccionado?: string;
   onSeleccionar?: (id: string) => void;
@@ -303,85 +461,156 @@ function CapaFocos({
 }) {
   return (
     <>
-      {incendios.map((inc) => {
-        const color = colores[colorIncendio(inc.estado)];
-        const porConfirmar = sinConfirmar(inc);
-        const perimetro = inc.perimetro?.length >= 3 ? inc.perimetro : circulo(inc.centro, Math.max(220, Math.sqrt((inc.areaHa || 1) * 10_000 / Math.PI)));
-        const resaltado = seleccionado === inc.id;
-        const icono = L.divIcon({
-          className: "icono-atalaya",
-          html: marcadorHtml({
-            contorno: porConfirmar ? CONTORNOS.interrogacion : CONTORNOS.llama,
-            color: porConfirmar ? colores.warning : color,
-            fondo: colores.panel,
-            etiqueta: porConfirmar ? `${inc.nombre} · Sin confirmar` : inc.nombre,
-            anillo: resaltado,
-            pulso: resaltado,
-            hueco: porConfirmar,
-            tamano: 34,
-          }),
-          iconSize: [34, 34],
-          iconAnchor: [17, 17],
-        });
-        return (
-          <Fragment key={inc.id}>
-            {conPrediccion && inc.prediccion ? (
-              <>
-                {inc.prediccion.en6h?.length >= 3 ? (
-                  <Polygon positions={inc.prediccion.en6h} pathOptions={{ color, weight: 1, opacity: 0.4, dashArray: "3 7", fillColor: color, fillOpacity: 0.05, interactive: false }} />
-                ) : null}
-                {inc.prediccion.en3h?.length >= 3 ? (
-                  <Polygon positions={inc.prediccion.en3h} pathOptions={{ color, weight: 1.2, opacity: 0.55, dashArray: "4 6", fillColor: color, fillOpacity: 0.08, interactive: false }} />
-                ) : null}
-                {inc.prediccion.en1h?.length >= 3 ? (
-                  <Polygon positions={inc.prediccion.en1h} pathOptions={{ color, weight: 1.5, opacity: 0.75, dashArray: "6 5", fillColor: color, fillOpacity: 0.12, interactive: false }}>
-                    <Tooltip sticky>Perímetro previsto a +1 h · {inc.prediccion.explicacion}</Tooltip>
-                  </Polygon>
-                ) : null}
-              </>
-            ) : null}
+      {incendios.map((inc) => (
+        <FocoMarker
+          key={inc.id}
+          incendio={inc}
+          poblaciones={poblacionesPorFoco.get(inc.id) ?? SIN_POBLACIONES}
+          colores={colores}
+          resaltado={seleccionado === inc.id}
+          onSeleccionar={onSeleccionar}
+          conPrediccion={conPrediccion}
+          onCambiarEstadoFoco={onCambiarEstadoFoco}
+          onRefrescar={onRefrescar}
+        />
+      ))}
+    </>
+  );
+});
 
-            <Polygon
-              positions={perimetro}
-              pathOptions={{
-                color: porConfirmar ? colores.warning : color,
-                weight: resaltado ? 3.5 : 2.4,
-                opacity: 0.95,
-                dashArray: porConfirmar ? "7 6" : undefined,
-                fillColor: porConfirmar ? colores.warning : color,
-                fillOpacity: porConfirmar ? 0.06 : colores.oscuro ? 0.3 : 0.24,
-              }}
-              eventHandlers={{ click: () => onSeleccionar?.(inc.id) }}
-            >
+const FocoMarker = memo(function FocoMarker({
+  incendio: inc,
+  poblaciones,
+  colores,
+  resaltado,
+  onSeleccionar,
+  conPrediccion,
+  onCambiarEstadoFoco,
+  onRefrescar,
+}: {
+  incendio: Incendio;
+  poblaciones: Poblacion[];
+  colores: ColoresTema;
+  resaltado: boolean;
+  onSeleccionar?: (id: string) => void;
+  conPrediccion: boolean;
+  onCambiarEstadoFoco?: (id: string, estado: "confirmado" | "descartado") => void | Promise<void>;
+  onRefrescar?: () => void;
+}) {
+  const color = colores[colorIncendio(inc.estado)];
+  const porConfirmar = sinConfirmar(inc);
+  const colorTrazo = porConfirmar ? colores.warning : color;
+
+  // Coordenadas sueltas: dependencias primitivas a propósito, para que esto no
+  // se recalcule aunque el cliente pierda la identidad de los objetos.
+  const { lat, lon } = inc.centro;
+  const perimetro = useMemo(
+    () =>
+      inc.perimetro?.length >= 3
+        ? inc.perimetro
+        : // Sin perímetro: un círculo que MIDE la superficie del foco (radio mínimo
+          // 60 m, el de un foco recién declarado), para que lo dibujado sea lo dicho.
+          circulo({ lat, lon }, Math.max(60, Math.sqrt(((inc.areaHa || 1) * 10_000) / Math.PI))),
+    [inc.perimetro, lat, lon, inc.areaHa],
+  );
+  const centro = useMemo<[number, number]>(() => [lat, lon], [lat, lon]);
+
+  const icono = iconoDiv({
+    html: marcadorHtml({
+      contorno: porConfirmar ? CONTORNOS.interrogacion : CONTORNOS.llama,
+      color: colorTrazo,
+      fondo: colores.panel,
+      etiqueta: porConfirmar ? `${inc.nombre} · Sin confirmar` : inc.nombre,
+      anillo: resaltado,
+      pulso: resaltado,
+      hueco: porConfirmar,
+      tamano: 34,
+    }),
+    tamano: [34, 34],
+  });
+
+  const alPulsar = useMemo(() => ({ click: () => onSeleccionar?.(inc.id) }), [onSeleccionar, inc.id]);
+  const refPopup = useRef<L.Popup>(null);
+
+  return (
+    <>
+      {conPrediccion && inc.prediccion ? (
+        <>
+          {inc.prediccion.en6h?.length >= 3 ? (
+            <Polygon positions={inc.prediccion.en6h} pathOptions={trazoPrediccion(color, 6)} />
+          ) : null}
+          {inc.prediccion.en3h?.length >= 3 ? (
+            <Polygon positions={inc.prediccion.en3h} pathOptions={trazoPrediccion(color, 3)} />
+          ) : null}
+          {inc.prediccion.en1h?.length >= 3 ? (
+            <Polygon positions={inc.prediccion.en1h} pathOptions={trazoPrediccion(color, 1)}>
               <Tooltip sticky>
-                {inc.nombre} · {porConfirmar ? "Sin confirmar" : TEXTO_ESTADO_INCENDIO[inc.estado]} · {hectareas(inc.areaHa)}
-                {inc.contencion ? ` · ${numero((inc.contencion.fraccion ?? 0) * 100)} % de perímetro controlado` : ""}
+                <TooltipPrediccion explicacion={inc.prediccion.explicacion} />
               </Tooltip>
             </Polygon>
+          ) : null}
+        </>
+      ) : null}
 
-            {/* Línea de control ya construida: tramo del perímetro proporcional a
-                `contencion.fraccion`, en negro discontinuo sobre el perímetro. */}
-            {inc.contencion && inc.contencion.fraccion > 0 ? <LineaControl perimetro={perimetro} fraccion={inc.contencion.fraccion} colores={colores} /> : null}
+      <Polygon
+        positions={perimetro}
+        pathOptions={trazoPerimetro(colorTrazo, resaltado, porConfirmar, colores.oscuro)}
+        eventHandlers={alPulsar}
+      >
+        <Tooltip sticky>
+          <TooltipFoco incendio={inc} porConfirmar={porConfirmar} perimetro={perimetro} />
+        </Tooltip>
+      </Polygon>
 
-            <Marker position={aLatLng(inc.centro)} icon={icono} eventHandlers={{ click: () => onSeleccionar?.(inc.id) }}>
-              <Popup minWidth={280} maxHeight={460}>
-                <FichaFocoMapa
-                  incendio={inc}
-                  poblaciones={poblaciones.filter((p) => p.incendioId === inc.id)}
-                  onCambiarEstado={onCambiarEstadoFoco}
-                  onRefrescar={onRefrescar}
-                />
-              </Popup>
-            </Marker>
-          </Fragment>
-        );
-      })}
+      {/* Línea de control ya construida: tramo del perímetro proporcional a
+          `contencion.fraccion`, en negro discontinuo sobre el perímetro. */}
+      {inc.contencion && inc.contencion.fraccion > 0 ? (
+        <LineaControl perimetro={perimetro} fraccion={inc.contencion.fraccion} colores={colores} />
+      ) : null}
+
+      <Marker position={centro} icon={icono} eventHandlers={alPulsar}>
+        <Popup ref={refPopup} minWidth={280} autoPan={false}>
+          <AjustePopup popup={refPopup}>
+            <FichaFocoMapa
+              incendio={inc}
+              poblaciones={poblaciones}
+              onCambiarEstado={onCambiarEstadoFoco}
+              onRefrescar={onRefrescar}
+            />
+          </AjustePopup>
+        </Popup>
+      </Marker>
+    </>
+  );
+});
+
+function TooltipPrediccion({ explicacion }: { explicacion: string }) {
+  return <>Perímetro previsto a +1 h · {explicacion}</>;
+}
+
+/** Las hectáreas se MIDEN sobre el polígono que se dibuja (components/mapa/superficie.ts). */
+function TooltipFoco({ incendio: inc, porConfirmar, perimetro }: { incendio: Incendio; porConfirmar: boolean; perimetro: [number, number][] }) {
+  // Se mide una vez por perímetro: la referencia viene del snapshot (o del
+  // useMemo del padre) y se conserva entre ticks mientras no cambie.
+  const superficieHa = useMemo(() => superficieDibujadaHa(perimetro, inc.areaHa), [perimetro, inc.areaHa]);
+  return (
+    <>
+      {inc.nombre} · {porConfirmar ? "Sin confirmar" : TEXTO_ESTADO_INCENDIO[inc.estado]} · {hectareas(superficieHa)}
+      {inc.contencion ? ` · ${numero((inc.contencion.fraccion ?? 0) * 100)} % de perímetro controlado` : ""}
     </>
   );
 }
 
 /** Tramo de perímetro ya controlado (línea construida), en negro discontinuo. */
-function LineaControl({ perimetro, fraccion, colores }: { perimetro: [number, number][]; fraccion: number; colores: ColoresTema }) {
+const LineaControl = memo(function LineaControl({
+  perimetro,
+  fraccion,
+  colores,
+}: {
+  perimetro: [number, number][];
+  fraccion: number;
+  colores: ColoresTema;
+}) {
   const tramo = useMemo(() => {
     if (perimetro.length < 3) return null;
     const anillo: [number, number][] = [...perimetro, perimetro[0]];
@@ -390,13 +619,16 @@ function LineaControl({ perimetro, fraccion, colores }: { perimetro: [number, nu
   }, [perimetro, fraccion]);
   if (!tramo) return null;
   return (
-    <Polyline
-      positions={tramo}
-      pathOptions={{ color: colores.oscuro ? colores.texto : "#111827", weight: 4, opacity: 0.9, dashArray: "9 5", interactive: false }}
-    >
-      <Tooltip sticky>Línea de control construida · {numero(fraccion * 100)} % del perímetro</Tooltip>
+    <Polyline positions={tramo} pathOptions={trazoLineaControl(colores.oscuro ? colores.texto : "#111827")}>
+      <Tooltip sticky>
+        <TooltipLineaControl fraccion={fraccion} />
+      </Tooltip>
     </Polyline>
   );
+});
+
+function TooltipLineaControl({ fraccion }: { fraccion: number }) {
+  return <>Línea de control construida · {numero(fraccion * 100)} % del perímetro</>;
 }
 
 /** Ficha del foco dentro del popup del mapa (y puerta al visor de incidencia). */
@@ -413,6 +645,8 @@ function FichaFocoMapa({
 }) {
   const [ocupado, setOcupado] = useState<"confirmado" | "descartado" | null>(null);
   const porConfirmar = sinConfirmar(inc);
+  // Hectáreas MEDIDAS sobre el perímetro del snapshot (components/mapa/superficie.ts).
+  const superficieHa = useMemo(() => superficieDibujadaHa(inc.perimetro, inc.areaHa), [inc.perimetro, inc.areaHa]);
   const enPeligro = poblacionesEnPeligro(poblaciones);
 
   async function cambiar(estado: "confirmado" | "descartado") {
@@ -438,7 +672,7 @@ function FichaFocoMapa({
           {porConfirmar ? "Sin confirmar" : TEXTO_ESTADO_INCENDIO[inc.estado]}
         </Insignia>
         <Insignia pequena tono="neutro">Nivel {inc.nivelGravedad}</Insignia>
-        <Insignia pequena tono="neutro">{hectareas(inc.areaHa)}</Insignia>
+        <Insignia pequena tono="neutro">{hectareas(superficieHa)}</Insignia>
         {inc.peligro ? (
           <Insignia pequena tono={inc.peligro.nivel === "extremo" || inc.peligro.nivel === "muy_alto" ? "peligro" : "aviso"}>
             {TEXTO_PELIGRO[inc.peligro.nivel]}
@@ -511,94 +745,163 @@ function FichaFocoMapa({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Capa de unidades
+// ---------------------------------------------------------------------------
+
 /**
  * Unidades: un icono por cuerpo (camión rojo bomberos, verde forestales, azul
  * Guardia Civil/Policía, blanco y rojo ambulancia, naranja Protección Civil,
  * amarillo maquinaria), la ruta REAL de OSRM con el tramo ya recorrido más
  * grueso, flecha de sentido, anillo en intervención e icono atenuado en base.
  */
-function CapaUnidades({
+const CapaUnidades = memo(function CapaUnidades({
   unidades,
-  incendios,
+  resaltadaId,
+  porIncendio,
   colores,
-  posiciones,
   acciones,
 }: {
   unidades: Unidad[];
-  incendios: Incendio[];
+  /** Unidad pedida con "Ver en el mapa": se pinta a tamaño completo y latiendo. */
+  resaltadaId?: string;
+  porIncendio: Map<string, Incendio>;
   colores: ColoresTema;
-  posiciones: Record<string, [number, number]>;
   acciones: AccionesUnidad;
 }) {
   return (
     <>
-      {unidades.map((u) => {
-        const color = colorUnidad(u.tipo, colores);
-        const enRuta = u.estado === "en_ruta" || u.estado === "regreso";
-        const enBase = u.estado === "disponible" || u.estado === "fuera_servicio";
-        const partes = enRuta && u.ruta?.coords?.length ? partirRuta(u.ruta.coords, u.ruta.progreso ?? 0) : null;
-        const icono = L.divIcon({
-          className: "icono-atalaya",
-          html: marcadorHtml({
-            contorno: CONTORNOS[ICONO_UNIDAD[u.tipo]] ?? CONTORNOS.camion,
-            color,
-            fondo: colores.panel,
-            etiqueta: enRuta || u.estado === "en_intervencion" ? u.nombre.split("·").pop()?.trim() : undefined,
-            anillo: enRuta || u.estado === "en_intervencion",
-            pulso: enRuta,
-            atenuado: enBase,
-            flechaGrados: partes?.rumboGrados ?? undefined,
-            tamano: enBase ? 20 : 28,
-          }),
-          iconSize: enBase ? [20, 20] : [28, 28],
-          iconAnchor: enBase ? [10, 10] : [14, 14],
-        });
-        const posicion = posiciones[u.id] ?? [u.posicion.lat, u.posicion.lon];
-        const incendio = incendios.find((i) => i.id === u.incendioId);
-        return (
-          <Fragment key={u.id}>
-            {partes ? (
-              <>
-                {/* Lo que queda por recorrer: fino y discontinuo. */}
-                {partes.restante.length >= 2 ? (
-                  <Polyline
-                    positions={partes.restante}
-                    pathOptions={{ color, weight: 2.5, opacity: 0.5, dashArray: "6 7", interactive: false }}
-                  />
-                ) : null}
-                {/* Lo ya recorrido: grueso y sólido, se ve avanzar. */}
-                {partes.recorrido.length >= 2 ? (
-                  <Polyline positions={partes.recorrido} pathOptions={{ color, weight: 5, opacity: 0.85, lineCap: "round", interactive: false }} />
-                ) : null}
-                {/* Punta de flecha sobre la carretera, con el rumbo real. */}
-                {partes.corte && partes.rumboGrados !== null ? (
-                  <Polyline
-                    positions={puntaFlecha(partes.corte, partes.rumboGrados)}
-                    pathOptions={{ color, weight: 3, opacity: 0.95, interactive: false }}
-                  />
-                ) : null}
-              </>
-            ) : null}
-            <Marker position={posicion} icon={icono} zIndexOffset={enBase ? 0 : 400}>
-              <Tooltip direction="top" offset={[0, -14]}>
-                <span className="font-semibold">{u.nombre}</span>
-                <br />
-                {TEXTO_TIPO_UNIDAD[u.tipo]} · {TEXTO_ESTADO_UNIDAD[u.estado]}
-                {u.ruta && enRuta ? (
-                  <>
-                    <br />
-                    Llega a las {new Date(u.ruta.llegadaPrevista).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} ·{" "}
-                    {numero((u.ruta.progreso ?? 0) * 100, 0)} % del trayecto
-                  </>
-                ) : null}
-              </Tooltip>
-              <Popup minWidth={280}>
-                <FichaUnidad unidad={u} incendio={incendio} {...acciones} />
-              </Popup>
-            </Marker>
-          </Fragment>
-        );
-      })}
+      {unidades.map((u) => (
+        <UnidadMarker
+          key={u.id}
+          unidad={u}
+          incendio={u.incendioId ? porIncendio.get(u.incendioId) : undefined}
+          colores={colores}
+          acciones={acciones}
+          resaltada={u.id === resaltadaId}
+        />
+      ))}
+    </>
+  );
+});
+
+const UnidadMarker = memo(function UnidadMarker({
+  unidad: u,
+  incendio,
+  colores,
+  acciones,
+  resaltada = false,
+}: {
+  unidad: Unidad;
+  incendio?: Incendio;
+  colores: ColoresTema;
+  acciones: AccionesUnidad;
+  resaltada?: boolean;
+}) {
+  const refMarcador = useRef<L.Marker | null>(null);
+  /**
+   * La posición que ve react-leaflet NO cambia nunca: si cambiara, llamaría a
+   * `setLatLng` con el destino y el icono daría un salto antes de que empezara
+   * la animación. El movimiento lo lleva `./animacion` por su cuenta.
+   */
+  const [posicionInicial] = useState<[number, number]>(() => [u.posicion.lat, u.posicion.lon]);
+
+  // La ruta va aparte para que la animación siga la carretera entre el progreso
+  // anterior y el nuevo. Si cambia la ruta sin moverse la posición, `moverMarcador`
+  // no hace nada (mismo destino).
+  const coordsRuta = u.ruta?.coords;
+  const progresoRuta = u.ruta?.progreso;
+  useEffect(() => {
+    const marcador = refMarcador.current;
+    if (!marcador) return;
+    const ruta = coordsRuta && coordsRuta.length >= 2 && progresoRuta !== undefined ? { coords: coordsRuta, progreso: progresoRuta } : undefined;
+    moverMarcador(marcador, [u.posicion.lat, u.posicion.lon], ruta);
+  }, [u.posicion.lat, u.posicion.lon, coordsRuta, progresoRuta]);
+
+  // El marcador se captura AL MONTAR: al desmontar, React ya ha puesto la
+  // referencia a null y la animación se quedaría colgada con un nodo muerto.
+  useEffect(() => {
+    const marcador = refMarcador.current;
+    return () => {
+      if (marcador) olvidarMarcador(marcador);
+    };
+  }, []);
+
+  const color = colorUnidad(u.tipo, colores);
+  const enRuta = u.estado === "en_ruta" || u.estado === "regreso";
+  const enBase = u.estado === "disponible" || u.estado === "fuera_servicio";
+
+  const partes = useMemo(
+    () => (enRuta && u.ruta?.coords?.length ? partirRuta(u.ruta.coords, u.ruta.progreso ?? 0) : null),
+    [enRuta, u.ruta],
+  );
+  const punta = useMemo(
+    () => (partes?.corte && partes.rumboGrados !== null ? puntaFlecha(partes.corte, partes.rumboGrados) : null),
+    [partes],
+  );
+
+  // Resaltada ("Ver en el mapa" desde una decisión): a tamaño completo, con
+  // etiqueta y un anillo latiendo en el color de la marca (distinto del anillo
+  // en el color del cuerpo que llevan las que van en ruta), aunque siga en base.
+  const destacada = resaltada || enRuta || u.estado === "en_intervencion";
+  const tamano = enBase && !resaltada ? 20 : 28;
+  const icono = iconoDiv({
+    html: marcadorHtml({
+      contorno: CONTORNOS[ICONO_UNIDAD[u.tipo]] ?? CONTORNOS.camion,
+      color,
+      fondo: colores.panel,
+      etiqueta: destacada ? u.nombre.split("·").pop()?.trim() : undefined,
+      anillo: destacada,
+      pulso: resaltada || enRuta,
+      colorAnillo: resaltada ? colores.brand : undefined,
+      atenuado: enBase && !resaltada,
+      flechaGrados: rumboRedondeado(partes?.rumboGrados),
+      tamano,
+    }),
+    tamano: [tamano, tamano],
+  });
+
+  return (
+    <>
+      {partes ? (
+        <>
+          {/* Lo que queda por recorrer: fino y discontinuo. */}
+          {partes.restante.length >= 2 ? (
+            <Polyline positions={partes.restante} pathOptions={trazoRutaRestante(color)} />
+          ) : null}
+          {/* Lo ya recorrido: grueso y sólido, se ve avanzar. */}
+          {partes.recorrido.length >= 2 ? (
+            <Polyline positions={partes.recorrido} pathOptions={trazoRutaRecorrida(color)} />
+          ) : null}
+          {/* Punta de flecha sobre la carretera, con el rumbo real. */}
+          {punta ? <Polyline positions={punta} pathOptions={trazoPuntaRuta(color)} /> : null}
+        </>
+      ) : null}
+      <Marker ref={refMarcador} position={posicionInicial} icon={icono} zIndexOffset={resaltada ? 600 : enBase ? 0 : 400}>
+        <Tooltip direction="top" offset={DESPLAZAMIENTO_14}>
+          <TooltipUnidad unidad={u} />
+        </Tooltip>
+        <Popup minWidth={280} autoPan={false}>
+          <FichaUnidad unidad={u} incendio={incendio} {...acciones} />
+        </Popup>
+      </Marker>
+    </>
+  );
+});
+
+function TooltipUnidad({ unidad: u }: { unidad: Unidad }) {
+  const enRuta = u.estado === "en_ruta" || u.estado === "regreso";
+  return (
+    <>
+      <span className="font-semibold">{u.nombre}</span>
+      <br />
+      {TEXTO_TIPO_UNIDAD[u.tipo]} · {TEXTO_ESTADO_UNIDAD[u.estado]}
+      {u.ruta && enRuta ? (
+        <>
+          <br />
+          Llega a las {hora(u.ruta.llegadaPrevista)} · {numero((u.ruta.progreso ?? 0) * 100, 0)} % del trayecto
+        </>
+      ) : null}
     </>
   );
 }
@@ -611,67 +914,86 @@ function puntaFlecha(punto: [number, number], rumboGrados: number, largoM = 260)
   return [izq, punto, der];
 }
 
+// ---------------------------------------------------------------------------
+// Capa de bases
+// ---------------------------------------------------------------------------
+
 /**
  * Bases: de dónde salen las unidades (parques de bomberos, cuarteles, bases de
  * BRIF…), agrupadas por nombre de base, con cuántas hay dentro y cuántas fuera.
  */
-function CapaBases({ unidades, colores }: { unidades: Unidad[]; colores: ColoresTema }) {
-  const bases = useMemo(() => agruparBases(unidades), [unidades]);
+const CapaBases = memo(function CapaBases({ bases, colores }: { bases: Base[]; colores: ColoresTema }) {
   return (
     <>
-      {bases.map((b) => {
-        const icono = L.divIcon({
-          className: "icono-atalaya",
-          html: marcadorCuentaHtml({
-            cuenta: b.unidades.length,
-            color: colores.muted,
-            fondo: colores.panel,
-            contorno: CONTORNOS.parque,
-            tamano: 22,
-          }),
-          iconSize: [48, 22],
-          iconAnchor: [24, 11],
-        });
-        return (
-          <Marker key={b.clave} position={b.punto} icon={icono} zIndexOffset={-200}>
-            <Tooltip direction="top" offset={[0, -10]}>
-              <span className="font-semibold">{b.nombre}</span>
-              <br />
-              {b.unidades.length} unidad(es) · {b.enBase} en base, {b.fuera} desplegada(s)
-            </Tooltip>
-            <Popup minWidth={240}>
-              <div className="w-[15rem] max-w-full">
-                <p className="text-[13px] font-semibold leading-tight text-foreground">
-                  <EnlaceExterno
-                    href={urlOsm(b.clave) ?? urlOsmPunto(b.punto[0], b.punto[1], 17)}
-                    className="text-[13px] font-semibold"
-                    titulo={`Ver ${b.nombre} en OpenStreetMap`}
-                  >
-                    {b.nombre}
-                  </EnlaceExterno>
-                </p>
-                <p className="mt-0.5 text-[11px] text-muted">
-                  {b.enBase} en base · {b.fuera} desplegada(s)
-                </p>
-                <ul className="mt-1.5 space-y-1">
-                  {b.unidades.map((u) => (
-                    <li key={u.id} className="flex flex-wrap items-center gap-1.5 text-[11.5px] leading-snug">
-                      <Insignia pequena tono={u.estado === "disponible" ? "neutro" : "info"} punto>
-                        {TEXTO_ESTADO_UNIDAD[u.estado]}
-                      </Insignia>
-                      <span className="font-medium text-foreground">{u.nombre}</span>
-                      <span className="text-muted">
-                        {TEXTO_TIPO_UNIDAD[u.tipo]} · {numero(u.dotacion.personas)} personas
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </Popup>
-          </Marker>
-        );
-      })}
+      {bases.map((b) => (
+        <BaseMarker key={b.clave} base={b} colores={colores} />
+      ))}
     </>
+  );
+});
+
+const BaseMarker = memo(function BaseMarker({ base: b, colores }: { base: Base; colores: ColoresTema }) {
+  const icono = iconoDiv({
+    html: marcadorCuentaHtml({
+      cuenta: b.unidades.length,
+      color: colores.muted,
+      fondo: colores.panel,
+      contorno: CONTORNOS.parque,
+      tamano: 22,
+    }),
+    tamano: [48, 22],
+  });
+  return (
+    <Marker position={b.punto} icon={icono} zIndexOffset={-200}>
+      <Tooltip direction="top" offset={DESPLAZAMIENTO_10}>
+        <TooltipBase base={b} />
+      </Tooltip>
+      <Popup minWidth={240} autoPan={false}>
+        <FichaBase base={b} />
+      </Popup>
+    </Marker>
+  );
+});
+
+function TooltipBase({ base: b }: { base: Base }) {
+  return (
+    <>
+      <span className="font-semibold">{b.nombre}</span>
+      <br />
+      {b.unidades.length} unidad(es) · {b.enBase} en base, {b.fuera} desplegada(s)
+    </>
+  );
+}
+
+function FichaBase({ base: b }: { base: Base }) {
+  return (
+    <div className="w-[15rem] max-w-full">
+      <p className="text-[13px] font-semibold leading-tight text-foreground">
+        <EnlaceExterno
+          href={urlOsm(b.clave) ?? urlOsmPunto(b.punto[0], b.punto[1], 17)}
+          className="text-[13px] font-semibold"
+          titulo={`Ver ${b.nombre} en OpenStreetMap`}
+        >
+          {b.nombre}
+        </EnlaceExterno>
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted">
+        {b.enBase} en base · {b.fuera} desplegada(s)
+      </p>
+      <ul className="mt-1.5 space-y-1">
+        {b.unidades.map((u) => (
+          <li key={u.id} className="flex flex-wrap items-center gap-1.5 text-[11.5px] leading-snug">
+            <Insignia pequena tono={u.estado === "disponible" ? "neutro" : "info"} punto>
+              {TEXTO_ESTADO_UNIDAD[u.estado]}
+            </Insignia>
+            <span className="font-medium text-foreground">{u.nombre}</span>
+            <span className="text-muted">
+              {TEXTO_TIPO_UNIDAD[u.tipo]} · {numero(u.dotacion.personas)} personas
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -700,13 +1022,19 @@ function agruparBases(unidades: Unidad[]): Base[] {
   return [...mapa.values()];
 }
 
-function CapaPueblos({
+// ---------------------------------------------------------------------------
+// Capa de pueblos
+// ---------------------------------------------------------------------------
+
+const CapaPueblos = memo(function CapaPueblos({
   poblaciones,
   colores,
+  incendioDe,
   onAvisar,
 }: {
   poblaciones: Poblacion[];
   colores: ColoresTema;
+  incendioDe?: (id: string) => Incendio | undefined;
   onAvisar?: (p: Poblacion) => void | Promise<void>;
 }) {
   // Con cientos de pueblos en el radio, poner el nombre fijo en todos convierte
@@ -723,52 +1051,60 @@ function CapaPueblos({
 
   return (
     <>
-      {poblaciones.map((p) => {
-        const color = colores[colorRiesgo(p.riesgo)];
-        const avisado = p.estadoAviso !== "sin_avisar";
-        const contenido = (
-          <>
-            <Tooltip direction="top" permanent={conEtiqueta.has(p.id)} opacity={0.95}>
-              <span className="font-semibold">{p.nombre}</span> · {TEXTO_RIESGO[p.riesgo]}
-              {avisado ? " · avisado" : ""}
-            </Tooltip>
-            <Popup>
-              <FichaPoblacion poblacion={p} onAvisar={onAvisar} />
-            </Popup>
-          </>
-        );
-        // Los de riesgo bajo son contexto: un punto pequeño en canvas, mucho más
-        // barato que un círculo geográfico por cada uno.
-        if (p.riesgo === "bajo") {
-          return (
-            <CircleMarker
-              key={p.id}
-              center={aLatLng(p.centro)}
-              radius={3}
-              pathOptions={{ color, weight: 1, opacity: 0.7, fillColor: color, fillOpacity: 0.45 }}
-            >
-              {contenido}
-            </CircleMarker>
-          );
-        }
-        return (
-          <Circle
-            key={p.id}
-            center={aLatLng(p.centro)}
-            radius={radioRiesgoM(p.riesgo)}
-            pathOptions={{
-              color,
-              weight: 2,
-              opacity: 0.9,
-              fillColor: color,
-              fillOpacity: avisado ? 0.1 : 0.22,
-              dashArray: avisado ? "5 5" : undefined,
-            }}
-          >
-            {contenido}
-          </Circle>
-        );
-      })}
+      {poblaciones.map((p) => (
+        <PuebloMarker key={p.id} poblacion={p} colores={colores} etiquetado={conEtiqueta.has(p.id)} incendioDe={incendioDe} onAvisar={onAvisar} />
+      ))}
+    </>
+  );
+});
+
+const PuebloMarker = memo(function PuebloMarker({
+  poblacion: p,
+  colores,
+  etiquetado,
+  incendioDe,
+  onAvisar,
+}: {
+  poblacion: Poblacion;
+  colores: ColoresTema;
+  etiquetado: boolean;
+  incendioDe?: (id: string) => Incendio | undefined;
+  onAvisar?: (p: Poblacion) => void | Promise<void>;
+}) {
+  const color = colores[colorRiesgo(p.riesgo)];
+  const avisado = p.estadoAviso !== "sin_avisar";
+  const centro = useMemo<[number, number]>(() => [p.centro.lat, p.centro.lon], [p.centro.lat, p.centro.lon]);
+  const contenido = (
+    <>
+      <Tooltip direction="top" permanent={etiquetado} opacity={0.95}>
+        <TooltipPueblo poblacion={p} avisado={avisado} />
+      </Tooltip>
+      <Popup autoPan={false}>
+        <FichaPoblacion poblacion={p} incendioDe={incendioDe} onAvisar={onAvisar} />
+      </Popup>
+    </>
+  );
+  // Los de riesgo bajo son contexto: un punto pequeño en canvas, mucho más
+  // barato que un círculo geográfico por cada uno.
+  if (p.riesgo === "bajo") {
+    return (
+      <CircleMarker center={centro} radius={3} pathOptions={trazoPuebloBajo(color)}>
+        {contenido}
+      </CircleMarker>
+    );
+  }
+  return (
+    <Circle center={centro} radius={radioRiesgoM(p.riesgo)} pathOptions={trazoPueblo(color, avisado)}>
+      {contenido}
+    </Circle>
+  );
+});
+
+function TooltipPueblo({ poblacion: p, avisado }: { poblacion: Poblacion; avisado: boolean }) {
+  return (
+    <>
+      <span className="font-semibold">{p.nombre}</span> · {TEXTO_RIESGO[p.riesgo]}
+      {avisado ? " · avisado" : ""}
     </>
   );
 }
@@ -783,8 +1119,20 @@ const TEXTO_AVISO: Record<Poblacion["estadoAviso"], string> = {
   sin_respuesta: "Sin respuesta",
 };
 
-function FichaPoblacion({ poblacion: p, onAvisar }: { poblacion: Poblacion; onAvisar?: (p: Poblacion) => void | Promise<void> }) {
+function FichaPoblacion({
+  poblacion: p,
+  incendioDe,
+  onAvisar,
+}: {
+  poblacion: Poblacion;
+  incendioDe?: (id: string) => Incendio | undefined;
+  onAvisar?: (p: Poblacion) => void | Promise<void>;
+}) {
   const [ocupado, setOcupado] = useState(false);
+  // El riesgo se FUNDAMENTA aquí (sesión riesgo-fundado): de qué foco viene, qué
+  // dice el analista y con qué meteo. Una etiqueta suelta no vale para avisar a nadie.
+  const foco = incendioDe?.(p.incendioId);
+  const meteo = foco?.meteo;
   return (
     <div className="w-[15rem] max-w-full">
       <p className="text-[13px] font-semibold leading-tight text-foreground">
@@ -795,7 +1143,7 @@ function FichaPoblacion({ poblacion: p, onAvisar }: { poblacion: Poblacion; onAv
       </p>
       <p className="mt-0.5 text-[11px] text-muted">
         {p.habitantes ? `${numero(p.habitantes)} hab. · ` : ""}
-        a {distancia(p.distanciaKm)} del foco
+        a {distancia(p.distanciaKm)} {foco ? <>de <span className="font-medium text-foreground">{foco.nombre}</span></> : "del foco"}
       </p>
       <div className="mt-1.5 flex flex-wrap gap-1">
         <Insignia pequena tono={tonoRiesgo(p.riesgo)} punto>
@@ -803,7 +1151,31 @@ function FichaPoblacion({ poblacion: p, onAvisar }: { poblacion: Poblacion; onAv
         </Insignia>
         <Insignia pequena tono={p.estadoAviso === "sin_avisar" ? "aviso" : "exito"}>{TEXTO_AVISO[p.estadoAviso]}</Insignia>
         {p.etaFrenteMin !== undefined ? <Insignia pequena tono="neutro">Frente en {minutos(p.etaFrenteMin)}</Insignia> : null}
+        {foco ? (
+          <Insignia pequena tono={tonoEstadoIncendio(foco.estado)} title={sinConfirmar(foco) ? "Una sola fuente: nadie ha confirmado este foco todavía" : undefined}>
+            Foco {TEXTO_ESTADO_INCENDIO[foco.estado].toLowerCase()}
+          </Insignia>
+        ) : null}
       </div>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted">
+        <span className="font-medium text-foreground">Por qué:</span>{" "}
+        {p.motivoRiesgo ?? "riesgo provisional por distancia; el analista de propagación todavía no ha calculado la llegada del frente."}
+      </p>
+      <p className="mt-1 text-[11px] leading-snug text-subtle">
+        {meteo ? (
+          <>
+            Meteo en el foco: viento {viento(meteo.direccionGrados, meteo.vientoKmh, meteo.rachasKmh, meteo.direccionTexto)} · {numero(meteo.temperaturaC)} °C · HR{" "}
+            {numero(meteo.humedadPct)} %{foco ? <> · <EnlaceMeteo incendio={foco} /></> : null}
+          </>
+        ) : (
+          "Sin meteo del foco todavía: el riesgo es solo por distancia."
+        )}
+      </p>
+      {foco && sinConfirmar(foco) ? (
+        <p className="mt-1 text-[11px] leading-snug text-muted">
+          Foco sin confirmar (una sola fuente): no se avisa a nadie hasta que otra fuente o el mando lo confirme.
+        </p>
+      ) : null}
       {p.vulnerables?.length ? (
         <p className="mt-1.5 text-[11px] leading-snug text-muted">
           Vulnerables: {p.vulnerables.slice(0, 3).map((v) => v.nombre).join(", ")}
@@ -839,86 +1211,222 @@ function FichaPoblacion({ poblacion: p, onAvisar }: { poblacion: Poblacion; onAv
   );
 }
 
-function CapaCamaras({ camaras, colores, onVigilar }: { camaras: Camara[]; colores: ColoresTema; onVigilar?: (id: string, v: boolean) => void | Promise<void> }) {
+// ---------------------------------------------------------------------------
+// Cámaras vigiladas, hospitales, satélite y focos fusionados
+// ---------------------------------------------------------------------------
+
+const CapaCamaras = memo(function CapaCamaras({
+  camaras,
+  colores,
+  onVigilar,
+}: {
+  camaras: Camara[];
+  colores: ColoresTema;
+  onVigilar?: (id: string, v: boolean) => void | Promise<void>;
+}) {
   return (
     <>
-      {camaras.map((c) => {
-        const esMovil = c.fuente === "Movil";
-        const positiva = c.ultimoAnalisis?.humo || c.ultimoAnalisis?.fuego;
-        const color = positiva ? colores.danger : esMovil ? colores.brand : c.vigilada ? colores.info : colores.muted;
-        const icono = L.divIcon({
-          className: "icono-atalaya",
-          html: marcadorHtml({
-            contorno: esMovil ? CONTORNOS.movil : CONTORNOS.camara,
-            color,
-            fondo: colores.panel,
-            etiqueta: esMovil ? c.nombre : undefined,
-            anillo: c.vigilada || esMovil,
-            pulso: Boolean(positiva) || esMovil,
-            tamano: 24,
-          }),
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
-        });
-        return (
-          <Marker key={c.id} position={aLatLng(c.punto)} icon={icono}>
-            <Popup minWidth={260}>
-              <PopupCamara camara={c} onVigilar={onVigilar ?? (() => {})} />
-            </Popup>
-          </Marker>
-        );
-      })}
+      {camaras.map((c) => (
+        <CamaraMarker key={c.id} camara={c} colores={colores} onVigilar={onVigilar} />
+      ))}
+    </>
+  );
+});
+
+const CamaraMarker = memo(function CamaraMarker({
+  camara: c,
+  colores,
+  onVigilar,
+}: {
+  camara: Camara;
+  colores: ColoresTema;
+  onVigilar?: (id: string, v: boolean) => void | Promise<void>;
+}) {
+  const esMovil = c.fuente === "Movil";
+  const positiva = c.ultimoAnalisis?.humo || c.ultimoAnalisis?.fuego;
+  const color = positiva ? colores.danger : esMovil ? colores.brand : c.vigilada ? colores.info : colores.muted;
+  const centro = useMemo<[number, number]>(() => [c.punto.lat, c.punto.lon], [c.punto.lat, c.punto.lon]);
+  const icono = iconoDiv({
+    html: marcadorHtml({
+      contorno: esMovil ? CONTORNOS.movil : CONTORNOS.camara,
+      color,
+      fondo: colores.panel,
+      etiqueta: esMovil ? c.nombre : undefined,
+      anillo: c.vigilada || esMovil,
+      pulso: Boolean(positiva) || esMovil,
+      tamano: 24,
+    }),
+    tamano: [24, 24],
+  });
+  return (
+    <Marker position={centro} icon={icono}>
+      <Popup minWidth={260} autoPan={false}>
+        <PopupCamara camara={c} onVigilar={onVigilar ?? noOp} />
+      </Popup>
+    </Marker>
+  );
+});
+
+function noOp() {
+  /* sin acción: la cámara se puede ver pero no vigilar desde aquí */
+}
+
+const FocoFusionado = memo(function FocoFusionado({
+  foco,
+  nombreDestino,
+  colores,
+}: {
+  foco: Incendio;
+  nombreDestino: string;
+  colores: ColoresTema;
+}) {
+  const centro = useMemo<[number, number]>(() => [foco.centro.lat, foco.centro.lon], [foco.centro.lat, foco.centro.lon]);
+  return (
+    <CircleMarker center={centro} radius={4} pathOptions={trazoPuntoFusionado(colores.muted)}>
+      <Tooltip>
+        <TooltipFusionado nombre={foco.nombre} destino={nombreDestino} />
+      </Tooltip>
+    </CircleMarker>
+  );
+});
+
+function TooltipFusionado({ nombre, destino }: { nombre: string; destino: string }) {
+  return (
+    <>
+      {nombre} · unido a {destino}
     </>
   );
 }
 
-function CapaViento({ incendios, zonas, colores }: { incendios: Incendio[]; zonas: ReturnType<typeof zonasPeligroDe>; colores: ColoresTema }) {
-  const flechas = useMemo(() => {
-    const salida: { clave: string; f: ReturnType<typeof flechaViento>; color: string }[] = [];
-    for (const inc of incendios) {
-      if (!inc.meteo) continue;
-      const rejilla = rejillaViento(inc.centro, inc.meteo.direccionGrados, inc.meteo.vientoKmh, { lado: 5, separacionM: 5000 });
-      rejilla.forEach((f, i) => salida.push({ clave: `${inc.id}-${i}`, f, color: colorVelocidad(f.velocidadKmh, colores) }));
-    }
-    for (const z of zonas) {
-      salida.push({
-        clave: `zona-${z.id}`,
-        f: flechaViento(z.punto, z.direccionGrados, z.velocidadKmh, 3000),
-        color: colorVelocidad(z.velocidadKmh, colores),
-      });
-    }
-    return salida;
-  }, [incendios, zonas, colores]);
+const HospitalMarker = memo(function HospitalMarker({
+  hospital: h,
+  colores,
+}: {
+  hospital: NonNullable<Snapshot["hospitales"]>[number];
+  colores: ColoresTema;
+}) {
+  const centro = useMemo<[number, number]>(() => [h.punto.lat, h.punto.lon], [h.punto.lat, h.punto.lon]);
+  const icono = iconoDiv({
+    html: marcadorHtml({ contorno: CONTORNOS.hospital, color: colores.info, fondo: colores.panel, tamano: 22 }),
+    tamano: [22, 22],
+  });
+  return (
+    <Marker position={centro} icon={icono}>
+      <Tooltip direction="top" offset={DESPLAZAMIENTO_10}>
+        <TooltipHospital hospital={h} />
+      </Tooltip>
+    </Marker>
+  );
+});
 
+function TooltipHospital({ hospital: h }: { hospital: NonNullable<Snapshot["hospitales"]>[number] }) {
   return (
     <>
-      {flechas.map(({ clave, f, color }) => (
-        <Fragment key={clave}>
-          <Polyline
-            positions={[f.desde, f.hasta]}
-            pathOptions={{ color, weight: Math.max(1.2, Math.min(3.2, f.velocidadKmh / 14)), opacity: 0.6, interactive: false }}
-          />
-          <Polyline positions={f.punta} pathOptions={{ color, weight: Math.max(1.2, Math.min(3.2, f.velocidadKmh / 14)), opacity: 0.6, interactive: false }} />
-        </Fragment>
-      ))}
+      {h.nombre} · {h.tipo === "hospital" ? "Hospital" : "Centro de salud"}
+      {h.distanciaKm !== undefined ? ` · a ${distancia(h.distanciaKm)}` : ""}
+    </>
+  );
+}
+
+const PuntoSatelite = memo(function PuntoSatelite({ foco: f, colores }: { foco: FocoSatelite; colores: ColoresTema }) {
+  const centro = useMemo<[number, number]>(() => [f.punto.lat, f.punto.lon], [f.punto.lat, f.punto.lon]);
+  return (
+    <CircleMarker center={centro} radius={Math.max(3, Math.min(9, Math.sqrt(f.frp || 1)))} pathOptions={trazoPuntoSatelite(colores.fuego)}>
+      <Tooltip>
+        <TooltipSatelite foco={f} />
+      </Tooltip>
+    </CircleMarker>
+  );
+});
+
+function TooltipSatelite({ foco: f }: { foco: FocoSatelite }) {
+  return (
+    <>
+      {f.fuente} · FRP {numero(f.frp, 1)} MW · confianza {f.confianza} · {haceCuanto(f.fechaHora)}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Capa de viento
+// ---------------------------------------------------------------------------
+
+const CapaViento = memo(function CapaViento({
+  incendios,
+  zonas,
+  colores,
+}: {
+  incendios: Incendio[];
+  zonas: ZonaPeligroMapa[];
+  colores: ColoresTema;
+}) {
+  return (
+    <>
+      {incendios.map((inc) => (inc.meteo ? <VientoFoco key={inc.id} incendio={inc} colores={colores} /> : null))}
       {zonas.map((z) => (
-        <CircleMarker
-          key={`p-${z.id}`}
-          center={aLatLng(z.punto)}
-          radius={4}
-          pathOptions={{
-            color: colorPeligroZona(z.nivel, colores),
-            fillColor: colorPeligroZona(z.nivel, colores),
-            fillOpacity: 0.85,
-            weight: 1,
-          }}
-        >
-          <Tooltip>
-            {z.etiqueta ?? "Zona de peligro"} · viento {viento(z.direccionGrados, z.velocidadKmh)}
-            {z.nivel ? ` · ${TEXTO_PELIGRO[z.nivel]}` : ""}
-          </Tooltip>
-        </CircleMarker>
+        <VientoZona key={z.id} zona={z} colores={colores} />
       ))}
+    </>
+  );
+});
+
+const VientoFoco = memo(function VientoFoco({ incendio: inc, colores }: { incendio: Incendio; colores: ColoresTema }) {
+  const { lat, lon } = inc.centro;
+  const direccion = inc.meteo?.direccionGrados;
+  const velocidad = inc.meteo?.vientoKmh;
+  // Dependencias primitivas: 25 flechas por foco no se recalculan (ni se
+  // reenvían a Leaflet) porque el snapshot traiga objetos nuevos.
+  const flechas = useMemo(
+    () =>
+      direccion === undefined || velocidad === undefined
+        ? []
+        : rejillaViento({ lat, lon }, direccion, velocidad, { lado: 5, separacionM: 5000 }),
+    [lat, lon, direccion, velocidad],
+  );
+  return (
+    <>
+      {flechas.map((f, i) => (
+        <Flecha key={i} flecha={f} color={colorVelocidad(f.velocidadKmh, colores)} />
+      ))}
+    </>
+  );
+});
+
+const VientoZona = memo(function VientoZona({ zona: z, colores }: { zona: ZonaPeligroMapa; colores: ColoresTema }) {
+  const { lat, lon } = z.punto;
+  const flecha = useMemo(
+    () => flechaViento({ lat, lon }, z.direccionGrados, z.velocidadKmh, 3000),
+    [lat, lon, z.direccionGrados, z.velocidadKmh],
+  );
+  const centro = useMemo<[number, number]>(() => [lat, lon], [lat, lon]);
+  return (
+    <>
+      <Flecha flecha={flecha} color={colorVelocidad(z.velocidadKmh, colores)} />
+      <CircleMarker center={centro} radius={4} pathOptions={trazoPuntoZona(colorPeligroZona(z.nivel, colores))}>
+        <Tooltip>
+          <TooltipZona zona={z} />
+        </Tooltip>
+      </CircleMarker>
+    </>
+  );
+});
+
+const Flecha = memo(function Flecha({ flecha: f, color }: { flecha: FlechaViento; color: string }) {
+  const cuerpo = useMemo<[number, number][]>(() => [f.desde, f.hasta], [f.desde, f.hasta]);
+  const opciones = trazoViento(color, Math.max(1.2, Math.min(3.2, f.velocidadKmh / 14)));
+  return (
+    <>
+      <Polyline positions={cuerpo} pathOptions={opciones} />
+      <Polyline positions={f.punta} pathOptions={opciones} />
+    </>
+  );
+});
+
+function TooltipZona({ zona: z }: { zona: ZonaPeligroMapa }) {
+  return (
+    <>
+      {z.etiqueta ?? "Zona de peligro"} · viento {viento(z.direccionGrados, z.velocidadKmh)}
+      {z.nivel ? ` · ${TEXTO_PELIGRO[z.nivel]}` : ""}
     </>
   );
 }
@@ -942,7 +1450,7 @@ function colorPeligroZona(nivel: string | undefined, c: ColoresTema): string {
 // Componente principal
 // ---------------------------------------------------------------------------
 
-export function MapaCliente({
+function MapaClienteBase({
   snapshot,
   incendioSeleccionado,
   onSeleccionarIncendio,
@@ -956,6 +1464,11 @@ export function MapaCliente({
   onRetirarUnidad,
   onCambiarEstadoFoco,
   onRefrescar,
+  zona = null,
+  focosTotales,
+  focosEnZona,
+  onZonaDibujada,
+  onQuitarZona,
   children,
 }: MapaProps) {
   const colores = useColoresTema();
@@ -966,8 +1479,8 @@ export function MapaCliente({
    * efecto con dependencias que puede no volver a dispararse.
    */
   const [mapa, setMapa] = useState<L.Map | null>(null);
-  /** Qué acaba de encuadrar el botón (se lee en voz alta y se ve 2,5 s). */
-  const [avisoEncuadre, setAvisoEncuadre] = useState("");
+  /** Qué acaba de encuadrar el botón "Ver todo" o "Ver en el mapa" (se lee en voz alta y se ve unos segundos). */
+  const [avisoEncuadre, setAvisoEncuadre] = useState<{ texto: string; icono: "encuadre" | "centrado"; sello: number } | null>(null);
   // Este componente solo se monta en el cliente (Mapa.tsx lo carga con
   // ssr:false), así que se puede leer localStorage ya en el primer render: no
   // hay desajuste de hidratación ni parpadeo de capas.
@@ -979,8 +1492,52 @@ export function MapaCliente({
       return CAPAS_POR_DEFECTO; // sin almacenamiento: capas por defecto
     }
   });
+  // Filtro "solo en incendios" de unidades, bases y hospitales (ver ./filtroParticipantes).
+  const [soloIncendios, setSoloIncendios] = useState<Record<CapaFiltrable, boolean>>(leerFiltros);
+  const alternarSoloIncendios = useCallback((id: CapaFiltrable) => {
+    setSoloIncendios((f) => guardarFiltros({ ...f, [id]: !f[id] }));
+  }, []);
   /** Cámara del catálogo abierta ahora mismo (su ficha se pinta con React). */
   const [camaraElegida, setCamaraElegida] = useState<Camara | null>(null);
+
+  // Las callbacks del padre se estabilizan aquí: `app/page.tsx` las escribe en
+  // línea, y sin esto cada render de la sala invalidaría el memo de TODOS los
+  // marcadores del mapa.
+  const alSeleccionarIncendio = useEstable(onSeleccionarIncendio);
+  const alClicMapa = useEstable(onClicMapa);
+  const alAvisarPoblacion = useEstable(onAvisarPoblacion);
+  const alVigilarCamara = useEstable(onVigilarCamara);
+  const alOrdenarUnidad = useEstable(onOrdenarUnidad);
+  const alRetirarUnidad = useEstable(onRetirarUnidad);
+  const alCambiarEstadoFoco = useEstable(onCambiarEstadoFoco);
+  const alRefrescar = useEstable(onRefrescar);
+  const alZonaDibujada = useEstable(onZonaDibujada);
+  const alQuitarZona = useEstable(onQuitarZona);
+
+  // --- Filtro por zona (recuadro o lazo; ver ./SeleccionZona) ---------------
+  /** Modo de dibujo de la zona (null = no se está dibujando). */
+  const [modoZona, setModoZona] = useState<TipoZona | null>(null);
+  const terminarZona = useCallback(
+    (z: ZonaSeleccion) => {
+      setModoZona(null);
+      alZonaDibujada?.(z);
+    },
+    [alZonaDibujada],
+  );
+  const cancelarZona = useCallback(() => setModoZona(null), []);
+  const quitarZona = useCallback(() => {
+    setModoZona(null);
+    alQuitarZona?.();
+  }, [alQuitarZona]);
+  // Zona nueva (recién dibujada o recuperada al cargar): se encuadra una vez.
+  // `creadaEn` hace de sello, así que un snapshot nuevo no vuelve a moverlo.
+  const selloZona = useRef(0);
+  useEffect(() => {
+    if (!mapa || !zona || zona.creadaEn === selloZona.current) return;
+    selloZona.current = zona.creadaEn;
+    mapa.stop();
+    mapa.fitBounds(limitesZona(zona), { padding: [48, 48], maxZoom: 13, animate: true });
+  }, [mapa, zona]);
 
   const alternar = useCallback((id: ClaveCapa) => {
     setCapas((c) => {
@@ -997,37 +1554,109 @@ export function MapaCliente({
   // Con la capa "Satélite" apagada tampoco se pintan los focos que solo ha visto
   // NASA FIRMS y nadie ha confirmado: si no, apagarla dejaría decenas de puntos
   // térmicos sin verificar (industria, quemas agrícolas…) como si fueran incendios.
+  // EXCEPCIÓN: el foco seleccionado en el panel se pinta SIEMPRE. Si no,
+  // "Centrar en el mapa" sobre un foco de satélite llevaba a un punto vacío y
+  // parecía que el botón no hacía nada.
   const visibles = useMemo(
     () =>
       (snapshot?.incendios ?? []).filter(
-        (i) => capas.satelite || !(i.origen === "satelite" && (i.estado === "detectado" || i.estado === "fusionado")),
+        (i) =>
+          i.id === incendioSeleccionado ||
+          capas.satelite ||
+          !(i.origen === "satelite" && (i.estado === "detectado" || i.estado === "fusionado")),
       ),
-    [snapshot?.incendios, capas.satelite],
+    [snapshot?.incendios, capas.satelite, incendioSeleccionado],
   );
   // Los descartados no se pintan; los fusionados dejan solo un punto gris con
   // "unido a <nombre>" para que se entienda a dónde ha ido ese foco.
-  const incendios = useMemo(
+  const enCurso = useMemo(
     () => visibles.filter((i) => i.estado !== "descartado" && i.estado !== "fusionado"),
     [visibles],
   );
+  // Controlados y extinguidos se van del mapa a los 5 s de verlos así (./useOcultarTerminados).
+  const incendios = useOcultarTerminados(enCurso);
+  /** Con la capa "Focos" apagada solo se dibuja el seleccionado (por el mismo motivo). */
+  const incendiosDibujados = useMemo(
+    () => (capas.focos ? incendios : incendios.filter((i) => i.id === incendioSeleccionado)),
+    [capas.focos, incendios, incendioSeleccionado],
+  );
   const fusionados = useMemo(() => visibles.filter((i) => i.estado === "fusionado"), [visibles]);
   const activos = useMemo(
-    () => incendios.filter((i) => !["extinguido", "controlado"].includes(i.estado)),
-    [incendios],
+    () => enCurso.filter((i) => !["extinguido", "controlado"].includes(i.estado)),
+    [enCurso],
   );
+  // Sobre la lista SIN ocultar: las unidades que rematan un controlado ya
+  // invisible siguen enlazadas a su foco (ruta, nombre en la ficha).
+  const porIncendio = useMemo(() => new Map(enCurso.map((i) => [i.id, i])), [enCurso]);
   const unidades = useMemo(() => snapshot?.unidades ?? [], [snapshot?.unidades]);
-  const poblaciones = snapshot?.poblaciones ?? [];
-  const hospitales = snapshot?.hospitales ?? [];
+  const poblaciones = useMemo(() => snapshot?.poblaciones ?? [], [snapshot?.poblaciones]);
+  // Solo los pueblos de los focos que se están DIBUJANDO (sesión riesgo-fundado,
+  // 2026-09-19): los de un foco descartado, extinguido o de satélite sin
+  // confirmar con esa capa apagada no tienen frente que los amenace, y dejaban
+  // "Riesgo inminente" flotando sin ningún foco a la vista. La clave es un texto
+  // para que el filtro no se recalcule cada vez que un foco cambia de perímetro.
+  const clavesDibujados = incendios.map((i) => i.id).join("|");
+  const poblacionesVisibles = useMemo(() => {
+    const dibujados = new Set(clavesDibujados ? clavesDibujados.split("|") : []);
+    return poblaciones.filter((p) => dibujados.has(p.incendioId));
+  }, [clavesDibujados, poblaciones]);
+  // Getter ESTABLE para la ficha del pueblo (solo se lee al abrir su popup):
+  // así los cientos de marcadores memorizados no se repintan cuando cambia un foco.
+  const porIncendioRef = useRef(porIncendio);
+  useEffect(() => {
+    porIncendioRef.current = porIncendio;
+  }, [porIncendio]);
+  const incendioDe = useCallback((id: string) => porIncendioRef.current.get(id), []);
+  const hospitales = useMemo(() => snapshot?.hospitales ?? [], [snapshot?.hospitales]);
   const camaras = useMemo(() => snapshot?.camaras ?? [], [snapshot?.camaras]);
-  const satelite = snapshot?.focosSatelite ?? [];
-  const avisos = snapshot?.avisosMeteo ?? [];
-  const zonas = useMemo(() => zonasPeligroDe(snapshot), [snapshot]);
-
-  const posiciones = usePosicionesAnimadas(unidades);
+  const satelite = useMemo(() => snapshot?.focosSatelite ?? [], [snapshot?.focosSatelite]);
+  const avisos = useMemo(() => snapshot?.avisosMeteo ?? [], [snapshot?.avisosMeteo]);
+  // Depende de la LISTA cruda, no del snapshot entero: así no se recalculan las
+  // zonas (ni se repinta la capa de viento) cada vez que se mueve una unidad.
+  const crudoZonas = listaZonasCruda(snapshot);
+  const zonas = useMemo(() => zonasPeligroDeLista(crudoZonas), [crudoZonas]);
+  const bases = useMemo(() => agruparBases(unidades), [unidades]);
+  // Filtro "solo en incendios": lo que se pinta de cada capa con su casilla marcada.
+  // Dependen de la porción (unidades, bases, hospitales) y del booleano, no del snapshot entero.
+  // EXCEPCIÓN: la unidad que el mando ha pedido ver ("Ver en el mapa" en una
+  // decisión) se pinta SIEMPRE, aunque siga en su base con el filtro puesto o
+  // el snapshot recortado a una zona ya no la traiga (vale la copia que viaja
+  // en la petición). Si no, el mapa se movía a un parque vacío y parecía que el
+  // botón no hacía nada.
+  const unidadResaltada = centrarEn?.unidad;
+  const unidadesVisibles = useMemo(() => {
+    const visibles = soloIncendios.unidades ? unidades.filter(unidadParticipa) : unidades;
+    if (!unidadResaltada || visibles.some((u) => u.id === unidadResaltada.id)) return visibles;
+    return [...visibles, unidades.find((u) => u.id === unidadResaltada.id) ?? unidadResaltada];
+  }, [soloIncendios.unidades, unidades, unidadResaltada]);
+  /** Con la capa "Unidades" apagada solo se dibuja la pedida (misma excepción que el foco seleccionado). */
+  const unidadesDibujadas = useMemo(
+    () => (capas.unidades ? unidadesVisibles : unidadesVisibles.filter((u) => u.id === unidadResaltada?.id)),
+    [capas.unidades, unidadesVisibles, unidadResaltada?.id],
+  );
+  const basesVisibles = useMemo(
+    () => (soloIncendios.bases ? bases.filter((b) => b.unidades.some(unidadParticipa)) : bases),
+    [soloIncendios.bases, bases],
+  );
+  const hospitalesVisibles = useMemo(
+    () => (soloIncendios.hospitales ? hospitalesParticipantes(hospitales, unidades, activos) : hospitales),
+    [soloIncendios.hospitales, hospitales, unidades, activos],
+  );
+  const poblacionesPorFoco = useMemo(() => {
+    const mapa = new Map<string, Poblacion[]>();
+    for (const p of poblaciones) {
+      if (!p.incendioId) continue;
+      const lista = mapa.get(p.incendioId);
+      if (lista) lista.push(p);
+      else mapa.set(p.incendioId, [p]);
+    }
+    return mapa;
+  }, [poblaciones]);
 
   // Catálogo completo de cámaras de España (solo si la capa está encendida).
   const catalogo = useCamarasEspana(capas.camarasEspana);
-  const vigiladasIds = useMemo(() => new Set(camaras.map((c) => c.id)), [camaras]);
+  const clavesVigiladas = camaras.map((c) => c.id).join("|");
+  const vigiladasIds = useMemo(() => new Set(clavesVigiladas ? clavesVigiladas.split("|") : []), [clavesVigiladas]);
   const elegirCamara = useCallback((c: Camara) => setCamaraElegida(c), []);
   /** La del snapshot manda (lleva vigilada, veredicto e historial). */
   const camaraAbierta = useMemo(
@@ -1036,13 +1665,13 @@ export function MapaCliente({
   );
 
   const accionesUnidad: AccionesUnidad = useMemo(
-    () => ({ onOrdenarDestino: onOrdenarUnidad, onRetirar: onRetirarUnidad }),
-    [onOrdenarUnidad, onRetirarUnidad],
+    () => ({ onOrdenarDestino: alOrdenarUnidad, onRetirar: alRetirarUnidad }),
+    [alOrdenarUnidad, alRetirarUnidad],
   );
 
   const limitesFocos = useMemo(() => {
     const puntos: [number, number][] = [];
-    for (const i of (activos.length ? activos : incendios)) {
+    for (const i of activos.length ? activos : incendios) {
       puntos.push([i.centro.lat, i.centro.lon]);
       for (const p of i.perimetro ?? []) puntos.push(p);
     }
@@ -1083,13 +1712,27 @@ export function MapaCliente({
     mapa.fitBounds(destino, { padding: relleno, maxZoom: 12, animate: true });
     // El encuadre lo pide el usuario: no cuenta como "gesto" que bloquee nada.
     ultimoGesto.current = 0;
-    setAvisoEncuadre(`${texto} · ${new Date().toLocaleTimeString("es-ES")}`);
+    setAvisoEncuadre({ texto, icono: "encuadre", sello: Date.now() });
   }, [activos.length, incendios.length, limitesFocos, mapa]);
+
+  /**
+   * Acuse de recibo de "Ver en el mapa" sobre una unidad: dice QUÉ se ha
+   * centrado y en qué estado está. Importa sobre todo cuando la unidad sigue en
+   * su base: el parque puede estar a un par de pantallas del foco que se estaba
+   * mirando y, sin el aviso, el movimiento del mapa pasaba desapercibido.
+   */
+  const anunciarCentrado = useCallback((p: PeticionEncuadre) => {
+    const u = p.unidad;
+    if (!u) return;
+    const enBase = u.estado === "disponible" || u.estado === "fuera_servicio";
+    const estado = enBase ? "en su base, sin desplegar" : TEXTO_ESTADO_UNIDAD[u.estado].toLowerCase();
+    setAvisoEncuadre({ texto: `Centrado en ${u.nombre} (${estado})`, icono: "centrado", sello: Date.now() });
+  }, []);
 
   // El aviso del encuadre se borra solo: es un acuse de recibo, no un estado.
   useEffect(() => {
     if (!avisoEncuadre) return;
-    const id = setTimeout(() => setAvisoEncuadre(""), 2500);
+    const id = setTimeout(() => setAvisoEncuadre(null), avisoEncuadre.icono === "centrado" ? 4000 : 2500);
     return () => clearTimeout(id);
   }, [avisoEncuadre]);
 
@@ -1104,48 +1747,91 @@ export function MapaCliente({
     return () => document.removeEventListener("keydown", alTeclado);
   }, [encuadrarTodo]);
 
-  const bases = useMemo(() => agruparBases(unidades).length, [unidades]);
+  const anotarGesto = useCallback(() => {
+    ultimoGesto.current = Date.now();
+  }, []);
 
-  const filas: FilaCapa[] = [
-    { id: "focos", etiqueta: "Focos y perímetros", cuenta: incendios.length, color: colores.danger, ayuda: "Aún no hay ningún foco declarado" },
-    { id: "prediccion", etiqueta: "Predicción +1/+3/+6 h", cuenta: incendios.filter((i) => i.prediccion).length, color: colores.fuego2, ayuda: "La calcula el analista de propagación" },
-    { id: "unidades", etiqueta: "Unidades", cuenta: unidades.length, color: colores.danger, ayuda: "Aparecen al enriquecer un foco con los parques reales" },
-    { id: "bases", etiqueta: "Bases y parques", cuenta: bases, color: colores.muted, ayuda: "De dónde sale cada unidad (parques, cuarteles, bases BRIF)" },
-    { id: "pueblos", etiqueta: "Pueblos por riesgo", cuenta: poblaciones.length, color: colores.riesgoAlto, ayuda: "Salen de OpenStreetMap alrededor del foco" },
-    { id: "hospitales", etiqueta: "Hospitales", cuenta: hospitales.length, color: colores.info, ayuda: "Centros sanitarios cercanos (OSM)" },
-    { id: "camaras", etiqueta: "Cámaras vigiladas", cuenta: camaras.length, color: colores.info, ayuda: "Cámaras DGT y móviles unidos a la sala" },
-    {
-      id: "camarasEspana",
-      etiqueta: "Cámaras de España",
-      cuenta: catalogo.camaras.length,
-      color: colores.info,
-      ayuda: catalogo.error
-        ? `No se ha podido cargar el catálogo: ${catalogo.error}`
-        : catalogo.cargando
-          ? "Cargando el catálogo de la DGT y de Madrid…"
-          : "Todas las cámaras públicas (DGT + Madrid)",
-    },
-    { id: "viento", etiqueta: "Viento", cuenta: incendios.filter((i) => i.meteo).length + zonas.length, color: colores.riesgoMedio, ayuda: "Rejilla calculada con la meteo de cada foco" },
-    { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS. Apagada, oculta también los focos que solo ha visto el satélite y nadie ha confirmado" },
-    { id: "avisos", etiqueta: "Avisos meteo", cuenta: avisos.length, color: colores.warning, ayuda: "AEMET / Meteoalarm" },
-  ];
+  const conPrediccion = capas.prediccion;
+  const filas: FilaCapa[] = useMemo(
+    () => [
+      { id: "focos", etiqueta: "Focos y perímetros", cuenta: incendios.length, color: colores.danger, ayuda: "Aún no hay ningún foco declarado" },
+      { id: "prediccion", etiqueta: "Predicción +1/+3/+6 h", cuenta: incendios.filter((i) => i.prediccion).length, color: colores.fuego2, ayuda: "La calcula el analista de propagación" },
+      {
+        id: "unidades",
+        etiqueta: "Unidades",
+        cuenta: unidades.length,
+        color: colores.danger,
+        ayuda: "Aparecen al enriquecer un foco con los parques reales",
+        filtro: { ...TEXTO_FILTRO.unidades, activo: soloIncendios.unidades, cuenta: unidadesVisibles.length, onCambiar: () => alternarSoloIncendios("unidades") },
+      },
+      {
+        id: "bases",
+        etiqueta: "Bases y parques",
+        cuenta: bases.length,
+        color: colores.muted,
+        ayuda: "De dónde sale cada unidad (parques, cuarteles, bases BRIF)",
+        filtro: { ...TEXTO_FILTRO.bases, activo: soloIncendios.bases, cuenta: basesVisibles.length, onCambiar: () => alternarSoloIncendios("bases") },
+      },
+      { id: "pueblos", etiqueta: "Pueblos por riesgo", cuenta: poblacionesVisibles.length, color: colores.riesgoAlto, ayuda: "Salen de OpenStreetMap alrededor de cada foco dibujado" },
+      {
+        id: "hospitales",
+        etiqueta: "Hospitales",
+        cuenta: hospitales.length,
+        color: colores.info,
+        ayuda: "Centros sanitarios cercanos (OSM)",
+        filtro: { ...TEXTO_FILTRO.hospitales, activo: soloIncendios.hospitales, cuenta: hospitalesVisibles.length, onCambiar: () => alternarSoloIncendios("hospitales") },
+      },
+      { id: "camaras", etiqueta: "Cámaras vigiladas", cuenta: camaras.length, color: colores.info, ayuda: "Cámaras DGT y móviles unidos a la sala" },
+      {
+        id: "camarasEspana",
+        etiqueta: "Cámaras de España",
+        cuenta: catalogo.camaras.length,
+        color: colores.info,
+        ayuda: catalogo.error
+          ? `No se ha podido cargar el catálogo: ${catalogo.error}`
+          : catalogo.cargando
+            ? "Cargando el catálogo de la DGT y de Madrid…"
+            : "Todas las cámaras públicas (DGT + Madrid)",
+      },
+      { id: "viento", etiqueta: "Viento", cuenta: incendios.filter((i) => i.meteo).length + zonas.length, color: colores.riesgoMedio, ayuda: "Rejilla calculada con la meteo de cada foco" },
+      { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS. Apagada, oculta también los focos que solo ha visto el satélite y nadie ha confirmado (salvo el que tengas seleccionado)" },
+      { id: "avisos", etiqueta: "Avisos meteo", cuenta: avisos.length, color: colores.warning, ayuda: "AEMET / Meteoalarm" },
+      { id: "fueraEspana", etiqueta: "Fuera de España", cuenta: 0, color: colores.danger, ayuda: "El resto del mundo en rojo: el sistema solo trabaja el territorio español" },
+    ],
+    [alternarSoloIncendios, avisos.length, bases.length, basesVisibles.length, camaras.length, catalogo.camaras.length, catalogo.cargando, catalogo.error, colores, hospitales.length, hospitalesVisibles.length, incendios, poblacionesVisibles.length, satelite.length, soloIncendios, unidades.length, unidadesVisibles.length, zonas.length],
+  );
 
-  const leyenda = [
-    capas.focos ? { color: colores.danger, forma: "area" as const, texto: "Perímetro de incendio activo" } : null,
-    capas.focos ? { color: colores.warning, forma: "discontinua" as const, texto: "Foco sin confirmar (hueco)" } : null,
-    capas.focos ? { color: colores.oscuro ? colores.texto : "#111827", forma: "discontinua" as const, texto: "Línea de control construida" } : null,
-    capas.prediccion ? { color: colores.fuego2, forma: "discontinua" as const, texto: "Predicción del frente (+1/+3/+6 h)" } : null,
-    capas.pueblos ? { color: colores.riesgoInminente, forma: "punto" as const, texto: "Pueblo en riesgo inminente" } : null,
-    capas.pueblos ? { color: colores.riesgoBajo, forma: "punto" as const, texto: "Pueblo con riesgo bajo" } : null,
-    ...(capas.unidades
-      ? LEYENDA_UNIDAD.map((l) => ({ color: colorUnidad(l.tipo, colores), forma: "punto" as const, texto: l.texto }))
-      : []),
-    capas.unidades ? { color: colores.muted, forma: "linea" as const, texto: "Ruta: grueso = ya recorrido, fino = lo que queda" } : null,
-    capas.bases ? { color: colores.muted, forma: "punto" as const, texto: "Base o parque (número = unidades)" } : null,
-    capas.camarasEspana ? { color: colores.info, forma: "punto" as const, texto: "Cámara de tráfico (DGT/Madrid)" } : null,
-    capas.viento ? { color: colores.riesgoMedio, forma: "linea" as const, texto: "Viento (longitud y color = intensidad)" } : null,
-    capas.satelite ? { color: colores.fuego, forma: "punto" as const, texto: "Detección de satélite (FRP)" } : null,
-  ].filter((e): e is { color: string; forma: "linea" | "punto" | "area" | "discontinua"; texto: string } => e !== null);
+  const leyenda = useMemo(
+    () =>
+      [
+        capas.focos ? { color: colores.danger, forma: "area" as const, texto: "Perímetro de incendio activo" } : null,
+        capas.focos ? { color: colores.warning, forma: "discontinua" as const, texto: "Foco sin confirmar (hueco)" } : null,
+        capas.focos ? { color: colores.oscuro ? colores.texto : "#111827", forma: "discontinua" as const, texto: "Línea de control construida" } : null,
+        capas.prediccion ? { color: colores.fuego2, forma: "discontinua" as const, texto: "Predicción del frente (+1/+3/+6 h)" } : null,
+        capas.pueblos ? { color: colores.riesgoInminente, forma: "punto" as const, texto: "Pueblo en riesgo inminente" } : null,
+        capas.pueblos ? { color: colores.riesgoBajo, forma: "punto" as const, texto: "Pueblo con riesgo bajo" } : null,
+        ...(capas.unidades
+          ? LEYENDA_UNIDAD.map((l) => ({ color: colorUnidad(l.tipo, colores), forma: "punto" as const, texto: l.texto }))
+          : []),
+        capas.unidades ? { color: colores.muted, forma: "linea" as const, texto: "Ruta: grueso = ya recorrido, fino = lo que queda" } : null,
+        capas.bases ? { color: colores.muted, forma: "punto" as const, texto: "Base o parque (número = unidades)" } : null,
+        capas.camarasEspana ? { color: colores.info, forma: "punto" as const, texto: "Cámara de tráfico (DGT/Madrid)" } : null,
+        capas.viento ? { color: colores.riesgoMedio, forma: "linea" as const, texto: "Viento (longitud y color = intensidad)" } : null,
+        capas.satelite ? { color: colores.fuego, forma: "punto" as const, texto: "Detección de satélite (FRP)" } : null,
+        capas.fueraEspana ? { color: colores.danger, forma: "area" as const, texto: "Fuera de España: zona excluida" } : null,
+      ].filter((e): e is { color: string; forma: "linea" | "punto" | "area" | "discontinua"; texto: string } => e !== null),
+    [capas, colores],
+  );
+
+  const iconoCamaraAbierta = useMemo(
+    () =>
+      iconoDiv({
+        html: marcadorHtml({ contorno: CONTORNOS.camara, color: colores.brand, fondo: colores.panel, anillo: true, tamano: 26 }),
+        tamano: [26, 26],
+      }),
+    [colores.brand, colores.panel],
+  );
+  const cerrarCamara = useMemo(() => ({ popupclose: () => setCamaraElegida(null) }), []);
 
   return (
     <div className="relative isolate size-full overflow-hidden">
@@ -1154,6 +1840,8 @@ export function MapaCliente({
         center={[40.2, -3.7]}
         zoom={6}
         bounds={LIMITES_ESPANA}
+        maxBounds={LIMITES_NAVEGACION}
+        maxBoundsViscosity={0.8}
         zoomControl={false}
         className="size-full"
         preferCanvas
@@ -1165,10 +1853,15 @@ export function MapaCliente({
         />
         <ZoomControl position="bottomright" />
         <AjusteTamano />
-        <DetectorGestos alMover={() => (ultimoGesto.current = Date.now())} />
-        <CapturaClic activo={modoDeclarar || Boolean(unidadOrdenando)} onClic={onClicMapa} />
+        <ColocadorPopups />
+        <DetectorGestos alMover={anotarGesto} />
+        <CapturaClic activo={(modoDeclarar || Boolean(unidadOrdenando)) && !modoZona} onClic={alClicMapa} />
         <CursorDeclarar activo={modoDeclarar || Boolean(unidadOrdenando)} />
-        <Encuadre limitesFocos={limitesFocos} centrarEn={centrarEn} ultimoGesto={ultimoGesto} />
+        <Encuadre limitesFocos={limitesFocos} centrarEn={centrarEn} ultimoGesto={ultimoGesto} alCentrar={anunciarCentrado} />
+
+        {/* Lo primero de todo: el resto del mundo en rojo (zona excluida), con
+            el contorno real de España como agujero. Todo lo demás va encima. */}
+        {capas.fueraEspana ? <CapaFueraEspana colores={colores} /> : null}
 
         {/* Las ~2.300 cámaras del catálogo van las primeras: quedan DEBAJO de
             todo lo operativo y nunca tapan un foco ni una unidad. */}
@@ -1178,112 +1871,88 @@ export function MapaCliente({
         {camaraAbierta ? (
           <Marker
             position={aLatLng(camaraAbierta.punto)}
-            icon={L.divIcon({
-              className: "icono-atalaya",
-              html: marcadorHtml({ contorno: CONTORNOS.camara, color: colores.brand, fondo: colores.panel, anillo: true, tamano: 26 }),
-              iconSize: [26, 26],
-              iconAnchor: [13, 13],
-            })}
+            icon={iconoCamaraAbierta}
             ref={(m) => {
               m?.openPopup();
             }}
-            eventHandlers={{ popupclose: () => setCamaraElegida(null) }}
+            eventHandlers={cerrarCamara}
           >
-            <Popup minWidth={260}>
-              <PopupCamara camara={camaraAbierta} onVigilar={onVigilarCamara ?? (() => {})} />
+            <Popup minWidth={260} autoPan={false}>
+              <PopupCamara camara={camaraAbierta} onVigilar={alVigilarCamara ?? noOp} />
             </Popup>
           </Marker>
         ) : null}
 
+        {/* Filtro por zona: atenúa lo de fuera; lo operativo de dentro va encima. */}
+        {zona ? <CapaZona zona={zona} colores={colores} /> : null}
+
         {capas.viento ? <CapaViento incendios={incendios} zonas={zonas} colores={colores} /> : null}
-        {capas.bases ? <CapaBases unidades={unidades} colores={colores} /> : null}
-        {capas.focos ? (
+        {capas.bases ? <CapaBases bases={basesVisibles} colores={colores} /> : null}
+        {capas.focos || incendiosDibujados.length > 0 ? (
           <CapaFocos
-            incendios={incendios}
-            poblaciones={poblaciones}
+            incendios={incendiosDibujados}
+            poblacionesPorFoco={poblacionesPorFoco}
             colores={colores}
             seleccionado={incendioSeleccionado}
-            onSeleccionar={onSeleccionarIncendio}
-            conPrediccion={capas.prediccion}
-            onCambiarEstadoFoco={onCambiarEstadoFoco}
-            onRefrescar={onRefrescar}
+            onSeleccionar={alSeleccionarIncendio}
+            conPrediccion={conPrediccion}
+            onCambiarEstadoFoco={alCambiarEstadoFoco}
+            onRefrescar={alRefrescar}
           />
         ) : null}
         {/* Focos absorbidos por otro: un punto gris discreto, nada más. */}
         {capas.focos
           ? fusionados.map((f) => (
-              <CircleMarker
+              <FocoFusionado
                 key={f.id}
-                center={aLatLng(f.centro)}
-                radius={4}
-                pathOptions={{ color: colores.muted, fillColor: colores.muted, fillOpacity: 0.5, weight: 1 }}
-              >
-                <Tooltip>
-                  {f.nombre} · unido a {incendios.find((i) => i.id === f.fusionadoEn)?.nombre ?? "otro foco"}
-                </Tooltip>
-              </CircleMarker>
+                foco={f}
+                nombreDestino={(f.fusionadoEn ? porIncendio.get(f.fusionadoEn)?.nombre : undefined) ?? "otro foco"}
+                colores={colores}
+              />
             ))
           : null}
-        {capas.pueblos ? <CapaPueblos poblaciones={poblaciones} colores={colores} onAvisar={onAvisarPoblacion} /> : null}
-        {capas.unidades ? (
-          <CapaUnidades unidades={unidades} incendios={incendios} colores={colores} posiciones={posiciones} acciones={accionesUnidad} />
-        ) : null}
-        {capas.camaras ? <CapaCamaras camaras={camaras} colores={colores} onVigilar={onVigilarCamara} /> : null}
-        {capas.hospitales
-          ? hospitales.map((h) => (
-              <Marker
-                key={h.id}
-                position={aLatLng(h.punto)}
-                icon={L.divIcon({
-                  className: "icono-atalaya",
-                  html: marcadorHtml({ contorno: CONTORNOS.hospital, color: colores.info, fondo: colores.panel, tamano: 22 }),
-                  iconSize: [22, 22],
-                  iconAnchor: [11, 11],
-                })}
-              >
-                <Tooltip direction="top" offset={[0, -10]}>
-                  {h.nombre} · {h.tipo === "hospital" ? "Hospital" : "Centro de salud"}
-                  {h.distanciaKm !== undefined ? ` · a ${distancia(h.distanciaKm)}` : ""}
-                </Tooltip>
-              </Marker>
-            ))
-          : null}
-        {capas.satelite
-          ? satelite.map((f) => (
-              <CircleMarker
-                key={f.id}
-                center={aLatLng(f.punto)}
-                radius={Math.max(3, Math.min(9, Math.sqrt(f.frp || 1)))}
-                pathOptions={{ color: colores.fuego, fillColor: colores.fuego, fillOpacity: 0.75, weight: 1 }}
-              >
-                <Tooltip>
-                  {f.fuente} · FRP {numero(f.frp, 1)} MW · confianza {f.confianza} · {haceCuanto(f.fechaHora)}
-                </Tooltip>
-              </CircleMarker>
-            ))
-          : null}
+        {capas.pueblos ? <CapaPueblos poblaciones={poblacionesVisibles} colores={colores} incendioDe={incendioDe} onAvisar={alAvisarPoblacion} /> : null}
+        <CapaUnidades
+          unidades={unidadesDibujadas}
+          resaltadaId={unidadResaltada?.id}
+          porIncendio={porIncendio}
+          colores={colores}
+          acciones={accionesUnidad}
+        />
+        {capas.camaras ? <CapaCamaras camaras={camaras} colores={colores} onVigilar={alVigilarCamara} /> : null}
+        {capas.hospitales ? hospitalesVisibles.map((h) => <HospitalMarker key={h.id} hospital={h} colores={colores} />) : null}
+        {capas.satelite ? satelite.map((f) => <PuntoSatelite key={f.id} foco={f} colores={colores} />) : null}
+        {/* Filtro por zona: el trazo en curso, por encima de todo. */}
+        <DibujoZona modo={modoZona} colores={colores} onTerminar={terminarZona} onCancelar={cancelarZona} />
       </MapContainer>
 
-      <PanelCapas filas={filas} activas={capas} onAlternar={alternar} onEncuadrar={encuadrarTodo} />
+      <PanelCapas
+        filas={filas}
+        activas={capas}
+        onAlternar={alternar}
+        onEncuadrar={encuadrarTodo}
+        extra={<ControlesZona modo={modoZona} onElegirModo={setModoZona} />}
+      />
       <Leyenda entradas={leyenda} />
 
-      {/* Acuse de recibo de "Ver todo": el mando ve que el botón ha hecho algo
-          aunque el mapa ya estuviera casi encuadrado. */}
+      {/* Acuse de recibo de "Ver todo" y de "Ver en el mapa": el mando ve que el
+          botón ha hecho algo aunque el mapa ya estuviera casi encuadrado. */}
       <div aria-live="polite" className="pointer-events-none absolute inset-x-0 top-12 z-[940] flex justify-center px-4">
         {avisoEncuadre ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/50 bg-panel/97 px-3 py-1 text-[12px] font-medium text-brand shadow-[var(--sombra-flotante)] backdrop-blur">
-            <Maximize2 className="size-3.5 shrink-0" aria-hidden /> {avisoEncuadre.split(" · ")[0]}
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/50 bg-panel px-3 py-1 text-[12px] font-medium text-brand shadow-[var(--sombra-flotante)]">
+            {avisoEncuadre.icono === "centrado" ? <Crosshair className="size-3.5 shrink-0" aria-hidden /> : <Maximize2 className="size-3.5 shrink-0" aria-hidden />}{" "}
+            {avisoEncuadre.texto}
           </span>
         ) : null}
       </div>
 
       {/* Avisos meteo: no tienen geometría, se listan como pastillas arriba a la izquierda. */}
       {capas.avisos && avisos.length > 0 ? (
-        <div className="pointer-events-none absolute left-2 top-12 z-[880] flex max-w-[15.5rem] flex-col gap-1">
+        <div className={`pointer-events-none absolute left-2 ${zona ? "top-24" : "top-12"} z-[880] flex max-w-[15.5rem] flex-col gap-1`}>
           {avisos.slice(0, 3).map((a) => (
             <span
               key={a.id}
-              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-warning/45 bg-panel/95 px-2 py-1 text-[11px] font-medium text-warning shadow-sm backdrop-blur"
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-warning/45 bg-panel px-2 py-1 text-[11px] font-medium text-warning shadow-sm"
             >
               <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
               <span className="truncate">
@@ -1294,23 +1963,32 @@ export function MapaCliente({
         </div>
       ) : null}
 
-      {/* Estado vacío: sin focos, el mapa explica qué hacer. */}
-      {snapshot && incendios.length === 0 ? (
+      {/* Estado vacío: sin focos EN CURSO (los terminados ocultos no cuentan como "ninguno"), el mapa explica qué hacer. */}
+      {snapshot && enCurso.length === 0 && !zona ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-20 z-[880] flex justify-center px-4">
-          <div className="pointer-events-auto max-w-md rounded-xl border border-panel-border bg-panel/97 px-4 py-3 text-center shadow-[var(--sombra-flotante)] backdrop-blur">
+          <div className="pointer-events-auto max-w-md rounded-xl border border-panel-border bg-panel px-4 py-3 text-center shadow-[var(--sombra-flotante)]">
             <p className="flex items-center justify-center gap-2 text-sm font-semibold text-foreground">
               <Flame className="size-4 text-fuego" aria-hidden /> Todavía no hay ningún foco
             </p>
             <p className="mt-1 text-[13px] leading-snug text-muted">
-              Declara uno con la tecla <kbd className="rounded border border-panel-border-strong bg-panel-2 px-1">F</kbd> o con el botón
-              «Declarar foco» y haz clic en el mapa: los agentes empezarán a trabajar solos.
+              Declara uno con la tecla <kbd className="rounded border border-panel-border-strong bg-panel-2 px-1">F</kbd> y un clic en el mapa
+              (Esc cancela; el botón «Declarar foco» está en el modo desarrollo): los agentes empezarán a trabajar solos.
             </p>
           </div>
         </div>
       ) : null}
+      {/* Filtro por zona: sin focos dentro se dice que es el filtro, no que no haya. */}
+      {snapshot && zona && enCurso.length === 0 ? <AvisoZonaVacia zona={zona} total={focosTotales ?? 0} onQuitar={quitarZona} /> : null}
+
+      {/* Filtro por zona: aviso del modo de dibujo (manda sobre el de declarar). */}
+      {modoZona ? <AvisoDibujoZona modo={modoZona} /> : null}
+      {/* Filtro por zona: banda con "Quitar filtro" mientras haya zona y ningún modo la tape. */}
+      {zona && !modoZona && !modoDeclarar && !unidadOrdenando ? (
+        <BandaZona zona={zona} dentro={focosEnZona ?? enCurso.length} total={focosTotales ?? enCurso.length} onQuitar={quitarZona} />
+      ) : null}
 
       {/* Aviso del modo declarar. */}
-      {modoDeclarar ? (
+      {modoDeclarar && !modoZona ? (
         <div className="pointer-events-none absolute inset-x-0 top-2 z-[950] flex justify-center px-4">
           <span className="inline-flex items-center gap-2 rounded-full border border-fuego bg-panel px-3 py-1.5 text-[13px] font-semibold text-fuego shadow-[var(--sombra-flotante)]">
             <MapPin className="size-4" aria-hidden /> Haz clic en el mapa para declarar el foco · Esc para salir
@@ -1331,7 +2009,7 @@ export function MapaCliente({
       {capas.camarasEspana && (catalogo.cargando || catalogo.error) ? (
         <div className="pointer-events-none absolute bottom-7 right-2 z-[880] max-w-[17rem]">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-lg border bg-panel/95 px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur ${
+            className={`inline-flex items-center gap-1.5 rounded-lg border bg-panel px-2 py-1 text-[11px] font-medium shadow-sm ${
               catalogo.error ? "border-danger/45 text-danger" : "border-panel-border text-muted"
             }`}
           >
@@ -1350,3 +2028,9 @@ export function MapaCliente({
     </div>
   );
 }
+
+/**
+ * La raíz va memoizada: con el mismo snapshot y las mismas props, la sala puede
+ * repintarse (reloj, pestañas, diálogos) sin arrastrar al mapa consigo.
+ */
+export const MapaCliente = memo(MapaClienteBase);

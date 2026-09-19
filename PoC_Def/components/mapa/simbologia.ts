@@ -154,6 +154,7 @@ export function marcadorHtml({
   hueco = false,
   atenuado = false,
   flechaGrados,
+  colorAnillo = color,
 }: {
   contorno: string;
   /** Color del icono y del borde. */
@@ -168,9 +169,11 @@ export function marcadorHtml({
   atenuado?: boolean;
   /** Rumbo HACIA el que se mueve, en grados (0 = norte). */
   flechaGrados?: number;
+  /** Color del anillo exterior; por defecto, el del icono. */
+  colorAnillo?: string;
 }): string {
   const anilloHtml = anillo
-    ? `<span style="position:absolute;inset:-5px;border-radius:999px;border:2px solid ${color};opacity:.55;${pulso ? "animation:atalaya-latido 1.6s ease-in-out infinite;" : ""}"></span>`
+    ? `<span style="position:absolute;inset:-5px;border-radius:999px;border:2px solid ${colorAnillo};opacity:.55;${pulso ? "animation:atalaya-latido 1.6s ease-in-out infinite;" : ""}"></span>`
     : "";
   const etiquetaHtml = etiqueta
     ? `<span style="position:absolute;left:50%;top:calc(100% + 3px);transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:600;line-height:1.2;padding:1px 5px;border-radius:6px;background:${fondo};color:${color};border:1px solid ${color}55;box-shadow:0 1px 3px rgb(0 0 0 / .18)">${escapar(etiqueta)}</span>`

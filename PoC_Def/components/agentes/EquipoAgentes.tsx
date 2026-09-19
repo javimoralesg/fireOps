@@ -24,11 +24,13 @@ export interface EquipoAgentesProps {
 function estadoVisible(agente: EstadoAgenteApp, mundoPausado: boolean) {
   if (mundoPausado) return "Pausado (mundo)";
   if (agente.pausado) return "Pausado";
+  // Fuente apagada por el escenario del mando: no lo ha pausado nadie, pero no corre.
+  if (agente.desactivadoPorEscenario) return "Sin ciclos";
   return TEXTO_ESTADO_AGENTE[agente.estado];
 }
 
 function tonoVisible(agente: EstadoAgenteApp, mundoPausado: boolean) {
-  return mundoPausado || agente.pausado ? "aviso" : tonoEstadoAgente(agente.estado);
+  return mundoPausado || agente.pausado || agente.desactivadoPorEscenario ? "aviso" : tonoEstadoAgente(agente.estado);
 }
 
 function referenciaIncidente(agente: EstadoAgenteApp, incendios: Pick<Incendio, "id" | "nombre">[]) {
@@ -85,7 +87,7 @@ export function EquipoAgentes({ agentes, incendios = [], mundoPausado = false, o
           <ul className="divide-y divide-panel-border" aria-label="Lista completa de agentes">
             {agentes.map((agente) => {
               const seleccionadoAhora = agente.id === seleccionado.id;
-              const parado = mundoPausado || agente.pausado || agente.estado === "pausado";
+              const parado = mundoPausado || agente.pausado || agente.estado === "pausado" || Boolean(agente.desactivadoPorEscenario);
               return (
                 <li key={agente.id}>
                   <button
@@ -120,6 +122,11 @@ export function EquipoAgentes({ agentes, incendios = [], mundoPausado = false, o
                         {estadoVisible(agente, mundoPausado)}
                       </Insignia>
                       {mundoPausado ? <span className="text-[10.5px] text-subtle">{TEXTO_ESTADO_AGENTE[agente.estado]}</span> : null}
+                      {agente.desactivadoPorEscenario && !agente.pausado ? (
+                        <Insignia pequena tono="info" title="El mando apagó esta fuente de detección en el desplegable de ejecución (modo desarrollo)">
+                          Fuente apagada: {agente.desactivadoPorEscenario}
+                        </Insignia>
+                      ) : null}
                     </span>
                     <span className="tabular text-[11px] text-subtle sm:text-right" title={agente.ultimaActividad}>
                       {haceCuanto(agente.ultimaActividad)}

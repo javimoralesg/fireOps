@@ -2,7 +2,8 @@
 // Móvil como cámara. DUEÑO: constructor B.
 // ---------------------------------------------------------------------
 // La página /movil (Safari/Chrome en el teléfono) pide ubicación y cámara
-// trasera y envía un fotograma JPEG cada 15 s a POST /api/camaras/movil.
+// trasera y envía un fotograma JPEG cada 10 s a POST /api/camaras/movil, que lo
+// analiza al momento (lib/fuentes/analisisMovilInmediato.ts).
 // Aquí se guarda el ÚLTIMO fotograma por dispositivo en memoria (no se
 // escribe a disco) y se registra/actualiza la Camara correspondiente en el
 // estado, con id `movil:<dispositivoId>` y fuente "Movil".
@@ -10,8 +11,9 @@
 // =====================================================================
 import type { Camara, Punto } from "../dominio/tipos";
 import type { Estado } from "../motor/estado";
+import { describirFueraEspana, enEspana } from "../dominio/espana";
 
-export const INTERVALO_MOVIL_SEG = 15;
+export const INTERVALO_MOVIL_SEG = 10;
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export interface FotogramaMovil {
@@ -61,6 +63,8 @@ export function registrarFotograma(estado: Estado, entrada: EntradaFotograma): C
   const dispositivoId = entrada.dispositivoId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48);
   if (!dispositivoId) throw new Error("dispositivoId vacío o no válido");
   if (!Number.isFinite(entrada.lat) || !Number.isFinite(entrada.lon)) throw new Error("Coordenadas del móvil no válidas");
+  // Ámbito: SOLO España. Un móvil fuera del país no se registra como cámara.
+  if (!enEspana({ lat: entrada.lat, lon: entrada.lon })) throw new Error(describirFueraEspana({ lat: entrada.lat, lon: entrada.lon }));
 
   const { bytes, mime } = decodificarImagenBase64(entrada.imagenBase64, entrada.mime);
   const e = est();

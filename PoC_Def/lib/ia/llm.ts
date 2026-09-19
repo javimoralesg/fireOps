@@ -25,6 +25,7 @@
 // Dependencias externas: `openai` (SDK), `zod` v4 (`z.toJSONSchema`).
 // =====================================================================
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import OpenAI from "openai";
 import { z, type ZodType } from "zod";
 import { anotarLlamadaIA, resumir } from "../motor/traza";
@@ -41,12 +42,16 @@ export interface ImagenLLM {
  *   "alta"   → cadena de mando: supervisor, asesor legal, coordinador,
  *              protección a la población y portavoz. Son las llamadas que
  *              marcan los tiempos de la sala.
- *   "normal" → percepción y trabajo de fondo: prensa, cámaras, redactor de
- *              actas, aprendizaje. Pueden esperar.
+ *   "normal" → percepción y trabajo de fondo: prensa, cámaras, aprendizaje.
+ *              Pueden esperar.
+ *   "baja"   → auditoría a posteriori (narrativa de las actas). Tiene UN hueco
+ *              propio (LLM_CONCURRENCIA_BAJA, 1 por defecto) que NO compite con
+ *              los de "alta"/"normal": redactar un acta no puede volver a
+ *              retrasar una aprobación ni el ciclo de un agente de decisión.
  * MEDIDO 2026-09-19: con LLM_CONCURRENCIA=4 y 16 agentes, una evaluación del
  * supervisor llegaba a esperar 60-190 s detrás de las llamadas de percepción.
  */
-export type PrioridadLLM = "alta" | "normal";
+export type PrioridadLLM = "alta" | "normal" | "baja";
 
 export interface PeticionJson<T> {
   /** true para herramientas del humano (consultas del conocimiento, informes a demanda) que deben funcionar aunque el mundo esté en pausa. */
@@ -453,7 +458,10 @@ function textoDelPrompt(mensajes: Mensaje[]): string {
 // (por defecto 4) peticiones simultáneas; el resto espera en orden.
 // ---------------------------------------------------------------------
 const CONCURRENCIA_MAX = Math.max(1, Number(process.env.LLM_CONCURRENCIA ?? 4));
+/** Huecos reservados al carril "baja" (actas). Independientes de CONCURRENCIA_MAX. */
+const CONCURRENCIA_BAJA = Math.max(1, Number(process.env.LLM_CONCURRENCIA_BAJA ?? 1));
 let enCurso = 0;
+let enCursoBaja = 0;
 // DOS colas (constructor M, 2026-09-19). Con una sola, la evaluación del
 // supervisor de una decisión de ataque inicial entraba detrás de las llamadas
 // de prensa y de las cámaras y esperaba minutos. Ahora la cadena de mando pasa
@@ -461,12 +469,32 @@ let enCurso = 0;
 // nadie se queda atrás para siempre mientras haya turnos que liberar.
 const colaAlta: (() => void)[] = [];
 const colaNormal: (() => void)[] = [];
+/** TERCER carril (constructor S, 2026-09-19): actas de auditoría, con su propio hueco. */
+const colaBaja: (() => void)[] = [];
 
-async function adquirirTurno(prioridad: PrioridadLLM = "normal", signal?: AbortSignal): Promise<() => void> {
-  const cola = prioridad === "alta" ? colaAlta : colaNormal;
-  if (enCurso < CONCURRENCIA_MAX) {
-    enCurso += 1;
-  } else {
+/**
+ * Prioridad "por ambiente": la fija `conPrioridadLLM` alrededor de un bloque y
+ * la heredan todas las llamadas que salgan de dentro, aunque las haga otro
+ * módulo (p. ej. el redactor de informes cuando lo invocan las actas). Así no
+ * hay que cambiar la firma de nadie para mandar su trabajo al carril lento.
+ */
+const almacenPrioridad = new AsyncLocalStorage<PrioridadLLM>();
+
+/** Ejecuta `fn` marcando todas sus llamadas al LLM con esta prioridad (si no piden una explícita). */
+export function conPrioridadLLM<T>(prioridad: PrioridadLLM, fn: () => T): T {
+  return almacenPrioridad.run(prioridad, fn);
+}
+
+function prioridadEfectiva(pedida?: PrioridadLLM): PrioridadLLM {
+  return pedida ?? almacenPrioridad.getStore() ?? "normal";
+}
+
+async function adquirirTurno(prioridadPedida?: PrioridadLLM, signal?: AbortSignal): Promise<() => void> {
+  const prioridad = prioridadEfectiva(prioridadPedida);
+  const baja = prioridad === "baja";
+  const cola = baja ? colaBaja : prioridad === "alta" ? colaAlta : colaNormal;
+  const hayHueco = () => (baja ? enCursoBaja < CONCURRENCIA_BAJA : enCurso < CONCURRENCIA_MAX);
+  if (!hayHueco()) {
     await new Promise<void>((resolver, rechazar) => {
       const entrada = () => resolver();
       cola.push(entrada);
@@ -480,9 +508,15 @@ async function adquirirTurno(prioridad: PrioridadLLM = "normal", signal?: AbortS
         { once: true },
       );
     });
-    enCurso += 1;
   }
+  if (baja) enCursoBaja += 1;
+  else enCurso += 1;
   return () => {
+    if (baja) {
+      enCursoBaja -= 1;
+      colaBaja.shift()?.();
+      return;
+    }
     enCurso -= 1;
     const siguiente = colaAlta.shift() ?? colaNormal.shift();
     if (siguiente) siguiente();
@@ -490,13 +524,25 @@ async function adquirirTurno(prioridad: PrioridadLLM = "normal", signal?: AbortS
 }
 
 /** Estado de la cola (para /api/salud y las trazas). */
-export function estadoColaLLM(): { enCurso: number; esperando: number; maximo: number; esperandoAlta: number; esperandoNormal: number } {
+export function estadoColaLLM(): {
+  enCurso: number;
+  esperando: number;
+  maximo: number;
+  esperandoAlta: number;
+  esperandoNormal: number;
+  esperandoBaja: number;
+  enCursoBaja: number;
+  maximoBaja: number;
+} {
   return {
     enCurso,
-    esperando: colaAlta.length + colaNormal.length,
+    esperando: colaAlta.length + colaNormal.length + colaBaja.length,
     maximo: CONCURRENCIA_MAX,
     esperandoAlta: colaAlta.length,
     esperandoNormal: colaNormal.length,
+    esperandoBaja: colaBaja.length,
+    enCursoBaja,
+    maximoBaja: CONCURRENCIA_BAJA,
   };
 }
 

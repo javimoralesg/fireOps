@@ -4,6 +4,7 @@ import { z } from "zod";
 import { obtenerEstado } from "@/lib/motor/estado";
 import { arrancarOrquestador, declararFoco } from "@/lib/motor/orquestador";
 import { cuerpoValidado, error, json, mensajeDeError } from "@/lib/motor/respuestas";
+import { describirFueraEspana, enEspana } from "@/lib/dominio/espana";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export async function GET(): Promise<Response> {
 export async function POST(peticion: Request): Promise<Response> {
   const { datos, respuesta } = await cuerpoValidado(peticion, Esquema);
   if (respuesta) return respuesta;
+  const punto = { lat: datos.lat, lon: datos.lon };
+  if (!enEspana(punto)) return error(describirFueraEspana(punto), 400);
   arrancarOrquestador();
   try {
     const incendio = await declararFoco({

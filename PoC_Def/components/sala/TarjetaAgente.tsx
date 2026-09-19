@@ -84,6 +84,10 @@ export function ControlesAgente({
         variante="secundario"
         icono={agente.pausado ? <Play /> : <Pause />}
         cargando={ocupado === `${agente.id}:${agente.pausado ? "reanudar" : "pausar"}`}
+        // Con su fuente apagada por el escenario no corre de todos modos: pausarlo
+        // solo confundiría (y reanudarlo no lo arrancaría).
+        disabled={Boolean(agente.desactivadoPorEscenario) && !agente.pausado}
+        title={agente.desactivadoPorEscenario && !agente.pausado ? `Sin ciclos: la fuente «${agente.desactivadoPorEscenario}» está apagada por el escenario` : undefined}
         onClick={() => ejecutar(agente, agente.pausado ? "reanudar" : "pausar")}
       >
         {agente.pausado ? "Reanudar" : "Pausar"}

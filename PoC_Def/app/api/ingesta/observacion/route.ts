@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { procesarEntrada } from "@/lib/agentes/percepcion/centralita";
 import { cuerpoValidado, error, json, mensajeDeError } from "@/lib/motor/respuestas";
+import { describirFueraEspana, enEspana } from "@/lib/dominio/espana";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function POST(peticion: Request): Promise<Response> {
   if (respuesta) return respuesta;
 
   const punto = datos.lat !== undefined && datos.lon !== undefined ? { lat: datos.lat, lon: datos.lon } : undefined;
+  if (punto && !enEspana(punto)) return error(describirFueraEspana(punto), 400);
   const texto = datos.imagenBase64 ? `${datos.texto}\n\n[El aviso incluye una foto tomada con el móvil.]` : datos.texto;
 
   try {

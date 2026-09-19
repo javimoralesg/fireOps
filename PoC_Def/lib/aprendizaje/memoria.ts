@@ -31,8 +31,30 @@ const RUTA_EJECUCIONES = path.join(DIRECTORIO, "ejecuciones.json");
 /** Similitud por encima de la cual dos lecciones se consideran la misma. */
 export const UMBRAL_DUPLICADO = Number(process.env.APRENDIZAJE_UMBRAL_DUPLICADO ?? 0.92);
 
+/**
+ * RENDIMIENTO (constructor S, 2026-09-19). Medido: `leccionesPara` se llamaba en
+ * CADA ciclo de CADA agente (incluidos los deterministas, que van cada 5-30 s) y
+ * cada llamada costaba un embedding (160-510 ms) + una RPC a Supabase + una
+ * reescritura de `lecciones.json` (1,3 MB con los vectores). Tres topes nuevos:
+ *  1. el orquestador ya no pide lecciones para los agentes deterministas;
+ *  2. caché de la respuesta por (agenteId, k) durante TTL_CONSULTA_MS;
+ *  3. caché LRU del embedding de la consulta (los contextos se repiten mucho).
+ * Y `marcarAplicadas` agrupa los incrementos y escribe como mucho una vez por
+ * minuto, siempre fuera del camino caliente.
+ */
+const TTL_CONSULTA_MS = Number(process.env.APRENDIZAJE_TTL_CONSULTA_MS ?? 60_000);
+/** Entradas máximas de la caché LRU de embeddings de consulta. */
+const MAX_EMBEDDINGS_CACHE = Number(process.env.APRENDIZAJE_CACHE_EMBEDDINGS ?? 64);
+/** Intervalo mínimo entre dos escrituras de `lecciones.json` por uso de lecciones. */
+const GUARDADO_MIN_MS = Number(process.env.APRENDIZAJE_GUARDADO_MIN_MS ?? 60_000);
+
 interface LeccionIndexada extends Leccion {
   embedding: number[];
+}
+
+interface EntradaConsulta {
+  en: number;
+  lecciones: Leccion[];
 }
 
 interface CacheMemoria {
@@ -40,8 +62,16 @@ interface CacheMemoria {
   cargando?: Promise<LeccionIndexada[]>;
   ejecuciones?: Ejecucion[];
   guardadoPendiente?: NodeJS.Timeout;
+  /** Marca de tiempo del último volcado real de `lecciones.json`. */
+  ultimoGuardado?: number;
   /** Incrementos de `vecesAplicada` aún sin volcar (se agrupan). */
   aplicacionesPendientes?: Map<string, number>;
+  /** Temporizador del volcado agrupado de aplicaciones (uno cada GUARDADO_MIN_MS). */
+  aplicacionesTemporizador?: NodeJS.Timeout;
+  /** Respuestas recientes de `leccionesPara`, por (agenteId, k, contexto). */
+  consultas?: Map<string, EntradaConsulta>;
+  /** LRU de embeddings de consulta (el Map conserva el orden de inserción). */
+  embeddingsConsulta?: Map<string, number[]>;
 }
 
 type ConCache = typeof globalThis & { __atalayaMemoria?: CacheMemoria };
@@ -117,11 +147,26 @@ function comoVector(v: number[] | string | null | undefined): number[] {
   return [];
 }
 
-function programarGuardado(): void {
-  if (cache.guardadoPendiente) clearTimeout(cache.guardadoPendiente);
+/**
+ * Programa el volcado de `lecciones.json`. `urgente` (una lección NUEVA) escribe
+ * a los 800 ms; el resto (subidas de `vecesAplicada`/`peso`) espera a que hayan
+ * pasado al menos GUARDADO_MIN_MS desde la última escritura: el fichero pesa
+ * 1,3 MB y no merece un JSON.stringify por ciclo de agente.
+ */
+function programarGuardado(urgente = false): void {
+  const ahora = Date.now();
+  const desdeUltimo = ahora - (cache.ultimoGuardado ?? 0);
+  const retraso = urgente ? 800 : Math.max(800, GUARDADO_MIN_MS - desdeUltimo);
+  if (cache.guardadoPendiente) {
+    // Ya hay uno en marcha: solo se adelanta si el nuevo es urgente.
+    if (!urgente) return;
+    clearTimeout(cache.guardadoPendiente);
+  }
   cache.guardadoPendiente = setTimeout(() => {
+    cache.guardadoPendiente = undefined;
+    cache.ultimoGuardado = Date.now();
     void escribirJson(RUTA_LECCIONES, cache.lecciones ?? []);
-  }, 800);
+  }, retraso);
   cache.guardadoPendiente.unref?.();
 }
 
@@ -132,16 +177,37 @@ function programarGuardado(): void {
 /**
  * Lecciones que este agente debería tener en cuenta para el contexto dado.
  * Orden: similitud × peso. Marca las devueltas como aplicadas (de forma
- * diferida, para no escribir en medio de un ciclo).
+ * diferida y agrupada, para no escribir en medio de un ciclo).
+ * La respuesta se memoriza TTL_CONSULTA_MS por (agenteId, k, contexto): el
+ * contexto de un agente apenas cambia entre ciclos seguidos y cada recálculo
+ * costaba un embedding y una RPC.
  */
 export async function leccionesPara(agenteId: string, contexto: string, k = 5): Promise<Leccion[]> {
+  const recortado = contexto.slice(0, 2000);
+  // La clave es (agenteId, k), NO el contexto: `contextoBreve` lleva el número
+  // de incendios activos y el estado de los tres primeros, así que cambia casi
+  // en cada ciclo y una caché por texto exacto no acertaba nunca (medido
+  // 2026-09-19: seguían saliendo ~35 embeddings/min). Las lecciones cambian en
+  // minutos, no en segundos: un recálculo por agente y ventana es de sobra.
+  const clave = `${agenteId}|${k}`;
+  cache.consultas ??= new Map();
+  const previa = cache.consultas.get(clave);
+  if (previa && Date.now() - previa.en < TTL_CONSULTA_MS) {
+    // Ya se marcaron como aplicadas al calcularlas: no se vuelve a contar.
+    // Copia: el array viaja a `ctx.lecciones` y no debe poder mutar la caché.
+    return [...previa.lecciones];
+  }
+
   const todas = await cargarLecciones();
   const candidatas = todas.filter((l) => l.agenteId === agenteId || l.agenteId === "*");
-  if (!candidatas.length) return [];
+  if (!candidatas.length) {
+    cache.consultas.set(clave, { en: Date.now(), lecciones: [] });
+    return [];
+  }
 
   let vector: number[] | undefined;
   try {
-    vector = await incrustarConsulta(contexto.slice(0, 2000));
+    vector = await embeddingDeConsulta(recortado);
   } catch (e) {
     console.warn(`[aprendizaje] sin embeddings para recuperar lecciones: ${e instanceof Error ? e.message : e}`);
   }
@@ -159,7 +225,47 @@ export async function leccionesPara(agenteId: string, contexto: string, k = 5): 
         .map((x) => x.leccion);
 
   marcarAplicadas(elegidas.map((l) => l.id));
+  cache.consultas.set(clave, { en: Date.now(), lecciones: elegidas });
+  podarConsultas();
   return elegidas;
+}
+
+/** Embedding de la consulta con caché LRU: los contextos de los agentes se repiten casi siempre. */
+async function embeddingDeConsulta(texto: string): Promise<number[]> {
+  cache.embeddingsConsulta ??= new Map();
+  const guardado = cache.embeddingsConsulta.get(texto);
+  if (guardado) {
+    // Refresca la posición en el LRU.
+    cache.embeddingsConsulta.delete(texto);
+    cache.embeddingsConsulta.set(texto, guardado);
+    return guardado;
+  }
+  const vector = await incrustarConsulta(texto);
+  cache.embeddingsConsulta.set(texto, vector);
+  while (cache.embeddingsConsulta.size > MAX_EMBEDDINGS_CACHE) {
+    const masViejo = cache.embeddingsConsulta.keys().next().value;
+    if (masViejo === undefined) break;
+    cache.embeddingsConsulta.delete(masViejo);
+  }
+  return vector;
+}
+
+/** Quita de la caché de consultas lo que ya ha caducado (y pone un tope duro). */
+function podarConsultas(): void {
+  const consultas = cache.consultas;
+  if (!consultas) return;
+  const ahora = Date.now();
+  for (const [k, v] of consultas) if (ahora - v.en >= TTL_CONSULTA_MS) consultas.delete(k);
+  while (consultas.size > 200) {
+    const masViejo = consultas.keys().next().value;
+    if (masViejo === undefined) break;
+    consultas.delete(masViejo);
+  }
+}
+
+/** Invalida las cachés de consulta (al registrar una lección nueva). */
+function invalidarConsultas(): void {
+  cache.consultas?.clear();
 }
 
 async function leccionesPorRpc(vector: number[], k: number, agenteId: string): Promise<Leccion[] | undefined> {
@@ -176,12 +282,22 @@ async function leccionesPorRpc(vector: number[], k: number, agenteId: string): P
   }
 }
 
-/** Suma +1 a `vecesAplicada` y sube ligeramente el peso, sin bloquear el ciclo. */
+/**
+ * Suma +1 a `vecesAplicada` y sube ligeramente el peso, sin bloquear el ciclo.
+ * Los incrementos se agrupan y se vuelcan como mucho una vez por minuto: antes
+ * cada ciclo de cada agente disparaba un volcado (y con él una reescritura de
+ * `lecciones.json`) en el mismo tick.
+ */
 function marcarAplicadas(ids: string[]): void {
   if (!ids.length) return;
   cache.aplicacionesPendientes ??= new Map();
   for (const id of ids) cache.aplicacionesPendientes.set(id, (cache.aplicacionesPendientes.get(id) ?? 0) + 1);
-  setTimeout(() => void volcarAplicaciones(), 0).unref?.();
+  if (cache.aplicacionesTemporizador) return;
+  cache.aplicacionesTemporizador = setTimeout(() => {
+    cache.aplicacionesTemporizador = undefined;
+    void volcarAplicaciones();
+  }, GUARDADO_MIN_MS);
+  cache.aplicacionesTemporizador.unref?.();
 }
 
 async function volcarAplicaciones(): Promise<void> {
@@ -229,7 +345,9 @@ export async function registrarLeccion(leccion: Leccion): Promise<void> {
   const indexada: LeccionIndexada = { ...leccion, embedding };
   if (i >= 0) lecciones[i] = indexada;
   else lecciones.push(indexada);
-  programarGuardado();
+  // Una lección nueva sí merece escribirse ya, y deja obsoleta la caché de consultas.
+  invalidarConsultas();
+  programarGuardado(true);
 
   const bd = obtenerClienteSupabase();
   if (bd) {

@@ -158,7 +158,10 @@ export const tiemposMedidos = () => [...medidas];
 /** Crea una ejecución nueva y limpia (sin persistencia): punto de partida de cada suite. */
 export async function ejecucionNueva(nombre: string): Promise<{ id: string; ms: number }> {
   const t0 = Date.now();
-  const r = await enviar<{ ejecucion: { id: string } }>("/api/ejecucion", { accion: "nueva", nombre });
+  // `fuentesDesactivadas: []` a propósito: una ejecución nueva HEREDA las fuentes
+  // apagadas por el mando, y un simulacro que alguien dejó puesto en el servidor
+  // compartido apagaría el satélite y la prensa para toda la batería.
+  const r = await enviar<{ ejecucion: { id: string } }>("/api/ejecucion", { accion: "nueva", nombre, fuentesDesactivadas: [] });
   // Asegurar que el mundo corre (una suite anterior pudo dejarlo en pausa).
   await enviar("/api/reloj", { pausado: false });
   const ms = Date.now() - t0;

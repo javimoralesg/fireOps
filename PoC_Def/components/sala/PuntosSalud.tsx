@@ -2,12 +2,14 @@
 // Puntos de salud de los servicios externos: verde/rojo CON nombre, y el detalle
 // al pasar el ratón o con el tabulador. DUEÑO: constructor E.
 
+import { memo } from "react";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { haceCuanto } from "@/lib/cliente/formato";
 
 export type Servicios = Record<string, { ok: boolean; detalle?: string; en: string }>;
 
-export function PuntosSalud({ servicios }: { servicios?: Servicios }) {
+/** `memo` (constructor R): solo se repinta cuando cambia el objeto `servicios`. */
+function PuntosSaludBase({ servicios }: { servicios?: Servicios }) {
   const entradas = Object.entries(servicios ?? {});
   if (entradas.length === 0) {
     return <span className="text-[11px] text-subtle">Salud de servicios: sin datos todavía</span>;
@@ -59,3 +61,5 @@ export function PuntosSalud({ servicios }: { servicios?: Servicios }) {
     </div>
   );
 }
+
+export const PuntosSalud = memo(PuntosSaludBase);

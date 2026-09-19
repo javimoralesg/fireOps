@@ -23,6 +23,7 @@ import { geocodificar } from "../../fuentes/nominatim";
 import { haversine } from "../../fuentes/geo";
 import { obtenerEstado } from "../../motor/estado";
 import { nuevoId } from "../../motor/ids";
+import { describirFueraEspana, enEspana } from "../../dominio/espana";
 
 export type CanalEntrada = Extract<CanalObservacion, "llamada" | "sms" | "email" | "telegram" | "web">;
 
@@ -158,6 +159,8 @@ export async function procesarEntrada(entrada: EntradaCentralita): Promise<Obser
   const estado = obtenerEstado();
   const texto = (entrada.texto ?? "").trim();
   if (!texto) throw new Error("La entrada no trae texto: no se puede registrar una observación vacía");
+  // Ámbito: SOLO España. Una ubicación de fuera no se registra (ni con foto ni sin ella).
+  if (entrada.punto && !enEspana(entrada.punto)) throw new Error(describirFueraEspana(entrada.punto));
 
   const observacion: Observacion = {
     id: nuevoId("obs"),

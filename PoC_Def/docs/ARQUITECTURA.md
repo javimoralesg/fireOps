@@ -44,6 +44,20 @@ real fuera del sistema), supervisión (control humano, creatividad, aprendizaje)
 | Geo | Overpass (pueblos, bomberos, hospitales, combustible), OSRM (rutas), Nominatim (geocodificación), Open-Meteo (meteo + elevación) | Reales y sin clave |
 | Detección | NASA FIRMS (satélite), cámaras DGT (JPEG), Exa + Google News RSS (prensa), Bluesky (redes), AEMET/Meteoalarm (avisos) | Reales; claves gratuitas donde haga falta |
 
+**Ámbito territorial: solo España.** `lib/dominio/espana.ts` guarda el contorno
+administrativo (OSM, 17 anillos: península, Baleares, Canarias, Ceuta, Melilla,
+Llívia y plazas de soberanía) y la prueba `enEspana`. Se aplica en un único
+sitio por entrada: FIRMS descarta los píxeles de Portugal, Francia y Marruecos
+que trae su caja envolvente; Overpass y Nominatim descartan pueblos, medios y
+lugares del otro lado de la frontera; `declararFoco`, la centralita, las cámaras
+de móvil, las órdenes a unidades y el clic del mapa rechazan puntos de fuera
+con el mismo mensaje. El mapa no se desplaza más allá de `LIMITES_NAVEGACION` y pinta el
+resto del mundo en rojo como zona excluida (`components/mapa/CapaFueraEspana.tsx` y el
+portal público) usando los mismos anillos del contorno como agujeros de la máscara.
+Lo heredado con coordenadas de fuera (focos que FIRMS creó en Argelia o Portugal antes
+de la restricción, sus medios y pueblos, detecciones, avisos) lo descarta
+`lib/motor/saneamientoEspana.ts` al arrancar (tras hidratar de Supabase) y en cada tick.
+
 Los detalles verificados de cada API están en `docs/investigacion-apis-ia.md` y
 `docs/investigacion-fuentes-datos.md` (los copia la sesión orquestadora desde el
 scratchpad en cuanto los investigadores terminan; hasta entonces, modelos e URLs van por
@@ -80,7 +94,7 @@ Todos implementan `Agente` de `lib/motor/contratos.ts`. El orquestador
 |---|---|---|---|---|---|---|
 | `vigia_camaras` | Vigía de cámaras | percepción | visión | `CAMARAS_INTERVALO_SEG` | `incendio_nuevo` | Analiza en vivo las cámaras DGT/Madrid vigiladas (cerca de focos + muestreo de zonas forestales de alto peligro). Dos positivos seguidos → observación `camara` |
 | `satelite` | Satélite | percepción | determinista | 600 s | — | FIRMS VIIRS/MODIS sobre España, agrupa puntos, crea/confirma focos |
-| `prensa_redes` | Prensa y redes | percepción | rápido | 180 s | `incendio_nuevo` | Exa + Google News RSS + Bluesky; extrae eventos de incendio con municipio; observaciones `prensa`/`rrss` |
+| `prensa_redes` | Prensa y redes | percepción | rápido | 180 s | `incendio_nuevo` | Exa + Google News RSS + Bluesky, solo publicaciones de los últimos 15 días (`lib/fuentes/recencia.ts`); extrae eventos de incendio con municipio; observaciones `prensa`/`rrss` |
 | `centralita` | Centralita | percepción | rápido | evento | webhooks | Recibe llamadas (HappyRobot voz), SMS, email y formulario web; extrae lugar, gravedad, personas en riesgo; geocodifica; observación. Da contexto al agente de voz (`GET /api/happyrobot/contexto`) |
 | `meteorologo` | Meteorólogo | percepción | determinista + rápido | 60 s | `incendio_nuevo` | Open-Meteo por foco (actual + horaria acelerada), AEMET/Meteoalarm; índice de peligro; detecta giro > 30° o subida de rachas → evento `viento_gira` |
 | `verificador` | Verificador | análisis | rápido | evento | `observacion` | Deduplica, cruza fuentes (cámara/satélite/meteo/otras observaciones), asigna impacto (`ruido`…`nuevo_foco`), sube confianza, crea/actualiza incendios |
@@ -107,6 +121,16 @@ Todos implementan `Agente` de `lib/motor/contratos.ts`. El orquestador
    `radioOperativoKm` (pueblos, bomberos, hospitales, vulnerables, combustible), elevación,
    meteo; crea `Unidad` por cada parque/base real encontrado y `Poblacion` por cada pueblo.
 5. Cámaras a < 25 km pasan a `vigilada`.
+6. **Fuentes apagadas por el mando** (`Ejecucion.fuentesDesactivadas`, catálogo en
+   `lib/dominio/fuentes-deteccion.ts`, cambio en `lib/motor/escenario.ts`): satélite,
+   prensa y redes, cámaras fijas y avisos ciudadanos se pueden apagar por separado o todas
+   a la vez («Simulacro»). Una fuente apagada no se recoge (su agente no ejecuta ciclos y
+   lo dice en su ficha) y sus avisos quedan `registrada` sin crear, confirmar ni corroborar
+   focos. Al apagarla, los focos **sin confirmar** que solo sostenía esa fuente se descartan y
+   sus pueblos se sueltan (`descartarFocosDeFuentesApagadas`); se quedan los confirmados (por
+   otra fuente o por el mando) y los que tienen alguna observación de una fuente activa. La
+   declaración a mano y las cámaras de móvil no se apagan nunca: con las cuatro fuentes
+   apagadas («Simulacro») en el mapa solo quedan los focos a mano, de móvil y los confirmados.
 
 ### 6.2 Decisión → ejecución
 1. Un agente de planificación devuelve `Decision` (estado `propuesta`).
@@ -152,16 +176,32 @@ a veces con ratón y a veces con dedo. Principios:
 
 - **Un mapa manda.** Ocupa toda la pantalla; España completa al inicio, encuadre automático
   a los focos activos. Capas conmutables con un solo clic (focos y perímetros, predicción,
-  unidades, pueblos por riesgo, hospitales, cámaras, viento, satélite). Flechas de viento
+  unidades, pueblos por riesgo, hospitales, cámaras, viento, satélite). Unidades, bases y
+  hospitales llevan además una casilla «solo en incendios» (activa por defecto, persistida)
+  que esconde los cientos de parques y unidades en base que no intervienen. Flechas de viento
   alrededor de cada foco con dirección e intensidad; cono de propagación.
 - **Jerarquía clara.** Lo urgente arriba a la derecha: "Requiere tu decisión (3)". Después
   agentes (qué hace cada uno, por categoría), después registro vivo. Nunca más de tres
-  niveles de profundidad.
+  niveles de profundidad. El borde entre mapa y panel se arrastra para repartir el ancho
+  (queda guardado en el navegador; doble clic lo restablece) y el contenido se adapta: a
+  partir de ~40 rem las tarjetas pasan a las rejillas por columnas del modo ampliado, con el
+  número de columnas según el ancho real del panel (`@container`). El panel se pliega a un carril
+  con el contador de cada sección (el mapa gana el espacio) y se amplía a pantalla completa
+  (tecla `P`) para gestionar decisiones, agentes y focos sin el mapa delante; "Ver en el
+  mapa" devuelve al mapa.
+  Plegado no significa ciego: lo que requiere decisión sale como ventanas flotantes
+  sobre el mapa, con Aprobar/Denegar, para no perder operatividad.
 - **Cada cosa en una frase.** Decisiones con título, por qué, qué se va a hacer, riesgo y
   competencia; botones grandes Aprobar / Denegar (con motivo). Evidencias y fundamentos en
   un desplegable, no delante.
-- **Estado siempre visible.** Barra superior: hora de mundo y factor, ejecución, servicios
-  (verde/rojo con detalle al pasar el ratón), pausa global.
+- **Estado siempre visible.** Barra superior: hora de mundo y factor (solo lectura, con
+  «EN PAUSA» si procede), insignia de fuentes apagadas («SIMULACRO · solo focos a mano y
+  móvil» / «Sin satélite»), servicios (verde/rojo con detalle al pasar el ratón).
+- **Modo desarrollo.** Los controles de ejercicio (Pausar, ×N y +1 h del reloj; desplegable
+  de ejecución con «Nueva ejecución», cierre y fuentes de detección; PARAR TODO; Declarar
+  foco; Viento global) solo se ven con el conmutador «</>» de la segunda fila (preferencia
+  del navegador, `lib/cliente/useModoDesarrollo.ts`). Sin él, un foco se declara con `F` +
+  clic en el mapa y la pausa global con la barra espaciadora.
 - **Feedback inmediato.** Toda acción devuelve confirmación (toast) y aparece en el
   registro. Optimista en UI, corregido por SSE.
 - **Tema claro por defecto, oscuro disponible.** Contraste AA, foco visible, atajos de
@@ -184,7 +224,7 @@ portal ciudadano con comunicados · `/parte` formulario ciudadano de aviso.
 | `/api/estado/stream` | GET | SSE (`event: estado`, `data: Snapshot`) |
 | `/api/eventos` | GET | Histórico paginado |
 | `/api/reloj` | POST | `{factor?, pausado?, avanzarMin?}` |
-| `/api/ejecucion` | POST | `{accion: "nueva"|"cerrar"}` |
+| `/api/ejecucion` | POST | `{accion: "nueva"|"cerrar"|"fuentes", nombre?, fuentesDesactivadas?, quien?}` · `nueva` hereda las fuentes apagadas salvo que se manden · `fuentes` apaga/enciende fuentes de detección (lista completa; `[]` = operación real) |
 | `/api/focos` | POST | Declarar foco manual `{lat, lon, nombre?, notas?}` |
 | `/api/focos/[id]` | PATCH | Cambiar estado/notas |
 | `/api/decisiones/[id]/aprobar` · `/denegar` | POST | `{quien, comentario}` |

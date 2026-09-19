@@ -2,7 +2,7 @@
 // Pestañas accesibles (role=tablist con flechas del teclado). DUEÑO: constructor E.
 // Controlado desde fuera: el padre decide la pestaña activa.
 
-import { useRef, type ReactNode } from "react";
+import { memo, useRef, type ReactNode } from "react";
 
 export interface Pestana {
   id: string;
@@ -23,7 +23,9 @@ export interface PestanasProps {
   className?: string;
 }
 
-export function Pestanas({ pestanas, activa, onCambiar, idBase = "pestanas", className = "" }: PestanasProps) {
+/** `memo` (constructor R): con `pestanas` y `onCambiar` estables, cambiar de
+ *  pestaña ya no vuelve a construir la barra entera. */
+function PestanasBase({ pestanas, activa, onCambiar, idBase = "pestanas", className = "" }: PestanasProps) {
   const contenedor = useRef<HTMLDivElement>(null);
 
   function alTeclado(e: React.KeyboardEvent) {
@@ -86,8 +88,10 @@ export function Pestanas({ pestanas, activa, onCambiar, idBase = "pestanas", cla
   );
 }
 
+export const Pestanas = memo(PestanasBase);
+
 /** Contenedor del contenido de una pestaña (enlaza aria con `Pestanas`). */
-export function PanelPestana({ id, activa, idBase = "pestanas", className = "", children }: { id: string; activa: string; idBase?: string; className?: string; children: ReactNode }) {
+function PanelPestanaBase({ id, activa, idBase = "pestanas", className = "", children }: { id: string; activa: string; idBase?: string; className?: string; children: ReactNode }) {
   if (id !== activa) return null;
   return (
     <div id={`${idBase}-panel-${id}`} role="tabpanel" aria-labelledby={`${idBase}-tab-${id}`} tabIndex={0} className={className}>
@@ -95,3 +99,5 @@ export function PanelPestana({ id, activa, idBase = "pestanas", className = "", 
     </div>
   );
 }
+
+export const PanelPestana = memo(PanelPestanaBase);

@@ -13,8 +13,9 @@ trap 'kill 0' EXIT INT TERM
 
 npx next dev --port "$PUERTO" &
 
-# tunel.sh vacía data/url-publica.txt y la rellena en cuanto el túnel tiene URL.
-scripts/tunel.sh "$PUERTO" &
+# tunel.sh vacía data/url-publica.txt y la rellena en cuanto el túnel tiene URL. Va dentro de
+# tunel-vigilado.sh, que lo regenera solo si se cae y recupera las llamadas al 112 perdidas.
+scripts/tunel-vigilado.sh "$PUERTO" &
 
 echo "Esperando la URL del túnel…"
 URL=""
@@ -36,6 +37,8 @@ curl -s -X POST "http://localhost:$PUERTO/api/telegram/configurar" \
   -H "content-type: application/json" -d "{\"url\":\"$URL\"}" \
   | head -c 300 || true
 echo
+
+# El 112 por teléfono (HappyRobot) lo resincroniza scripts/tunel.sh en cuanto tiene la URL.
 
 echo
 echo "==> Móvil: $URL/movil"

@@ -9,7 +9,21 @@ cd "$DIR"
 
 command -v cloudflared >/dev/null || { echo "Falta cloudflared: brew install cloudflared"; exit 1; }
 
-trap 'kill 0' EXIT INT TERM
+# Al salir se cierran SOLO los procesos que este script ha lanzado (y sus hijos). Antes era
+# `kill 0`, que mata al grupo de procesos entero: desde un terminal interactivo el grupo es
+# solo este script, pero lanzado sin control de trabajos (una tarea del IDE, la herramienta
+# Bash de una sesión de Claude) el grupo es el del propio IDE y se cerraba la ventana entera
+# con "killed, code 15" (19-09).
+matar_arbol() {
+  local hijo
+  for hijo in $(pgrep -P "$1" 2>/dev/null); do matar_arbol "$hijo"; done
+  kill "$1" 2>/dev/null || true
+}
+cerrar_todo() {
+  local trabajo
+  for trabajo in $(jobs -p); do matar_arbol "$trabajo"; done
+}
+trap cerrar_todo EXIT INT TERM
 
 npx next dev --port "$PUERTO" &
 

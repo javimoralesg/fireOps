@@ -1,9 +1,7 @@
 // Pruebas de scripts/happyrobot-entrante.mjs · la definición del workflow «Atalaya · 112
 // entrante» que se manda a la API de HappyRobot, y su coherencia con la app
-// (lib/happyrobot/entrante.ts) y con la guía (docs/HAPPYROBOT.md). Sin red.
+// (lib/happyrobot/entrante.ts) y con los prompts (scripts/prompts-happyrobot.mjs). Sin red.
 // DUEÑO: sesión fireops-82 (2026-09-19).
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   clasificarNodos,
@@ -187,15 +185,10 @@ describe("clasificarNodos · lo que devuelve GET /versions/{id}/nodes (las herra
   });
 });
 
-describe("docs/HAPPYROBOT.md · el prompt que lee el script nombra las dos herramientas", () => {
-  it("el bloque tras «Nodo 2 · Inbound Voice Agent» existe y cita consultar_zona, registrar_aviso y mensajeParaLocutor", () => {
-    const raiz = fileURLToPath(new URL("../..", import.meta.url));
-    const doc = readFileSync(`${raiz}docs/HAPPYROBOT.md`, "utf8");
-    const i = doc.indexOf("**Nodo 2 · Inbound Voice Agent**");
-    expect(i).toBeGreaterThan(0);
-    const ini = doc.indexOf("```", i);
-    const finLinea = doc.indexOf("\n", ini);
-    const prompt = doc.slice(finLinea + 1, doc.indexOf("```", finLinea)).trim();
+describe("prompts-happyrobot · el prompt que carga el script nombra las dos herramientas", () => {
+  it("PROMPT_ENTRANTE existe y cita consultar_zona, registrar_aviso y mensajeParaLocutor", async () => {
+    const { PROMPT_ENTRANTE } = await import("@/scripts/prompts-happyrobot.mjs");
+    const prompt = (PROMPT_ENTRANTE as string).trim();
     expect(prompt.length).toBeGreaterThan(800);
     expect(prompt).toContain("situar_lugar");
     expect(prompt).toContain("consultar_zona");
@@ -233,13 +226,9 @@ describe("camposAExponer · lo que el agente ve de la respuesta de cada herramie
 });
 
 describe("prompt revisado con las llamadas de 19:13-19:51", () => {
-  it("no pregunta «¿humo o llamas?», no inventa datos, afirma direcciones y cuelga si todo falla", () => {
-    const raiz = fileURLToPath(new URL("../..", import.meta.url));
-    const doc = readFileSync(`${raiz}docs/HAPPYROBOT.md`, "utf8");
-    const i = doc.indexOf("**Nodo 2 · Inbound Voice Agent**");
-    const ini = doc.indexOf("```", i);
-    const finLinea = doc.indexOf("\n", ini);
-    const prompt = doc.slice(finLinea + 1, doc.indexOf("```", finLinea));
+  it("no pregunta «¿humo o llamas?», no inventa datos, afirma direcciones y cuelga si todo falla", async () => {
+    const { PROMPT_ENTRANTE } = await import("@/scripts/prompts-happyrobot.mjs");
+    const prompt = PROMPT_ENTRANTE as string;
     expect(prompt).toMatch(/no vuelvas a\s+preguntar "¿humo o llamas\?"/);
     expect(prompt).toMatch(/nunca completes datos que no se han dicho/);
     expect(prompt).toMatch(/Si es una afirmación[\s\S]*NO esperes respuesta/);

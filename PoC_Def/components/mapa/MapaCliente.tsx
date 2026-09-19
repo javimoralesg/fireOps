@@ -994,13 +994,23 @@ export function MapaCliente({
     });
   }, []);
 
+  // Con la capa "Satélite" apagada tampoco se pintan los focos que solo ha visto
+  // NASA FIRMS y nadie ha confirmado: si no, apagarla dejaría decenas de puntos
+  // térmicos sin verificar (industria, quemas agrícolas…) como si fueran incendios.
+  const visibles = useMemo(
+    () =>
+      (snapshot?.incendios ?? []).filter(
+        (i) => capas.satelite || !(i.origen === "satelite" && (i.estado === "detectado" || i.estado === "fusionado")),
+      ),
+    [snapshot?.incendios, capas.satelite],
+  );
   // Los descartados no se pintan; los fusionados dejan solo un punto gris con
   // "unido a <nombre>" para que se entienda a dónde ha ido ese foco.
   const incendios = useMemo(
-    () => (snapshot?.incendios ?? []).filter((i) => i.estado !== "descartado" && i.estado !== "fusionado"),
-    [snapshot?.incendios],
+    () => visibles.filter((i) => i.estado !== "descartado" && i.estado !== "fusionado"),
+    [visibles],
   );
-  const fusionados = useMemo(() => (snapshot?.incendios ?? []).filter((i) => i.estado === "fusionado"), [snapshot?.incendios]);
+  const fusionados = useMemo(() => visibles.filter((i) => i.estado === "fusionado"), [visibles]);
   const activos = useMemo(
     () => incendios.filter((i) => !["extinguido", "controlado"].includes(i.estado)),
     [incendios],
@@ -1116,7 +1126,7 @@ export function MapaCliente({
           : "Todas las cámaras públicas (DGT + Madrid)",
     },
     { id: "viento", etiqueta: "Viento", cuenta: incendios.filter((i) => i.meteo).length + zonas.length, color: colores.riesgoMedio, ayuda: "Rejilla calculada con la meteo de cada foco" },
-    { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS" },
+    { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS. Apagada, oculta también los focos que solo ha visto el satélite y nadie ha confirmado" },
     { id: "avisos", etiqueta: "Avisos meteo", cuenta: avisos.length, color: colores.warning, ayuda: "AEMET / Meteoalarm" },
   ];
 

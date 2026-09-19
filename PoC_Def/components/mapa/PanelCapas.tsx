@@ -16,7 +16,6 @@ export type ClaveCapa =
   | "camarasEspana"
   | "viento"
   | "satelite"
-  | "avisos"
   | "fueraEspana";
 
 export interface FilaCapa {
@@ -59,8 +58,7 @@ export function PanelCapas({
 
   return (
     <div className="pointer-events-none absolute left-2 top-2 z-[900] flex max-h-[calc(100%-5rem)] w-[15.5rem] max-w-[calc(100vw-1rem)] flex-col items-start gap-1.5">
-      {/* `w-max`: la fila puede ser más ancha que la columna del desplegable, así
-          no se parte en varias líneas y no se monta sobre los avisos meteo. */}
+        {/* `w-max`: la fila puede ser más ancha que la columna del desplegable sin partirse en varias líneas. */}
       <div className="pointer-events-auto flex w-max max-w-[calc(100vw-1rem)] flex-wrap items-center gap-1.5">
         <button
           type="button"

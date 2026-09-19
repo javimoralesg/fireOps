@@ -6,7 +6,7 @@
 // Capas: focos (perímetro + predicción), unidades (con ruta y movimiento suave),
 // bases de las que salen, pueblos por riesgo, hospitales, cámaras vigiladas,
 // TODAS las cámaras de España, viento (rejilla calculada aquí a partir de la
-// meteo del foco), satélite y avisos meteo.
+// meteo del foco) y satélite.
 //
 // AMPLIADO (constructor H, 2026-09-19): capa "Cámaras de España", iconos de
 // unidad por cuerpo con ruta recorrida y flecha de sentido, capa "Bases",
@@ -158,7 +158,6 @@ const CAPAS_POR_DEFECTO: Record<ClaveCapa, boolean> = {
   camarasEspana: true,
   viento: true,
   satelite: false,
-  avisos: true,
   fueraEspana: true,
 };
 
@@ -1610,7 +1609,6 @@ function MapaClienteBase({
   const hospitales = useMemo(() => snapshot?.hospitales ?? [], [snapshot?.hospitales]);
   const camaras = useMemo(() => snapshot?.camaras ?? [], [snapshot?.camaras]);
   const satelite = useMemo(() => snapshot?.focosSatelite ?? [], [snapshot?.focosSatelite]);
-  const avisos = useMemo(() => snapshot?.avisosMeteo ?? [], [snapshot?.avisosMeteo]);
   // Depende de la LISTA cruda, no del snapshot entero: así no se recalculan las
   // zonas (ni se repinta la capa de viento) cada vez que se mueve una unidad.
   const crudoZonas = listaZonasCruda(snapshot);
@@ -1795,10 +1793,9 @@ function MapaClienteBase({
       },
       { id: "viento", etiqueta: "Viento", cuenta: incendios.filter((i) => i.meteo).length + zonas.length, color: colores.riesgoMedio, ayuda: "Rejilla calculada con la meteo de cada foco" },
       { id: "satelite", etiqueta: "Satélite (FRP)", cuenta: satelite.length, color: colores.fuego, ayuda: "Detecciones VIIRS/MODIS de NASA FIRMS. Apagada, oculta también los focos que solo ha visto el satélite y nadie ha confirmado (salvo el que tengas seleccionado)" },
-      { id: "avisos", etiqueta: "Avisos meteo", cuenta: avisos.length, color: colores.warning, ayuda: "AEMET / Meteoalarm" },
       { id: "fueraEspana", etiqueta: "Fuera de España", cuenta: 0, color: colores.danger, ayuda: "El resto del mundo en rojo: el sistema solo trabaja el territorio español" },
     ],
-    [alternarSoloIncendios, avisos.length, bases.length, basesVisibles.length, camaras.length, catalogo.camaras.length, catalogo.cargando, catalogo.error, colores, hospitales.length, hospitalesVisibles.length, incendios, poblacionesVisibles.length, satelite.length, soloIncendios, unidades.length, unidadesVisibles.length, zonas.length],
+    [alternarSoloIncendios, bases.length, basesVisibles.length, camaras.length, catalogo.camaras.length, catalogo.cargando, catalogo.error, colores, hospitales.length, hospitalesVisibles.length, incendios, poblacionesVisibles.length, satelite.length, soloIncendios, unidades.length, unidadesVisibles.length, zonas.length],
   );
 
   const leyenda = useMemo(
@@ -1945,23 +1942,6 @@ function MapaClienteBase({
           </span>
         ) : null}
       </div>
-
-      {/* Avisos meteo: no tienen geometría, se listan como pastillas arriba a la izquierda. */}
-      {capas.avisos && avisos.length > 0 ? (
-        <div className={`pointer-events-none absolute left-2 ${zona ? "top-24" : "top-12"} z-[880] flex max-w-[15.5rem] flex-col gap-1`}>
-          {avisos.slice(0, 3).map((a) => (
-            <span
-              key={a.id}
-              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-warning/45 bg-panel px-2 py-1 text-[11px] font-medium text-warning shadow-sm"
-            >
-              <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">
-                Aviso {a.nivel} · {a.fenomeno} · {a.zona}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
 
       {/* Estado vacío: sin focos EN CURSO (los terminados ocultos no cuentan como "ninguno"), el mapa explica qué hacer. */}
       {snapshot && enCurso.length === 0 && !zona ? (

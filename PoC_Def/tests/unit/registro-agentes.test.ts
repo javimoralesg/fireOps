@@ -1,22 +1,11 @@
 // =====================================================================
-// Inventario de agentes · CARACTERIZACIÓN (clase 1).
-//
-// Esta prueba no busca fallos: congela QUÉ agentes existen y con qué
-// contrato, para que la migración de 16 a 5 agentes no mueva nada sin que
-// se vea. Cada fase la modifica A PROPÓSITO, y el diff de este fichero es
-// la lista revisable de lo que esa fase cambia:
-//
-//   F0 (aquí)  16 agentes      F3  12 → 9
-//   F2  16 → 12                F4   9 → 7
-//                              F5   7 → 5
-//
-// Si este fichero cambia sin que una fase lo pida, alguien ha movido el
-// contrato de un agente sin querer.
-// DUEÑO: constructor L (escrito en la fase F0 de la migración).
+// Inventario tras el corte: cinco fichas canónicas y 16 capacidades.
 // =====================================================================
 import { describe, expect, it } from "vitest";
-import { todosLosAgentes } from "@/lib/agentes/registro";
+import { registrarAgentes, seleccionarRegistroAgentes, todasLasCapacidades, todosLosAgentes } from "@/lib/agentes/registro";
 import type { CategoriaAgente, TipoEvento } from "@/lib/dominio/tipos";
+import { IDS_AGENTES_CANONICOS } from "@/lib/agentes/identidad";
+import { Estado } from "@/lib/motor/estado";
 
 interface FichaEsperada {
   categoria: CategoriaAgente;
@@ -61,16 +50,37 @@ const ESPERADO: Record<string, FichaEsperada> = {
 /** Agentes cuya cadencia depende del entorno: se comprueban por rango, no por valor. */
 const CADENCIA_POR_ENTORNO = new Set(["vigia_camaras"]);
 
-const agentes = todosLosAgentes();
-const porId = new Map(agentes.map((a) => [a.id, a]));
+const fichas = todosLosAgentes();
+const agentes = todasLasCapacidades();
+const porId = new Map<string, (typeof agentes)[number]>(agentes.map((a) => [a.id, a]));
 
 describe("inventario de agentes · cuántos y cuáles", () => {
-  it("hay exactamente 16 agentes registrados", () => {
-    expect(agentes).toHaveLength(16);
+  it("hay exactamente cinco fichas canónicas", () => {
+    expect(fichas).toHaveLength(5);
+    expect(fichas.map((ficha) => ficha.id)).toEqual(IDS_AGENTES_CANONICOS);
+    expect(fichas.every((ficha) => !("ciclo" in ficha))).toBe(true);
   });
 
-  it("los ids son exactamente los esperados, sin sobras ni faltas", () => {
+  it("las 16 capacidades siguen accesibles, sin sobras ni faltas", () => {
+    expect(agentes).toHaveLength(16);
     expect([...porId.keys()].sort()).toEqual(Object.keys(ESPERADO).sort());
+  });
+
+  it("selecciona fichas y tareas sin cambiar silenciosamente el modo por defecto", () => {
+    expect(seleccionarRegistroAgentes("legacy")).toMatchObject({ autoridad: "legacy", ejecutarSombra: false });
+    expect(seleccionarRegistroAgentes("legacy").fichas).toHaveLength(16);
+    expect(seleccionarRegistroAgentes("shadow").fichas).toHaveLength(16);
+    expect(seleccionarRegistroAgentes("shadow").ejecutarSombra).toBe(true);
+    expect(seleccionarRegistroAgentes("five").fichas).toHaveLength(5);
+    expect(seleccionarRegistroAgentes("five").tareas).toHaveLength(16);
+  });
+
+  it("al cambiar a five elimina las fichas legacy del estado", () => {
+    const estado = new Estado();
+    registrarAgentes(estado, "legacy");
+    expect(estado.agentes.size).toBe(16);
+    registrarAgentes(estado, "five");
+    expect([...estado.agentes.keys()]).toEqual(IDS_AGENTES_CANONICOS);
   });
 
   it("no hay ids repetidos", () => {
@@ -84,7 +94,7 @@ describe("inventario de agentes · cuántos y cuáles", () => {
   });
 });
 
-describe("inventario de agentes · contrato de cada uno", () => {
+describe("inventario de capacidades · contrato de cada una", () => {
   for (const [id, esperado] of Object.entries(ESPERADO)) {
     describe(id, () => {
       it("está registrado y cumple la interfaz Agente", () => {

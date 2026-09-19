@@ -13,7 +13,7 @@
 // =====================================================================
 import { describe, expect, it } from "vitest";
 import { AYUDA_CLASE, claseDeAgente, esServicioDeterminista, TEXTO_CLASE } from "@/lib/dominio/clase-agente";
-import { todosLosAgentes } from "@/lib/agentes/registro";
+import { todasLasCapacidades, todosLosAgentes } from "@/lib/agentes/registro";
 
 describe("claseDeAgente · la regla", () => {
   it("«determinista» es una entrada, no un agente", () => {
@@ -46,7 +46,7 @@ describe("claseDeAgente · la regla", () => {
 });
 
 describe("F2 · cómo queda el inventario real al aplicar la regla", () => {
-  const agentes = todosLosAgentes();
+  const agentes = todasLasCapacidades();
   const servicios = agentes.filter((a) => esServicioDeterminista(a.modelo));
   const razonan = agentes.filter((a) => !esServicioDeterminista(a.modelo));
 
@@ -54,7 +54,8 @@ describe("F2 · cómo queda el inventario real al aplicar la regla", () => {
     expect(servicios.map((a) => a.id).sort()).toEqual(["despachador", "meteorologo", "propagacion", "satelite"]);
   });
 
-  it("el tablero enseña 16 fichas, pero solo 12 razonan", () => {
+  it("el tablero enseña cinco fichas, con 12 capacidades que razonan", () => {
+    expect(todosLosAgentes()).toHaveLength(5);
     expect(agentes).toHaveLength(16);
     expect(razonan).toHaveLength(12);
     expect(servicios).toHaveLength(4);

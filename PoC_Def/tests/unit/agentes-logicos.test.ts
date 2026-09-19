@@ -6,6 +6,9 @@ import {
   aplanarCapacidadesConPadre,
   capacidadConPadrePorId,
   esCatalogoLogicoCompleto,
+  obtenerTareaPorCapacidad,
+  obtenerTareasDeAgente,
+  obtenerTareasEjecutables,
 } from "@/lib/agentes/logicos";
 import { CAPACIDADES_POR_AGENTE, IDS_AGENTES_CANONICOS } from "@/lib/agentes/identidad";
 
@@ -25,7 +28,7 @@ describe("catálogo de cinco agentes lógicos", () => {
     const planificador = agenteLogicoPorId("planificador_operativo");
     expect(planificador?.capacidades.find((capacidad) => capacidad.id === "propagacion")?.ciclo).toBeTypeOf("function");
     expect("ciclo" in (planificador ?? {})).toBe(false);
-    expect(planificador?.modelo.tipo).toBe("composicion_de_capacidades");
+    expect(planificador?.composicionModelo.tipo).toBe("composicion_de_capacidades");
   });
 
   it("deriva unión de eventos y cadencia conservadora de cada capacidad", () => {
@@ -45,8 +48,13 @@ describe("catálogo de cinco agentes lógicos", () => {
   it("aplana manteniendo el padre lógico para que el integrador pueda atribuir cada ejecución", () => {
     const planas = aplanarCapacidadesConPadre();
     expect(planas).toHaveLength(16);
+    expect(planas[0].tareaId).toBe(`${planas[0].agenteId}/${planas[0].capacidadId}`);
     expect(capacidadConPadrePorId("supervisor")).toMatchObject({ agenteId: "guardian", capacidadId: "supervisor" });
     expect(capacidadConPadrePorId("memoria")).toMatchObject({ agenteId: "cronista", capacidadId: "memoria" });
     expect(capacidadConPadrePorId("no-existe")).toBeUndefined();
+    expect(obtenerTareasEjecutables()).toEqual(planas);
+    expect(obtenerTareasDeAgente("guardian").map((tarea) => tarea.capacidadId)).toEqual(["asesor_legal", "supervisor"]);
+    expect(obtenerTareasDeAgente("supervisor").map((tarea) => tarea.capacidadId)).toEqual(["asesor_legal", "supervisor"]);
+    expect(obtenerTareaPorCapacidad("redactor")?.agenteId).toBe("cronista");
   });
 });

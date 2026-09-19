@@ -44,6 +44,7 @@ import { PuntosSalud } from "./PuntosSalud";
 const FACTORES = [6, 12, 30];
 
 const ENLACES = [
+  { href: "/agentes", etiqueta: "Agentes", icono: Bot },
   { href: "/conocimiento", etiqueta: "Conocimiento", icono: BookOpen },
   { href: "/politica", etiqueta: "Política", icono: Settings2 },
   { href: "/informes", etiqueta: "Informes", icono: ScrollText },
@@ -58,7 +59,6 @@ export function BarraSuperior({
   onDeclararFoco,
   declarando,
   onAtajos,
-  onVistaAgentes,
   onUnirMovil,
 }: {
   snapshot?: Snapshot;
@@ -66,7 +66,6 @@ export function BarraSuperior({
   onDeclararFoco: () => void;
   declarando: boolean;
   onAtajos: () => void;
-  onVistaAgentes: () => void;
   onUnirMovil: () => void;
 }) {
   const toast = useToast();
@@ -231,9 +230,6 @@ export function BarraSuperior({
           title="Fijar a mano el viento de todos los focos activos (ejercicio)"
         >
           Viento global
-        </Boton>
-        <Boton tamano="sm" icono={<Bot />} onClick={onVistaAgentes}>
-          Vista de agentes
         </Boton>
         <Boton tamano="sm" icono={<Smartphone />} onClick={onUnirMovil}>
           Unir un móvil

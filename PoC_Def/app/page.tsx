@@ -8,6 +8,7 @@
 // pantalla lo dice y sigue siendo navegable.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PauseOctagon, Play, WifiOff } from "lucide-react";
 import type { Poblacion, Punto, Unidad } from "@/lib/dominio/tipos";
 import { useEstado } from "@/lib/cliente/useEstado";
@@ -30,12 +31,12 @@ import { DialogoDeclararFoco } from "@/components/sala/DialogoDeclararFoco";
 import { DialogoMovil } from "@/components/sala/DialogoMovil";
 import { PanelDerecho, type ClavePestana } from "@/components/sala/PanelDerecho";
 import { TiraMetricas } from "@/components/sala/TiraMetricas";
-import { VistaAgentes } from "@/components/sala/VistaAgentes";
 import { QUIEN } from "@/components/sala/TarjetaDecision";
 import { aprobarDecision } from "@/lib/cliente/api";
 import { useToast } from "@/components/ui/Toast";
 
 export default function SalaDeMando() {
+  const router = useRouter();
   const { snapshot, conectado, error, cargando, refrescar } = useEstado();
   const toast = useToast();
 
@@ -45,7 +46,6 @@ export default function SalaDeMando() {
   const [puntoFoco, setPuntoFoco] = useState<Punto | null>(null);
   const [declarandoFoco, setDeclarandoFoco] = useState(false);
   const [atajos, setAtajos] = useState(false);
-  const [vistaAgentes, setVistaAgentes] = useState(false);
   const [movil, setMovil] = useState(false);
   const [seleccionado, setSeleccionado] = useState<string>();
   const [centrarEn, setCentrarEn] = useState<{ lat: number; lon: number; sello: number }>();
@@ -251,7 +251,7 @@ export default function SalaDeMando() {
         setAtajos(true);
       } else if (tecla === "g") {
         e.preventDefault();
-        setVistaAgentes((v) => !v);
+        router.push("/agentes");
       } else if (e.code === "Space") {
         e.preventDefault();
         await alternarPausa();
@@ -281,7 +281,7 @@ export default function SalaDeMando() {
     }
     document.addEventListener("keydown", alTeclado);
     return () => document.removeEventListener("keydown", alTeclado);
-  }, [alternarPausa, declarando, pendientes, refrescar, toast, unidadOrdenando]);
+  }, [alternarPausa, declarando, pendientes, refrescar, router, toast, unidadOrdenando]);
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
@@ -291,7 +291,6 @@ export default function SalaDeMando() {
         onDeclararFoco={() => setDeclarando((v) => !v)}
         declarando={declarando}
         onAtajos={() => setAtajos(true)}
-        onVistaAgentes={() => setVistaAgentes(true)}
         onUnirMovil={() => setMovil(true)}
       />
 
@@ -376,7 +375,6 @@ export default function SalaDeMando() {
       <DialogoDeclararFoco punto={puntoFoco} onCerrar={() => setPuntoFoco(null)} onConfirmar={confirmarFoco} ocupado={declarandoFoco} />
       <DialogoAtajos abierto={atajos} onCerrar={() => setAtajos(false)} />
       <DialogoMovil abierto={movil} onCerrar={() => setMovil(false)} />
-      <VistaAgentes snapshot={snapshot} abierta={vistaAgentes} onCerrar={() => setVistaAgentes(false)} onRefrescar={refrescar} />
     </div>
   );
 }

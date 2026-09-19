@@ -41,7 +41,7 @@ import {
   Wind,
 } from "lucide-react";
 import type { FuenteDeteccion, Snapshot } from "@/lib/dominio/tipos";
-import { CATALOGO_FUENTES, IDS_FUENTES, esSimulacro, fuentesDesactivadas, resumenFuentes } from "@/lib/dominio/fuentes-deteccion";
+import { CATALOGO_FUENTES, IDS_FUENTES, SUELO_SIMULACRO, esSimulacro, fuentesDesactivadas, resumenFuentes } from "@/lib/dominio/fuentes-deteccion";
 import { ajustarReloj, cambiarFuentesDeteccion, ejecucion as accionEjecucion, mensajeDeError } from "@/lib/cliente/api";
 import { hora, numero } from "@/lib/cliente/formato";
 import { useModoDesarrollo } from "@/lib/cliente/useModoDesarrollo";
@@ -312,10 +312,10 @@ function BarraSuperiorBase({
                 icono={<FlaskConical />}
                 cargando={ocupado === "fuentes"}
                 disabled={simulacro}
-                title="Apaga satélite, prensa y redes, cámaras fijas y avisos ciudadanos: solo la declaración a mano y las cámaras de móvil crean focos"
+                title={`Apaga satélite, prensa y redes, cámaras fijas y avisos ciudadanos: solo ${SUELO_SIMULACRO} crean focos`}
                 onClick={() => cambiarFuentes([...IDS_FUENTES])}
               >
-                Simulacro: solo a mano y móvil
+                Simulacro: a mano, móvil y 112
               </Boton>
               <Boton tamano="sm" variante="fantasma" icono={<Radar />} disabled={!apagadas.length || ocupado === "fuentes"} onClick={() => cambiarFuentes([])}>
                 Todas las fuentes
@@ -332,7 +332,7 @@ function BarraSuperiorBase({
           <Insignia
             tono="aviso"
             punto
-            title={`${resumenApagadas}. Las fuentes apagadas no crean ni confirman focos. Solo la declaración a mano y las cámaras de móvil crean focos. Se cambia en el desplegable de ejecución (modo desarrollo).`}
+            title={`${resumenApagadas}. Las fuentes apagadas no crean ni confirman focos. Siempre crean focos ${SUELO_SIMULACRO}. Se cambia en el desplegable de ejecución (modo desarrollo).`}
           >
             <span className="hidden min-[1840px]:inline">{resumenApagadas}</span>
             <span className="min-[1840px]:hidden">{resumenCorto}</span>

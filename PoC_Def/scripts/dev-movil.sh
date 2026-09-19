@@ -26,7 +26,7 @@ for _ in $(seq 1 60); do
 done
 [[ -n "$URL" ]] || { echo "El túnel no dio URL en 60 s"; exit 1; }
 
-echo "Esperando al dev server en :$PUERTO…"
+echo "Esperando al dev server en :${PUERTO}..."
 for _ in $(seq 1 60); do
   curl -s -o /dev/null "http://localhost:$PUERTO/api/salud" && break
   sleep 1

@@ -2350,3 +2350,21 @@ ningún SMS de Atalaya salía, tampoco los de las acciones `enviar_sms` del ejec
   (`esAvisoUrbano`), no contestar a un saludo suelto, «lugar» = lo que dijo la persona, coma antes del
   municipio en las consultas de la IA. Nuevo `lib/happyrobot/transcripcion.ts` (común con la
   recuperación): la transcripción que llega en JSON al colgar se guarda legible en la ficha. 394 unitarias.
+- **Octava pasada (19-09, 20:05, «se ha caído, no registra; revisa todas las transcripciones»)**: el guardián
+  murió al regenerar el túnel (`PUERTO: unbound variable`: en bash 3.2 "$PUERTO…" con los puntos suspensivos
+  se lee como otra variable; mismo fallo arreglado en `dev-movil.sh`) y además regeneraba un túnel SANO
+  cuando lo caído era la app (`npm run dev` reiniciándose). `tunel-vigilado.sh` ahora comprueba primero la
+  app local y no toca el túnel si es ella; `tunel.sh` admite `TUNEL_SIN_HAPPYROBOT=1` para probarlo sin tocar
+  el workflow. Probado en un puerto aparte: app caída 20 s → mismo túnel; túnel muerto → túnel nuevo en 17 s.
+  Agente (seis llamadas 19:13-19:51): una dirección encontrada tal cual se AFIRMA sin pedir confirmación
+  (la espera costaba 20-45 s), no pregunta "¿humo o llamas?" ni inventa el tipo, si todo falla dice "Su aviso
+  ha quedado grabado…" y cuelga (antes seguía preguntando), calle con número = consejo urbano, el cierre
+  nombra el municipio dicho. 398 unitarias. Recuperación: la llamada de las 19:51 se recuperó sola; las de
+  19:46-19:50 son de antes de la ejecución actual (19:51:19) y por diseño no se meten en ella.
+- **Pruebas para que no vuelva a pasar (19-09, 20:15)**: `tests/unit/scripts-bash.test.ts` (todos los
+  `scripts/*.sh` compilan con `bash -n` y ninguna variable queda pegada a un carácter no ASCII, el fallo que
+  mató al guardián); `tests/unit/tunel-vigilado.test.ts` (el script REAL contra una app y un túnel falsos, sin
+  red: la app se reinicia → mismo túnel; el túnel muere → túnel nuevo y guardián vivo; nunca "unbound
+  variable"; pide la recuperación al volver); `tests/unit/happyrobot-arranque-salud.test.ts` (instrumentation
+  arranca la recuperación, la salud detecta túnel muerto y workflow DESPUBLICADO). Nuevo en la salud:
+  `leerWorkflowEntrante` y `entrante.publicado` (ok:false y aviso en rojo si el número no atiende). 417 unitarias.

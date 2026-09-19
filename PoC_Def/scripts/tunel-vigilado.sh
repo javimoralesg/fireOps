@@ -9,6 +9,10 @@
 # de HappyRobot las llamadas al 112 que no llegaron (POST /api/happyrobot/recuperar):
 # lo que se dijo durante un corte no se pierde.
 # Adopta un túnel que ya esté abierto y sano (no lo reabre).
+# Si lo que no responde es la APP local (p. ej. se está reiniciando `npm run dev`), NO
+# toca el túnel: espera a que la app vuelva (medido el 19-09: regenerar en ese caso mató
+# un túnel sano). Variables siempre entre llaves: en bash 3.2, "$PUERTO…" con los puntos
+# suspensivos se leía como la variable "PUERTO…" y el guardián moría (set -u).
 # Uso: scripts/tunel-vigilado.sh [puerto]   (por defecto 3000). Ctrl+C cierra todo.
 # Compatible con el bash 3.2 de macOS.
 set -uo pipefail
@@ -32,7 +36,7 @@ cerrar_tunel() {
 }
 
 abrir_tunel() {
-  echo "[$(hora)] Abriendo túnel nuevo hacia :$PUERTO…"
+  echo "[$(hora)] Abriendo túnel nuevo hacia :${PUERTO}..."
   "$DIR/scripts/tunel.sh" "$PUERTO" &
   PID_TUNEL=$!
   for _ in $(seq 1 45); do
@@ -40,6 +44,10 @@ abrir_tunel() {
     kill -0 "$PID_TUNEL" 2>/dev/null || break
     sleep 1
   done
+}
+
+app_local_sana() {
+  [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:${PUERTO}/api/salud" 2>/dev/null)" == "200" ]]
 }
 
 url_sana() {
@@ -71,6 +79,13 @@ estaba_caido=0
 while true; do
   sleep "$CADA"
   vuelta=$((vuelta + 1))
+  if ! app_local_sana; then
+    # La app no contesta: el túnel no es el problema. No se cuenta como fallo del túnel.
+    echo "[$(hora)] La app local (:${PUERTO}) no responde: espero a que vuelva sin tocar el túnel."
+    fallos=0
+    estaba_caido=1
+    continue
+  fi
   if url_sana; then
     if [[ "$estaba_caido" == 1 ]]; then
       echo "[$(hora)] Túnel de nuevo operativo: $(cat "$ARCHIVO"). Recupero lo que se perdiera durante el corte."

@@ -4,6 +4,7 @@
 // Cuerpo: {canal?: "llamada"|"sms"|"email"|"telegram"|"web", texto, remitente?, lat?, lon?}
 // GET  /api/fuentes/centralita?lugar=...  ó  ?lat&lon → contexto para el agente de voz.
 import { contextoParaVoz, procesarEntrada, type CanalEntrada } from "@/lib/agentes/percepcion/centralita";
+import { describirFueraEspana, enEspana } from "@/lib/dominio/espana";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +26,15 @@ export async function POST(peticion: Request) {
   }
   if (!cuerpo.texto?.trim()) return Response.json({ error: "Falta el campo `texto`" }, { status: 400 });
   const canal = (CANALES.includes(cuerpo.canal as CanalEntrada) ? cuerpo.canal : "web") as CanalEntrada;
+  const punto = typeof cuerpo.lat === "number" && typeof cuerpo.lon === "number" ? { lat: cuerpo.lat, lon: cuerpo.lon } : undefined;
+  if (punto && !enEspana(punto)) return Response.json({ error: describirFueraEspana(punto) }, { status: 400 });
   try {
     const observacion = await procesarEntrada({
       canal,
       texto: cuerpo.texto,
       remitente: cuerpo.remitente,
       referenciaExterna: cuerpo.referenciaExterna,
-      punto: typeof cuerpo.lat === "number" && typeof cuerpo.lon === "number" ? { lat: cuerpo.lat, lon: cuerpo.lon } : undefined,
+      punto,
     });
     return Response.json({ observacion });
   } catch (e) {

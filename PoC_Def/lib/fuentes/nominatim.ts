@@ -7,6 +7,7 @@
 // `state` = comunidad autónoma. Caché en memoria (el callejero no cambia).
 // =====================================================================
 import type { Punto } from "../dominio/tipos";
+import { enEspana } from "../dominio/espana";
 
 const BASE = "https://nominatim.openstreetmap.org";
 const UA = "atalaya-incendios/1.0 (HackSpain 2026; contacto javimorgalis@gmail.com)";
@@ -91,6 +92,11 @@ export async function geocodificar(texto: string): Promise<LugarGeocodificado | 
     comunidad: f.address?.state ?? undefined,
     url,
   };
+  // countrycodes=es ya acota, pero Nominatim a veces cuela lugares limítrofes: fuera de España no vale.
+  if (!enEspana(lugar.punto)) {
+    e.cacheBusqueda.set(clave, undefined);
+    return undefined;
+  }
   e.cacheBusqueda.set(clave, lugar);
   return lugar;
 }

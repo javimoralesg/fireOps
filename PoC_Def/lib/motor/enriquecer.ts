@@ -17,16 +17,17 @@ import type {
   Incendio,
   Poblacion,
   Punto,
-  RiesgoPoblacion,
   Trazado,
   Unidad,
 } from "../dominio/tipos";
 import type { Estado } from "./estado";
+import { fuenteActiva } from "../dominio/fuentes-deteccion";
 import { municipioDe } from "../fuentes/nominatim";
 import { combustibleCercano, mediosCercanos, poblacionesCercanas, type BaseMedios, type PoblacionBase } from "../fuentes/overpass";
 import { elevacion, meteoActual } from "../fuentes/openMeteo";
 import { calcularPeligro } from "../fuentes/peligro";
 import { listarCamaras } from "../fuentes/dgtCamaras";
+import { riesgoPorDistancia } from "../simulacion/propagacion";
 
 // ---------------------------------------------------------------------
 // Geometría (compartida con el orquestador)
@@ -80,12 +81,26 @@ export function areaHaCirculo(radioM: number): number {
   return Number(((Math.PI * radioM * radioM) / 10_000).toFixed(2));
 }
 
-/** Riesgo inicial de una población por distancia al foco (lo afina el analista de propagación). */
-export function riesgoPorDistancia(km: number): RiesgoPoblacion {
-  if (km < 3) return "inminente";
-  if (km < 8) return "alto";
-  if (km < 15) return "medio";
-  return "bajo";
+/**
+ * Riesgo inicial de una población por distancia al foco, hasta que el analista
+ * de propagación calcule el tiempo de llegada del frente.
+ * MODIFICADO (sesión riesgo-fundado, 2026-09-19): aquí decía "< 3 km inminente,
+ * < 8 alto, < 15 medio". Como el analista solo refina los focos OPERATIVOS, un
+ * píxel de satélite SIN CONFIRMAR dejaba decenas de pueblos en "Riesgo
+ * inminente" sin frente, sin meteo y sin nada que lo sustentara (lo vio Javi en
+ * Tarragona: 59 "pueblos en peligro" de una refinería). Ahora es el MISMO
+ * criterio de proximidad del modelo (`lib/simulacion/propagacion.ts`: < 1 km
+ * alto, < 3 km medio, resto bajo): "inminente" solo lo pone el analista con un
+ * tiempo de llegada < 60 min o el frente encima.
+ */
+export { riesgoPorDistancia };
+
+/** Frase provisional que ve el usuario hasta que el analista recalcule el riesgo. */
+function motivoProvisional(km: number, incendio: Incendio): string {
+  const base = `Riesgo provisional por distancia (a ${km.toFixed(1)} km del foco), todavía sin análisis de propagación`;
+  return incendio.estado === "detectado"
+    ? `${base}. El foco está SIN CONFIRMAR (una sola fuente): no se avisa a nadie hasta que otra fuente o el mando lo confirme.`
+    : `${base}; el analista lo recalcula con viento, humedad, pendiente y combustible en cuanto tenga la meteo del foco.`;
 }
 
 // ---------------------------------------------------------------------
@@ -194,6 +209,7 @@ function crearPoblacion(base: PoblacionBase, incendio: Incendio): Poblacion {
     distanciaKm: Number(km.toFixed(2)),
     rumboDesdeFuegoGrados: Math.round(rumboGrados(incendio.centro, base.centro)),
     riesgo: riesgoPorDistancia(km),
+    motivoRiesgo: motivoProvisional(km, incendio),
     estadoAviso: "sin_avisar",
     telefono,
     telefonoEsDemo: !base.telefono && !!demo,
@@ -263,7 +279,11 @@ export async function enriquecerIncendio(estado: Estado, incendioId: string, int
     //   b2) PUEBLOS  → poblaciones (avisos a la población).
     //   b3) COMBUSTIBLE → nunca bloquea: si falla, el foco sigue sin él.
     // Cada paso falla por su cuenta y se reintenta en el siguiente ciclo.
-    const fallos: string[] = [];
+    // OJO (constructor T, 2026-09-19): aquí había un `const fallos` propio que
+    // TAPABA al de la función. Los fallos de medios y de pueblos se anotaban en
+    // el array interno, que moría con la función flecha: el evento de cierre
+    // decía "Entorno cargado" y NUNCA se programaba el reintento, justo en el
+    // caso para el que se escribió. Ahora se usa el `fallos` exterior.
 
     // ---- (b1) medios: parques, policía, hospitales → UNIDADES -----------
     try {
@@ -368,21 +388,26 @@ export async function enriquecerIncendio(estado: Estado, incendioId: string, int
     // ---- (e) cámaras a menos de 25 km pasan a vigiladas ------------------
     try {
       const lista = await camarasCacheadas();
+      // Con las cámaras fijas apagadas por el escenario del mando, la cámara entra
+      // en el estado (se ve en el mapa) pero SIN vigilancia: nadie la analizaría y
+      // el anillo de "vigilada" mentiría. Las de móvil se vigilan siempre.
+      const fijasActivas = fuenteActiva(estado.ejecucion, "camaras_fijas");
       for (const camara of lista) {
         const km = distanciaKm(centro, camara.punto);
         const previa = estado.camaras.get(camara.id);
         if (km <= RADIO_CAMARAS_KM) {
+          const vigilada = fijasActivas || camara.fuente === "Movil";
           estado.guardar(estado.camaras, {
             ...camara,
             ...(previa ?? {}),
             id: camara.id,
             punto: camara.punto,
             urlImagen: camara.urlImagen,
-            vigilada: true,
+            vigilada,
             incendioId: previa?.incendioId ?? incendioId,
             historial: previa?.historial ?? [],
           });
-          camarasVigiladas += 1;
+          if (vigilada) camarasVigiladas += 1;
         } else if (!previa && camara.fuente === "Movil") {
           // Las cámaras móviles (un teléfono compartiendo fotogramas) llegan ya
           // vigiladas y se respetan aunque estén lejos: las está sosteniendo alguien.
@@ -392,7 +417,11 @@ export async function enriquecerIncendio(estado: Estado, incendioId: string, int
         // Snapshot viaja entero por SSE en cada cambio. La lista completa vive
         // en la caché de este módulo y se sirve desde /api/camaras (constructor B).
       }
-      estado.marcarServicio("Cámaras DGT", true, `${lista.length} cámaras, ${camarasVigiladas} vigiladas`);
+      estado.marcarServicio(
+        "Cámaras DGT",
+        true,
+        `${lista.length} cámaras, ${camarasVigiladas} vigiladas${fijasActivas ? "" : " (vigilancia de fijas apagada por el escenario)"}`,
+      );
     } catch (e) {
       estado.marcarServicio("Cámaras DGT", false, mensajeDe(e));
     }
@@ -431,6 +460,18 @@ export async function enriquecerIncendio(estado: Estado, incendioId: string, int
     estado.marcarServicio("Overpass combustible", false, mensajeDe(e));
   }
 
+  // Servicio consolidado «Overpass» (constructor T, 2026-09-19). Al partir la
+  // consulta en tres, esta clave dejó de escribirse y con ella desapareció la
+  // línea «Overpass» de la barra de estado y de /api/salud (la prueba (l) la
+  // exige y la da por perdida). Los tres pasos se siguen marcando por separado
+  // para el detalle; esta es el resumen: verde si el espejo contestó a lo que
+  // hace falta para operar (medios y pueblos), rojo con el motivo si no.
+  estado.marcarServicio(
+    "Overpass",
+    fallos.length === 0,
+    fallos.length === 0 ? `${pueblosCreados} pueblos, ${unidadesCreadas} unidades` : fallos.join(" · "),
+  );
+
   const final = vivo();
   // Evento de cierre: el entorno está COMPLETO (o completo con lo que Overpass
   // haya dado). `datos.fase = "completo"` es lo que mira `esperarEntornoCargado`
@@ -461,9 +502,19 @@ export async function enriquecerIncendio(estado: Estado, incendioId: string, int
   if (fallos.length) programarReintento(estado, incendioId, intento);
 }
 
-/** Reintentos del enriquecimiento cuando Overpass falla. Retroceso 30 s, 60 s, 120 s. */
+/**
+ * Reintentos del enriquecimiento cuando Overpass falla. Retroceso 60 s, 180 s,
+ * 540 s (más un 20 % de dispersión para que diez focos no reintenten a la vez).
+ *
+ * MOTIVO DEL CAMBIO (constructor T, 2026-09-19): eran 30/60/120 s, es decir los
+ * tres reintentos dentro de los primeros 3,5 minutos. Como el cortacircuitos de
+ * `lib/fuentes/overpass.ts` deja un espejo fuera 5 minutos, los tres caían en la
+ * misma ventana y se gastaban sin llegar a preguntar. Con 60/180/540 s el
+ * último intento cae ya fuera de esa ventana y tiene opciones reales; los dos
+ * primeros, si el espejo sigue castigado, fallan al instante y no cuestan nada.
+ */
 const MAX_REINTENTOS = 3;
-const ESPERA_REINTENTO_MS = 30_000;
+const ESPERA_REINTENTO_MS = 60_000;
 
 function programarReintento(estado: Estado, incendioId: string, intento: number): void {
   if (intento >= MAX_REINTENTOS) {
@@ -474,7 +525,7 @@ function programarReintento(estado: Estado, incendioId: string, intento: number)
     );
     return;
   }
-  const espera = ESPERA_REINTENTO_MS * 2 ** intento;
+  const espera = Math.round(ESPERA_REINTENTO_MS * 3 ** intento * (0.9 + Math.random() * 0.2));
   estado.registrarEvento(
     "sistema",
     `Overpass falló: se reintenta el entorno de este foco en ${Math.round(espera / 1000)} s (intento ${intento + 2} de ${MAX_REINTENTOS + 1}).`,

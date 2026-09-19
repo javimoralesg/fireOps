@@ -37,7 +37,17 @@ export async function POST(peticion: Request, ctx: { params: Promise<{ id: strin
       mensaje = `${ficha.nombre} en pausa`;
       break;
     case "reanudar":
-      estado.actualizar(estado.agentes, id, { pausado: false, estado: "observando", tareaActual: undefined, ultimoError: undefined });
+      // El contador de errores se pone a cero (fallo L-6): si no, un agente que
+      // el supervisor pausó por errores repetidos volvía con sus 5-6 errores
+      // encima y el siguiente lo pausaba otra vez en el acto. Reanudar es una
+      // orden humana de "vuelve a intentarlo", y eso incluye la cuenta.
+      estado.actualizar(estado.agentes, id, {
+        pausado: false,
+        estado: "observando",
+        tareaActual: undefined,
+        ultimoError: undefined,
+        contadores: { ...ficha.contadores, errores: 0 },
+      });
       despertar(id, "humano");
       mensaje = `${ficha.nombre} reanudado`;
       break;

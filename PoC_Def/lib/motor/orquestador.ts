@@ -131,6 +131,28 @@ function esAborto(e: unknown): boolean {
   return false;
 }
 
+/**
+ * ¿Este fallo lo provocó el propio mando al pulsar "Parar"?
+ *
+ * F1.5 de la migración (fallos L-5 y L-6 de docs/PRUEBAS.md). Antes esto se
+ * decidía mirando SOLO `estado.reloj.pausado` en el momento del `catch`, y ahí
+ * hay una carrera: el aborto se dispara al pausar, pero el `catch` puede correr
+ * después de que alguien haya reanudado el mundo. Entonces el aborto se
+ * contabilizaba como avería del agente y, a los 5, el supervisor lo pausaba para
+ * siempre — medido: pausar tres veces dejaba sin vigía de cámaras y sin asesor
+ * legal. La misma carrera dejaba escaladas a un humano, de forma permanente,
+ * decisiones que la política marcaba como autónomas.
+ *
+ * Ahora se pregunta al error, que sí lleva la causa. OJO: "Tiempo máximo agotado"
+ * NO entra aquí aunque sea un AbortError — un agente que se pasa de su tiempo sí
+ * es un problema del agente y tiene que seguir contando.
+ */
+export function esPorPausa(e: unknown, estado: Estado): boolean {
+  if (estado.reloj.pausado) return true;
+  const texto = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+  return /pausa/i.test(texto);
+}
+
 function esRazonamiento(agente: Agente): boolean {
   const m = (agente.modelo ?? "").toLowerCase();
   if (!m || m === "determinista") return false;
@@ -577,8 +599,8 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
     });
   } catch (e) {
     controlador.abort();
-    if (estado.reloj.pausado) {
-      // Cancelado por la pausa global: no es un error del agente.
+    if (esPorPausa(e, estado)) {
+      // Cancelado por la pausa global: no es un error del agente (fallo L-6).
       tocarFicha(estado, agente.id, { estado: "pausado", tareaActual: "Mundo en pausa: ciclo cancelado", ultimaActividad: new Date().toISOString() });
     } else {
       sumarContador(estado, agente.id, "errores");
@@ -870,9 +892,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
       estado.marcarServicio("Supervisor", true, `${evaluacion.puntuacion}/100`);
     }
   } catch (e) {
-    if (esAborto(e) && estado.reloj.pausado) {
-      // Cancelado por "Parar": no es una avería. La decisión se queda en "propuesta" y el
-      // orquestador vuelve a pasarla por el pipeline al reanudar el mundo.
+    if (esPorPausa(e, estado)) {
+      // Cancelado por "Parar": no es una avería (fallo L-5). La decisión se queda en
+      // "propuesta" y el orquestador vuelve a pasarla por el pipeline al reanudar.
       pendientesDeReevaluar.add(d.id);
       estado.registrarEvento("sistema", `Evaluación de «${d.titulo}» aplazada por la pausa del mundo; se retomará al reanudar`, {
         agenteId: d.agenteId,

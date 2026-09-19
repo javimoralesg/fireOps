@@ -13,9 +13,8 @@
 // verdad han ocurrido. Los pulsos recorren solo las aristas con actividad en
 // los últimos 30 s.
 //
-// Interacción: pinchar un AGENTE abre su panel (qué está haciendo ahora, traza
-// en curso con sus llamadas de IA en vivo, lo que tiene abierto aquí, historial
-// y controles pausar/reanudar/forzar ciclo); pinchar un ENLACE abre el panel
+// Interacción: pinchar un AGENTE abre su contexto en esta incidencia; el
+// detalle, los controles y las trazas completas viven en `/agentes`. Pinchar un ENLACE abre el panel
 // con lo que se compartió por él (observación, decisión, resultado real de la
 // llamada o la ruta OSRM, con enlace a su acta). Además: arrastrar nodos (ratón
 // o dedo), arrastrar el fondo para desplazar, rueda para acercar y «Reordenar».
@@ -24,18 +23,17 @@
 // =====================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { LayoutGrid, Maximize2, Minus, MousePointerClick, Plus } from "lucide-react";
-import type { EstadoAgenteApp, Informe, Snapshot, TrazaCiclo } from "@/lib/dominio/tipos";
-import { duracion, fechaHora, haceCuanto, hora, recortar } from "@/lib/cliente/formato";
+import type { EstadoAgenteApp, Informe, Snapshot } from "@/lib/dominio/tipos";
+import { fechaHora, haceCuanto, hora, recortar } from "@/lib/cliente/formato";
 import { Boton } from "@/components/ui/Boton";
 import { Insignia } from "@/components/ui/Insignia";
-import { ControlesAgente, TEXTO_ESTADO_AGENTE, tonoEstadoAgente, useAccionesAgente } from "@/components/sala/TarjetaAgente";
+import { TEXTO_ESTADO_AGENTE, tonoEstadoAgente } from "@/components/sala/TarjetaAgente";
 import { DialogoInforme } from "@/components/sala/DialogoInforme";
 import {
   construirGrafo,
   disposicionAutomatica,
-  trazasDeAgenteEnIncendio,
-  ultimaTrazaDe,
   MINUTOS_MUNDO_ACTIVIDAD,
   TITULOS_COLUMNA,
   type AristaFlujo,
@@ -212,13 +210,10 @@ export function LienzoFlujoAgentes({
   incendioId,
   snapshot,
   alto = 560,
-  onTrasCambio,
 }: {
   incendioId: string;
   snapshot?: Snapshot;
   alto?: number;
-  /** Se llama tras pausar/reanudar/forzar el ciclo de un agente. */
-  onTrasCambio?: () => void;
 }) {
   const lienzo = useRef<HTMLCanvasElement>(null);
   const contenedor = useRef<HTMLDivElement>(null);
@@ -716,7 +711,7 @@ export function LienzoFlujoAgentes({
 
       <p className="flex items-center gap-1.5 text-[11px] text-subtle">
         <MousePointerClick className="size-3.5 shrink-0" aria-hidden />
-        Pincha un agente para ver qué está haciendo ahora y controlarlo, o un enlace para ver qué se compartió por él. Arrastra los nodos
+        Pincha un agente para ver su papel en esta incidencia, o un enlace para ver qué se compartió por él. Arrastra los nodos
         para colocarlos (se recuerdan en este navegador), arrastra el fondo para desplazar y usa la rueda para acercar. Los pulsos marcan lo
         ocurrido en los últimos 30 segundos; en gris y a rayas, los agentes que ahora mismo no hacen nada sobre esta incidencia (sin ciclo en
         curso ni señal en los últimos {MINUTOS_MUNDO_ACTIVIDAD} minutos de mundo).
@@ -734,7 +729,6 @@ export function LienzoFlujoAgentes({
             setEnlaceSeleccionado(id);
             setSeleccionado(null);
           }}
-          onTrasCambio={onTrasCambio}
         />
       ) : null}
 
@@ -763,7 +757,6 @@ function PanelNodo({
   incendioId,
   onCerrar,
   onSeleccionarEnlace,
-  onTrasCambio,
 }: {
   nodo: NodoFlujo;
   grafo: GrafoFlujo;
@@ -771,9 +764,7 @@ function PanelNodo({
   incendioId: string;
   onCerrar: () => void;
   onSeleccionarEnlace: (id: string) => void;
-  onTrasCambio?: () => void;
 }) {
-  const { ejecutar, ocupado } = useAccionesAgente(onTrasCambio);
   const ficha: EstadoAgenteApp | undefined = nodo.agenteId ? snapshot?.agentes.find((a) => a.id === nodo.agenteId) : undefined;
 
   const idsFoco = useMemo(() => idsDeFoco(snapshot, incendioId), [snapshot, incendioId]);
@@ -788,12 +779,6 @@ function PanelNodo({
   const accionesEnMarcha = decisionesSuyas.flatMap((d) =>
     d.acciones.filter((a) => a.estado === "pendiente" || a.estado === "ejecutando").map((a) => ({ a, d })),
   );
-  const historial = useMemo(
-    () => (nodo.agenteId ? trazasDeAgenteEnIncendio(snapshot, nodo.agenteId, incendioId) : []),
-    [snapshot, nodo.agenteId, incendioId],
-  );
-  const enCurso: TrazaCiclo | undefined = (ficha?.trazas ?? []).find((t) => t.estado === "en_curso");
-  const ultima = ultimaTrazaDe(snapshot, nodo.agenteId ?? "", incendioId);
   const aristas: AristaFlujo[] = grafo.aristas.filter((a) => a.origen === nodo.id || a.destino === nodo.id);
 
   return (
@@ -835,33 +820,6 @@ function PanelNodo({
           </p>
           {ficha.ultimoError ? <p className="mt-1 text-[12px] text-danger">Último error: {ficha.ultimoError}</p> : null}
 
-          <div className="mt-2">
-            <ControlesAgente agente={ficha} ejecutar={ejecutar} ocupado={ocupado} />
-          </div>
-
-          {enCurso ? (
-            <div className="mt-2 rounded-lg border border-brand/45 bg-brand/8 px-2 py-1.5 text-[12px] text-muted">
-              <p className="font-medium text-foreground">
-                Ciclo en curso · motivo «{enCurso.motivo}» · empezó {haceCuanto(enCurso.inicio)}
-              </p>
-              <p>Qué está mirando: {enCurso.entradas ?? "no anotado"}</p>
-              <p>
-                Llamadas de IA en vivo ({enCurso.llamadasIA.length}):{" "}
-                {enCurso.llamadasIA.length
-                  ? enCurso.llamadasIA.map((l) => `${l.proveedor}/${l.modelo} (${l.papel}, ${l.latenciaMs} ms)`).join(" · ")
-                  : "ninguna todavía"}
-              </p>
-              {enCurso.llamadasIA.slice(-2).map((l, i) => (
-                <p key={`${l.en}-${i}`} className="mt-1 rounded border border-panel-border bg-panel px-2 py-1 text-[11.5px]">
-                  <span className="font-medium text-foreground">Pregunta:</span> {recortar(l.promptResumen, 220)}
-                  <br />
-                  <span className="font-medium text-foreground">Respuesta:</span> {recortar(l.respuestaResumen, 220)}
-                  {l.error ? <span className="block text-danger">Error: {l.error}</span> : null}
-                </p>
-              ))}
-            </div>
-          ) : null}
-
           {pendientes.length || accionesEnMarcha.length ? (
             <div className="mt-2 text-[12px] text-muted">
               <p className="font-medium text-foreground">Lo que tiene abierto en esta incidencia</p>
@@ -885,29 +843,11 @@ function PanelNodo({
             <p className="mt-2 text-[12px] text-muted">No tiene nada abierto en esta incidencia ahora mismo.</p>
           )}
 
-          <div className="mt-2 border-t border-panel-border pt-2 text-[12px] text-muted">
-            <p className="font-medium text-foreground">Historial reciente sobre esta incidencia ({historial.length} ciclos)</p>
-            {historial.length ? (
-              <ul className="mt-0.5 space-y-0.5">
-                {historial.slice(0, 5).map((t) => (
-                  <li key={t.id}>
-                    <span className="tabular text-subtle">{hora(t.inicio)}</span> · {t.motivo} · {t.estado} · {duracion(t.duracionMs)} ·{" "}
-                    {t.resumen ?? "sin resumen"}
-                    {t.error ? <span className="text-danger"> · {t.error}</span> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>
-                No se conserva ninguna traza de este agente sobre esta incidencia
-                {ultima ? "" : " (solo se guardan los últimos ciclos de cada agente)"}.
-              </p>
-            )}
-            <p className="mt-1">
-              <a href={`/agentes/${encodeURIComponent(ficha.id)}`} className="text-brand underline underline-offset-2">
-                Ver la ficha completa del agente
-              </a>
-            </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-panel-border pt-2 text-[12px] text-muted">
+            <span>Controles, ciclos y llamadas de IA se consultan en el Centro de agentes.</span>
+            <Link href="/agentes" className="font-medium text-brand underline underline-offset-2">
+              Abrir agentes
+            </Link>
           </div>
         </>
       ) : (

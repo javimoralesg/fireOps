@@ -3,8 +3,7 @@
 // salud de servicios, accesos a las demás pantallas y tema. DUEÑO: constructor E.
 //
 // OPERACIÓN (siempre visible): la hora de mundo con su factor (solo estado, sin
-// botones); la insignia de fuentes apagadas («SIMULACRO…»); "Vista de agentes"
-// y "Unir un móvil"; la segunda fila (salud, enlaces, atajos, tema).
+// botones); la insignia de fuentes apagadas («SIMULACRO…»); "Unir un móvil"; la segunda fila (salud, enlaces, atajos, tema).
 // DESARROLLO (solo con el conmutador «</>» de la segunda fila, preferencia del
 // navegador en `useModoDesarrollo`): Pausar, ×N y "+1 h" del reloj; el
 // desplegable de ejecución con las fuentes de detección; PARAR TODO; Declarar
@@ -55,12 +54,14 @@ import { useToast } from "@/components/ui/Toast";
 import { Marca } from "@/components/marca/Logo";
 import { SelectorTema } from "@/components/marca/SelectorTema";
 import { ConmutadorDesarrollo } from "./ConmutadorDesarrollo";
+import { debugActivado } from "@/lib/cliente/configuracion";
 import { ControlViento } from "./ControlViento";
 import { PuntosSalud } from "./PuntosSalud";
 
 const FACTORES = [6, 12, 30];
 
 const ENLACES = [
+  { href: "/agentes", etiqueta: "Agentes", icono: Bot },
   { href: "/conocimiento", etiqueta: "Conocimiento", icono: BookOpen },
   { href: "/politica", etiqueta: "Política", icono: Settings2 },
   { href: "/informes", etiqueta: "Informes", icono: ScrollText },
@@ -78,7 +79,6 @@ function BarraSuperiorBase({
   onDeclararFoco,
   declarando,
   onAtajos,
-  onVistaAgentes,
   onUnirMovil,
 }: {
   snapshot?: Snapshot;
@@ -86,7 +86,6 @@ function BarraSuperiorBase({
   onDeclararFoco: () => void;
   declarando: boolean;
   onAtajos: () => void;
-  onVistaAgentes: () => void;
   onUnirMovil: () => void;
 }) {
   const toast = useToast();
@@ -108,6 +107,10 @@ function BarraSuperiorBase({
   const incendios = snapshot?.incendios;
   const focosActivos = useMemo(() => (incendios ?? []).filter((i) => !NO_ACTIVOS.includes(i.estado)), [incendios]);
   const vientoForzado = useMemo(() => focosActivos.find((i) => i.meteoForzada), [focosActivos]);
+  // Salud de servicios: se ve con el modo desarrollo del navegador o con NEXT_PUBLIC_DEBUG=true.
+  const mostrarSaludServicios = desarrollo || debugActivado(process.env.NEXT_PUBLIC_DEBUG);
+  const agentes = snapshot?.agentes;
+  const agentesConError = useMemo(() => (agentes ?? []).filter((a) => a.estado === "error" || Boolean(a.ultimoError)).length, [agentes]);
 
   async function reloj_(cambio: { factor?: number; pausado?: boolean; avanzarMin?: number }, clave: string, frase: string) {
     setOcupado(clave);
@@ -383,10 +386,6 @@ function BarraSuperiorBase({
             <span className="min-[1840px]:hidden">Viento</span>
           </Boton>
         ) : null}
-        <Boton tamano="sm" icono={<Bot />} onClick={onVistaAgentes} title="Vista de agentes">
-          <span className="hidden min-[1840px]:inline">Vista de agentes</span>
-          <span className="min-[1840px]:hidden">Agentes</span>
-        </Boton>
         <Boton tamano="sm" icono={<Smartphone />} onClick={onUnirMovil} title="Unir un móvil">
           <span className="hidden min-[1840px]:inline">Unir un móvil</span>
           <span className="min-[1840px]:hidden">Móvil</span>
@@ -424,7 +423,7 @@ function BarraSuperiorBase({
 
       {/* Segunda fila: salud, enlaces y tema. A 1024 px cae debajo sin scroll horizontal. */}
       <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-panel-border pt-1.5">
-        <PuntosSalud servicios={snapshot?.servicios} />
+        {mostrarSaludServicios ? <PuntosSalud servicios={snapshot?.servicios} /> : null}
         <nav aria-label="Otras pantallas" className="flex flex-wrap items-center gap-0.5">
           {ENLACES.map(({ href, etiqueta, icono: Icono }) => (
             <Link
@@ -433,6 +432,11 @@ function BarraSuperiorBase({
               className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-muted hover:bg-panel-2 hover:text-foreground"
             >
               <Icono className="size-3.5" aria-hidden /> {etiqueta}
+              {href === "/agentes" && agentesConError > 0 ? (
+                <span className="rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white dark:text-[#2a0d10]">
+                  {agentesConError} con error
+                </span>
+              ) : null}
             </Link>
           ))}
         </nav>

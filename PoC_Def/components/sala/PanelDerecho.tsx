@@ -23,7 +23,6 @@
 
 import { memo, useCallback, useMemo, type ReactNode } from "react";
 import {
-  Bot,
   Flame,
   Funnel,
   FunnelX,
@@ -43,13 +42,12 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { useSuperaAncho } from "@/lib/cliente/useSuperaAncho";
 import { DecisionesFlotantes } from "./DecisionesFlotantes";
 import type { ObjetivoAccion } from "./TarjetaDecision";
-import { PestanaAgentes } from "./PestanaAgentes";
 import { PestanaDecisiones } from "./PestanaDecisiones";
 import { PestanaFocos } from "./PestanaFocos";
 import { PestanaLecciones } from "./PestanaLecciones";
 import { PestanaRegistro } from "./PestanaRegistro";
 
-export type ClavePestana = "decisiones" | "agentes" | "focos" | "registro" | "lecciones";
+export type ClavePestana = "decisiones" | "focos" | "registro" | "lecciones";
 
 /** Pestaña del panel con la etiqueta corta que cabe en el carril plegado. */
 interface PestanaPanel extends Pestana {
@@ -97,7 +95,6 @@ function PanelDerechoBase({
 }) {
   const decisiones = snapshot?.decisiones;
   const incendios = snapshot?.incendios;
-  const agentes = snapshot?.agentes;
   const lecciones = snapshot?.lecciones;
 
   const pendientes = useMemo(
@@ -105,8 +102,6 @@ function PanelDerechoBase({
     [decisiones],
   );
   const focosActivos = useMemo(() => (incendios ?? []).filter((i) => !CERRADOS.includes(i.estado)).length, [incendios]);
-  const agentesConError = useMemo(() => (agentes ?? []).filter((a) => a.estado === "error").length, [agentes]);
-  const mundoPausado = Boolean(snapshot?.reloj.pausado);
 
   /** `Pestanas` habla en `string`: se envuelve una sola vez para no romper su memo. */
   const cambiarPestana = useCallback((id: string) => onCambiarPestana(id as ClavePestana), [onCambiarPestana]);
@@ -123,12 +118,11 @@ function PanelDerechoBase({
   const pestanas: PestanaPanel[] = useMemo(
     () => [
       { id: "decisiones", etiqueta: "Requiere tu decisión", corta: "Decidir", cuenta: pendientes, icono: <Inbox />, urgente: true },
-      { id: "agentes", etiqueta: "Agentes", corta: "Agentes", cuenta: agentes?.length ?? 0, icono: <Bot />, urgente: agentesConError > 0 },
       { id: "focos", etiqueta: "Focos", corta: "Focos", cuenta: focosActivos, icono: <Flame /> },
       { id: "registro", etiqueta: "Registro", corta: "Registro", icono: <ScrollText /> },
       { id: "lecciones", etiqueta: "Lecciones", corta: "Lecciones", cuenta: lecciones?.length ?? 0, icono: <GraduationCap /> },
     ],
-    [agentes?.length, agentesConError, focosActivos, lecciones?.length, pendientes],
+    [focosActivos, lecciones?.length, pendientes],
   );
 
   // ANCHO REAL del contenido (el separador arrastrable lo cambia): con ≥ 40 rem
@@ -232,9 +226,6 @@ function PanelDerechoBase({
               onCentrarObjetivo={onCentrarObjetivo}
               amplio={amplio}
             />
-          </PanelPestana>
-          <PanelPestana id="agentes" activa={activa} idBase="panel">
-            <PestanaAgentes agentes={agentes} onTrasAccion={onRefrescar} mundoPausado={mundoPausado} amplio={amplio} />
           </PanelPestana>
           <PanelPestana id="focos" activa={activa} idBase="panel">
             <PestanaFocos

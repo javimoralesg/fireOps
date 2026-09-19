@@ -8,6 +8,7 @@
 // pantalla lo dice y sigue siendo navegable.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PauseOctagon, Play, WifiOff } from "lucide-react";
 import type { Poblacion, Punto, Unidad } from "@/lib/dominio/tipos";
 import { useEstado } from "@/lib/cliente/useEstado";
@@ -31,8 +32,6 @@ import { DialogoDeclararFoco } from "@/components/sala/DialogoDeclararFoco";
 import { DialogoMovil } from "@/components/sala/DialogoMovil";
 import { PanelDerecho, type ClavePestana } from "@/components/sala/PanelDerecho";
 import { SeparadorPaneles } from "@/components/sala/SeparadorPaneles";
-import { TiraMetricas } from "@/components/sala/TiraMetricas";
-import { VistaAgentes } from "@/components/sala/VistaAgentes";
 import { QUIEN, type ObjetivoAccion } from "@/components/sala/TarjetaDecision";
 import { aprobarDecision } from "@/lib/cliente/api";
 import { useToast } from "@/components/ui/Toast";
@@ -49,6 +48,7 @@ import { enEspana } from "@/lib/dominio/espana";
 const MapaMemo = memo(Mapa);
 
 export default function SalaDeMando() {
+  const router = useRouter();
   const { snapshot, conectado, error, cargando, refrescar } = useEstado();
   const toast = useToast();
 
@@ -60,7 +60,6 @@ export default function SalaDeMando() {
   const [puntoFoco, setPuntoFoco] = useState<Punto | null>(null);
   const [declarandoFoco, setDeclarandoFoco] = useState(false);
   const [atajos, setAtajos] = useState(false);
-  const [vistaAgentes, setVistaAgentes] = useState(false);
   const [movil, setMovil] = useState(false);
   const [seleccionado, setSeleccionado] = useState<string>();
   const [centrarEn, setCentrarEn] = useState<PeticionEncuadre>();
@@ -137,8 +136,6 @@ export default function SalaDeMando() {
   const alternarDeclarar = useCallback(() => setDeclarando((v) => !v), []);
   const abrirAtajos = useCallback(() => setAtajos(true), []);
   const cerrarAtajos = useCallback(() => setAtajos(false), []);
-  const abrirVistaAgentes = useCallback(() => setVistaAgentes(true), []);
-  const cerrarVistaAgentes = useCallback(() => setVistaAgentes(false), []);
   const abrirMovil = useCallback(() => setMovil(true), []);
   const cerrarMovil = useCallback(() => setMovil(false), []);
   const alternarPlegado = useCallback(() => setPlegado((v) => !v), []);
@@ -366,8 +363,8 @@ export default function SalaDeMando() {
         setUnidadOrdenando(undefined);
         return;
       }
-      // La vista de agentes gestiona su propio Esc; los diálogos lo capturan antes.
-      if (e.key === "Escape" && ampliado && !vistaAgentes) {
+      // Los diálogos capturan su propio Esc antes de llegar aquí.
+      if (e.key === "Escape" && ampliado) {
         setAmpliado(false);
         return;
       }
@@ -379,7 +376,7 @@ export default function SalaDeMando() {
         setAtajos(true);
       } else if (tecla === "g") {
         e.preventDefault();
-        setVistaAgentes((v) => !v);
+        router.push("/agentes");
       } else if (tecla === "p") {
         e.preventDefault();
         alternarAmpliado();
@@ -412,7 +409,7 @@ export default function SalaDeMando() {
     }
     document.addEventListener("keydown", alTeclado);
     return () => document.removeEventListener("keydown", alTeclado);
-  }, [alternarAmpliado, alternarPausa, ampliado, declarando, pendientes, refrescar, toast, unidadOrdenando, vistaAgentes]);
+  }, [alternarAmpliado, alternarPausa, ampliado, declarando, pendientes, refrescar, router, toast, unidadOrdenando]);
 
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
@@ -422,7 +419,6 @@ export default function SalaDeMando() {
         onDeclararFoco={alternarDeclarar}
         declarando={declarando}
         onAtajos={abrirAtajos}
-        onVistaAgentes={abrirVistaAgentes}
         onUnirMovil={abrirMovil}
       />
 
@@ -501,18 +497,9 @@ export default function SalaDeMando() {
         />
       </main>
 
-      <TiraMetricas metricas={snapshot?.ejecucion?.metricas} />
-
       <DialogoDeclararFoco punto={puntoFoco} onCerrar={cerrarPuntoFoco} onConfirmar={confirmarFoco} ocupado={declarandoFoco} />
       <DialogoAtajos abierto={atajos} onCerrar={cerrarAtajos} />
       <DialogoMovil abierto={movil} onCerrar={cerrarMovil} />
-      <VistaAgentes
-        agentes={snapshot?.agentes}
-        mundoPausado={pausado}
-        abierta={vistaAgentes}
-        onCerrar={cerrarVistaAgentes}
-        onRefrescar={refrescar}
-      />
     </div>
   );
 }

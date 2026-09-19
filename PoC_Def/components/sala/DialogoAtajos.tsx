@@ -10,7 +10,7 @@ export const ATAJOS: { tecla: string; que: string }[] = [
   { tecla: "D", que: "Denegar la primera decisión pendiente (pide motivo)" },
   { tecla: "Espacio", que: "Pausar o reanudar el tiempo de mundo" },
   { tecla: "V", que: "Ver todo en el mapa: encuadra los focos activos y sus medios (o España entera si ya estaba encuadrado)" },
-  { tecla: "G", que: "Abrir o cerrar la vista de agentes a pantalla completa" },
+  { tecla: "G", que: "Abrir el centro de agentes" },
   { tecla: "P", que: "Ampliar el panel de mando a pantalla completa, sin el mapa delante (o volver al mapa)" },
   { tecla: "Esc", que: "Salir del modo declarar foco o del dibujo de zona, volver al mapa desde el panel ampliado o cerrar el diálogo abierto" },
   { tecla: "?", que: "Mostrar esta ayuda" },

@@ -44,7 +44,7 @@ import { HiloIncidencia } from "@/components/incidencia/HiloIncidencia";
 
 export default function VisorIncidencia({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { snapshot, conectado, cargando, refrescar } = useEstado();
+  const { snapshot, conectado, cargando } = useEstado();
   const toast = useToast();
 
   const [generando, setGenerando] = useState(false);
@@ -222,7 +222,7 @@ export default function VisorIncidencia({ params }: { params: Promise<{ id: stri
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <section className="min-w-0">
           <h2 className="mb-1.5 text-[13px] font-semibold text-foreground">Flujo de agentes</h2>
-          <LienzoFlujoAgentes incendioId={incendio.id} snapshot={snapshot} onTrasCambio={() => void refrescar()} />
+          <LienzoFlujoAgentes incendioId={incendio.id} snapshot={snapshot} />
         </section>
 
         <section className="min-w-0">

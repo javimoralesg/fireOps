@@ -299,7 +299,7 @@ const CLAVES_NO_SOPORTADAS = [
  * `additionalProperties: false` y lista TODAS sus propiedades en `required`
  * (lo exige `strict: true`), y se quitan las palabras clave no soportadas.
  */
-function endurecer(nodo: unknown): unknown {
+export function endurecer(nodo: unknown): unknown {
   if (Array.isArray(nodo)) return nodo.map(endurecer);
   if (!nodo || typeof nodo !== "object") return nodo;
   const obj = { ...(nodo as Record<string, unknown>) };
@@ -327,7 +327,14 @@ function endurecer(nodo: unknown): unknown {
   return obj;
 }
 
-function esquemaJson<T>(esquema: ZodType<T>): Record<string, unknown> {
+/**
+ * EXPORTADA junto con `endurecer` (fase F0 de la migración, fallo L-2 de
+ * docs/PRUEBAS.md): el endurecimiento del JSON Schema solo se validaba de rebote,
+ * cuando una llamada real con `strict: true` fallaba. La fase F3 toca el esquema
+ * más grande del sistema, así que necesita unitarias deterministas. Cambio
+ * aditivo: no altera el comportamiento.
+ */
+export function esquemaJson<T>(esquema: ZodType<T>): Record<string, unknown> {
   // zod v4 trae `z.toJSONSchema`. `io: "output"` describe lo que el modelo debe
   // producir; `unrepresentable: "any"` evita que tipos exóticos rompan la
   // conversión (se quedan como esquema libre).

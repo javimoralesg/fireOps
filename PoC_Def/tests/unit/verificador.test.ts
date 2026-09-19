@@ -3,7 +3,7 @@
 // se prueba de extremo a extremo en tests/integracion/ingesta.test.ts.
 // Aquí solo lo que es puro… y ahí está el problema (ver fallo L-1 en docs/PRUEBAS.md).
 import { describe, expect, it } from "vitest";
-import { verificador } from "@/lib/agentes/analisis/verificador";
+import { familiaCanal, verificador } from "@/lib/agentes/analisis/verificador";
 
 describe("contrato del agente verificador", () => {
   it("se identifica y declara con qué eventos despierta", () => {
@@ -31,22 +31,37 @@ describe("contrato del agente verificador", () => {
 // docs/REPARTO.md. Hasta que se exporte, la regla queda cubierta solo por la
 // prueba de integración de ingesta (que sí crea observaciones reales).
 // -------------------------------------------------------------------------
-describe.skip("familiaCanal · una noticia no confirma otra noticia (bloqueada: no se exporta)", () => {
+// FALLO L-1 CERRADO (fase F0 de la migración): `familiaCanal` ya se exporta, así
+// que la regla de negocio se prueba aislada y sin proveedor de IA. Las aserciones
+// son las que dejó escritas el constructor L; solo se han descomentado.
+// -------------------------------------------------------------------------
+describe("familiaCanal · una noticia no confirma otra noticia", () => {
   it("prensa y rrss son la misma familia", () => {
-    // const { familiaCanal } = await import("@/lib/agentes/analisis/verificador");
-    // expect(familiaCanal("prensa")).toBe(familiaCanal("rrss"));
+    expect(familiaCanal("prensa")).toBe(familiaCanal("rrss"));
   });
 
   it("cámara, satélite y sensor son la familia de observación instrumental", () => {
-    // expect(familiaCanal("camara")).toBe(familiaCanal("satelite"));
-    // expect(familiaCanal("satelite")).toBe(familiaCanal("sensor"));
+    expect(familiaCanal("camara")).toBe(familiaCanal("satelite"));
+    expect(familiaCanal("satelite")).toBe(familiaCanal("sensor"));
   });
 
   it("una llamada del 112 SÍ confirma una noticia de prensa (familias distintas)", () => {
-    // expect(familiaCanal("llamada")).not.toBe(familiaCanal("prensa"));
+    expect(familiaCanal("llamada")).not.toBe(familiaCanal("prensa"));
   });
 
   it("el canal manual es su propia familia (lo declara la sala)", () => {
-    // expect(familiaCanal("manual")).toBe("humano");
+    expect(familiaCanal("manual")).toBe("humano");
+  });
+
+  it("todos los canales de persona son la misma familia", () => {
+    const ciudadano = familiaCanal("llamada");
+    for (const canal of ["sms", "email", "telegram", "web"]) {
+      expect(familiaCanal(canal)).toBe(ciudadano);
+    }
+  });
+
+  it("las cuatro familias son distintas entre sí", () => {
+    const familias = new Set(["prensa", "camara", "manual", "llamada"].map(familiaCanal));
+    expect(familias.size).toBe(4);
   });
 });

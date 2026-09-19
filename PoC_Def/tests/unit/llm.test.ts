@@ -1,7 +1,7 @@
 // Pruebas de lib/ia/llm.ts · lo que se puede probar sin red. DUEÑO: constructor L.
-// `esquemaJson` y `endurecer` NO están exportados (ver docs/PRUEBAS.md, fallo L-2):
-// el endurecimiento del esquema queda cubierto de forma indirecta por las pruebas
-// de integración, que sí hacen llamadas reales con `response_format: json_schema`.
+// FALLO L-2 CERRADO (fase F0 de la migración): `esquemaJson` y `endurecer` ya se
+// exportan y el endurecimiento del esquema se prueba de forma directa en
+// tests/unit/esquema-json.test.ts, no solo de rebote desde integración.
 import { afterEach, describe, expect, it } from "vitest";
 import { abortarLlamadasIA, conPrioridadLLM, estadisticasLLM, estadoColaLLM, modeloPara, mundoEnPausa, proveedorActivo, proveedorDisponible } from "@/lib/ia/llm";
 

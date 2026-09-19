@@ -65,7 +65,10 @@ npm run test:tipos     # type-check de tests/** y vitest.config.mts
 | `traza.test.ts` | `lib/motor/traza.ts` | `ejecutarConTraza` publica `en_curso` y cierra en `ok`; un fallo cierra en `error` y relanza; **un `AbortError` cierra como `cancelado`**; tope de 20 trazas; `agenteActual`/`trazaActual` solo dentro del ciclo; **`anotarLlamadaIA` fuera de un ciclo no hace nada y no lanza**; tope de 30 llamadas; no se filtra a otro agente; `sinTraza` aísla el trabajo en segundo plano (bug J-3) |
 | `llm.test.ts` | `lib/ia/llm.ts` | `mundoEnPausa()` con la bandera global y su integración real con `pausar()`/`reanudar()`; solo `true` cuenta como pausa; `estadoColaLLM()` en reposo; `abortarLlamadasIA()` idempotente; proveedor activo = HelmCode y modelo por papel; contadores a cero |
 | `recencia.test.ts` | `lib/fuentes/recencia.ts` | Ventana de 15 días para prensa y redes: acepta hasta el límite exacto, descarta lo anterior, deja pasar lo que no tiene fecha (decide el modelo); `desdeVentana` para el `since` de Bluesky |
-| `verificador.test.ts` | `lib/agentes/analisis/verificador.ts` | Contrato del agente (id, categoría, `despiertaCon`, modelo). **La regla "una noticia no confirma otra noticia" no se puede probar aislada: ver fallo L-1.** |
+| `verificador.test.ts` | `lib/agentes/analisis/verificador.ts` | Contrato del agente (id, categoría, `despiertaCon`, modelo) y, desde la fase F0, la regla **"una noticia no confirma otra noticia"**: prensa y rrss son la misma familia, cámara/satélite/sensor otra, manual otra, y llamada/sms/email/telegram/web son "ciudadano" (fallo L-1 cerrado) |
+| `esquema-json.test.ts` | `lib/ia/llm.ts` | Endurecimiento del JSON Schema para `strict`: `additionalProperties: false`, **todas** las propiedades en `required` (también las opcionales de zod), recursión en objetos anidados y en `items`, se quitan las palabras clave no soportadas, `enum` se conserva, y la función es pura (fallo L-2 cerrado) |
+| `registro-agentes.test.ts` | `lib/agentes/registro.ts` | **Caracterización del inventario**: 16 agentes, sus ids, categoría, cadencia, `despiertaCon` y cuáles son deterministas. Cada fase de la migración lo cambia a propósito y el diff es la revisión |
+| `mapeo-plan.test.ts` | `lib/agentes/planificacion/mapeo-plan.ts` | **La frontera zod**: conversión `Plan` → acciones sin proveedor de IA. Rumbos de sector sobre el frente, unidades inventadas o no disponibles que se descartan, tiempo real por carretera en la descripción, no pedir dos veces lo mismo, retiradas solo del propio foco, y pureza |
 
 ### 2.2 Integración (`tests/integracion/`) — servidor vivo
 
@@ -197,8 +200,8 @@ señal de que hay que quitarle la marca.
 
 | | Qué | Dueño | Prueba |
 |---|---|---|---|
-| **L-1** | `familiaCanal` no se exporta: la regla "una noticia no confirma otra noticia" no se puede probar | D | `describe.skip` |
-| **L-2** | `esquemaJson`/`endurecer` no se exportan (menor) | C | — |
+| ~~**L-1**~~ | ~~`familiaCanal` no se exporta~~ · **CERRADO en la fase F0**: exportado, `describe` activo con 6 casos | D | 🟢 |
+| ~~**L-2**~~ | ~~`esquemaJson`/`endurecer` no se exportan~~ · **CERRADO en la fase F0**: ver `tests/unit/esquema-json.test.ts` | C | 🟢 |
 | **L-3** | `completarTexto` no propaga `permitirEnPausa`: el conocimiento devuelve 503 con el mundo en pausa | C, J | `(d bis)` `it.fails` |
 | **L-4** | En pausa se siguen completando llamadas a la IA (0-3 en 20 s; el objetivo es 0) | J | `(d ter)` con tope |
 | **L-5** | Pausar **escala a un humano para siempre** las decisiones autónomas que estaban en vuelo | J, A | — |

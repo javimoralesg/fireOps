@@ -6,3 +6,6 @@ node_modules
 PoC_Def/data/aprendizaje/
 PoC_Def/data/url-publica.txt
 PoC_Def/tsconfig.tsbuildinfo
+
+# Salida de cada pasada del test de presupuesto (la referencia commiteada es tests/linea-base.json).
+PoC_Def/tests/presupuesto-ultimo.json

@@ -121,6 +121,18 @@ function guardarEstado(e) {
   fs.mkdirSync(path.dirname(ESTADO_PATH), { recursive: true });
   fs.writeFileSync(ESTADO_PATH, JSON.stringify(e, null, 2));
 }
+/**
+ * Cambia UNA entrada sobre lo que hay en disco AHORA (relee, cambia, guarda). Las órdenes que se
+ * encadenan («configurar» → «sms» → «entrante») no se pisan: antes «configurar» guardaba una copia
+ * vieja después de que «sms» escribiera la suya y borraba la entrada sms recién creada (revisión
+ * del PR, 19-09).
+ */
+function actualizarEstado(clave, valor) {
+  const e = leerEstado();
+  e[clave] = valor;
+  guardarEstado(e);
+  return e;
+}
 
 // ---- Payload de muestra: define las variables data.* del trigger ---------
 function payloadMuestra(canal) {
@@ -165,7 +177,7 @@ async function crear() {
       const det = await api("GET", `/versions/${v.id}/`);
       if ((det.node_count ?? 0) > 1) {
         est[clave] = { id: w.id, slug: w.slug, versionId: v.id, nombre: def.nombre };
-        guardarEstado(est);
+        actualizarEstado(clave, est[clave]);
         console.log(`· ${def.nombre}: ya existe con ${det.node_count} nodos (${w.slug}); lo adopto en vez de crear otro`);
         break;
       }
@@ -180,7 +192,7 @@ async function crear() {
         from_template: { template: def.plantilla, inputs: { agent_name: def.agente } },
       });
       est[clave] = { id: w.id, slug: w.slug, versionId: w.latest_version?.id, nombre: def.nombre };
-      guardarEstado(est);
+      actualizarEstado(clave, est[clave]);
       console.log(`✔ ${def.nombre}: slug=${w.slug} versión=${w.latest_version?.id}`);
     } catch (e) {
       console.log(`✘ ${def.nombre} (plantilla ${def.plantilla}): ${e.message}`);
@@ -344,7 +356,6 @@ function configWebhook(T, trigger, canal, agente, salidas) {
 // cascarón sin trigger telefónico), sincroniza número, voz, prompt y las URLs de las
 // herramientas con la URL pública ACTUAL, publica y escribe las variables en .env.local.
 async function entrante() {
-  const est = leerEstado();
   const publica = urlPublica();
   if (!publica) {
     console.log("✘ Sin URL pública https (data/url-publica.txt vía scripts/tunel.sh, o PUBLIC_BASE_URL): el agente de voz no podría llamar a Atalaya. Abre el túnel y repite «entrante».");
@@ -357,8 +368,7 @@ async function entrante() {
   const numero = await elegirNumero(api, ENV.HAPPYROBOT_NUMERO_ENTRANTE);
   console.log(`\n${NOMBRE_ENTRANTE} · número ${numero.number} · URL pública ${publica}`);
   const r = await montarEntrante(api, { urlPublica: publica, secreto: ENV.HAPPYROBOT_WEBHOOK_SECRET, numero, prompt: PROMPT_ENTRANTE });
-  est.entrante = { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_ENTRANTE, numero: numero.number, numeroId: numero.id, urlPublica: publica, nodos: r.ids };
-  guardarEstado(est);
+  actualizarEstado("entrante", { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_ENTRANTE, numero: numero.number, numeroId: numero.id, urlPublica: publica, nodos: r.ids });
   await publicarEntrante(api, r.versionId, ENTORNO);
   env();
   console.log(`\n==> Llama al ${numero.number}: te atiende «${NOMBRE_ENTRANTE}» y registra el aviso en ${publica}.`);
@@ -366,17 +376,16 @@ async function entrante() {
 }
 
 async function configurar() {
-  const est = leerEstado();
   for (const clave of ["voz", "sms", "email", "entrante"]) {
     if (clave === "entrante") { await entrante(); continue; }
     if (clave === "sms") { await sms(); continue; }
-    const w = est[clave];
+    // Se relee en cada paso: «sms» y «entrante» acaban de escribir su entrada y una copia vieja la pisaría.
+    const w = leerEstado()[clave];
     if (!w?.versionId) { console.log(`· ${WORKFLOWS[clave].nombre}: no creado, lo salto`); continue; }
     console.log(`\n${w.nombre} (${w.slug})`);
     try {
       const ids = await configurarSaliente(clave, w);
-      est[clave].nodos = ids;
-      guardarEstado(est);
+      actualizarEstado(clave, { ...w, nodos: ids });
     } catch (e) {
       console.log(`   ✘ ${e.message}`);
     }
@@ -447,10 +456,8 @@ async function limpiar() {
 // Lo usan las acciones enviar_sms del ejecutor y los SMS del agente del 112
 // (lib/happyrobot/sms-avisos.ts → TELEFONO_AVISOS_SMS).
 async function sms() {
-  const est = leerEstado();
   const r = await montarSms(api, { log: console.log });
-  est.sms = { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_SMS, nodos: r.ids, salidas: r.salidas };
-  guardarEstado(est);
+  actualizarEstado("sms", { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_SMS, nodos: r.ids, salidas: r.salidas });
   await publicarSms(api, r.versionId, ENTORNO);
   env();
   console.log(`\n==> SMS listo: Atalaya dispara POST /api/v2/workflows/${r.workflow.slug}/runs?environment=${ENTORNO} con { payload: { telefono, texto, … } }.`);

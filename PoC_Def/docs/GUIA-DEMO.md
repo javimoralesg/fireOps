@@ -60,11 +60,18 @@ Y en HappyRobot, editar la URL del nodo Webhook de cada workflow para que apunte
 
 1. En la sala, el panel de cámaras tiene un **QR** con la URL del túnel + `/movil`.
 2. Escanearlo con la cámara del iPhone, abrir en Safari y **aceptar ubicación y cámara**
-   (Safari lo pide dos veces: permitir las dos). Debe salir "Enviando · cada 15 s".
+   (Safari lo pide dos veces: permitir las dos). Debe salir "Vigilancia activa" y, en unos segundos,
+   el veredicto ("Analizado: sin humo…"): cada fotograma se analiza al llegar, no en el ciclo del Vigía.
 3. En la sala aparece una cámara nueva `movil:...` con el nombre del dispositivo, ya vigilada.
 4. Dejar el móvil apoyado apuntando a algo. En el momento de la demo, enseñar una foto de
    humo en la pantalla de un portátil delante de la cámara del móvil: el Vigía la analiza y
    suelta una observación real.
+5. Para no tener que sostener la foto: con el humo o el fuego encuadrado, pulsar **Congelar imagen**.
+   El teléfono fija ese fotograma y lo reenvía cada 10 s hasta **Descongelar**, así la sala reacciona
+   como ante un fuego sostenido. Con **llamas claras** (confianza ≥ 0,8) el Vigía abre la observación al
+   primer análisis y el Verificador la procesa en el acto: el foco nace **confirmado** en unos 5 s y el
+   Coordinador propone el ataque inicial. Con humo hacen falta dos análisis seguidos (el segundo sale a
+   los 1,5 s). Cada minuto que la cámara siga viendo fuego, el foco se **agrava** (no se descarta).
 
 ### 1.5 Bot de Telegram
 
@@ -76,8 +83,17 @@ Y en HappyRobot, editar la URL del nodo Webhook de cada workflow para que apunte
 
 ### 1.6 Ensayo del arranque
 
-- **Ejecución limpia:** botón **Nueva ejecución** en la barra superior. Así las métricas
-  empiezan a cero y el aprendizaje de la ejecución anterior queda para el paso 8.
+- **Modo desarrollo:** pulsar el icono **«</>»** de la segunda fila de la barra para ver los
+  botones del reloj (Pausar, ×N, +1 h), el desplegable de ejecución, PARAR TODO, Declarar
+  foco y Viento global (se recuerda por navegador). Sin él la sala solo enseña la hora de
+  mundo: un foco se declara con `F` + clic y la pausa con la barra espaciadora. Para la demo,
+  **activarlo antes de empezar** (los pasos 1, 6 y 9 usan esos botones).
+- **Ejecución limpia:** botón **Nueva ejecución** en el desplegable de ejecución. Así las
+  métricas empiezan a cero y el aprendizaje de la ejecución anterior queda para el paso 8.
+- **Fuentes de detección:** en el mismo desplegable. Si no se quieren focos de satélite o de
+  prensa colándose durante la demo, pulsar **Simulacro: solo a mano y móvil** (o apagar solo
+  el satélite). La insignia «SIMULACRO…» / «Sin satélite» queda visible junto al reloj y se
+  hereda al crear una ejecución nueva; **Todas las fuentes** vuelve a la operación real.
 - **Dejar el mapa en España entera.** Sin focos. Es el estado vacío con su guía ("Haz clic en
   el mapa o pulsa F para declarar un foco"): así se ve que no hay nada precargado.
 - **Silenciar notificaciones** del portátil y del móvil (menos las del bot y las llamadas).
@@ -393,6 +409,7 @@ fuerte que tiene la demo.** Si no hay tiempo, enseñar la comparativa con la eje
 |---|---|
 | La llamada de HappyRobot no entra | Seguir con el **SMS** y el **Telegram**, que llegan por otro camino. Enseñar en el registro la referencia del run y decir "ahí está el id de la llamada, la plataforma la ha aceptado" |
 | Se cae el túnel de Cloudflare | Las llamadas y SMS **salientes** siguen funcionando (no dependen del túnel): solo se pierden los webhooks de resultado y el móvil. Reabrir el túnel en segundo plano y seguir |
+| El QR o el enlace del móvil no abren en el teléfono | Casi siempre el túnel está cerrado y la sala enseña la última URL guardada: el cuadro "Unir un móvil" lo avisa en rojo. Arrancar `scripts/tunel.sh 3000` en un terminal, **dejarlo abierto** y reabrir el cuadro. Si el script dice `no such host`, la red bloquea trycloudflare.com (la WiFi de la UPM lo hace): conectar el Mac al hotspot del móvil |
 | HelmCode va lento o devuelve 429 | Está saturado por los 17 agentes. **Pausar** los agentes de percepción que no hacen falta (prensa, satélite) desde su ficha: se liberan ranuras al instante |
 | El Vigía no ve humo en la cámara del móvil | No insistir. Declarar el foco con el clic en el mapa, que es el camino principal, y enseñar el móvil como fuente de fotogramas en el panel de cámaras |
 | No hay focos de FIRMS | Es lo normal en septiembre. Decirlo: *"hoy no hay ningún foco activo en España por satélite, y eso también es un dato real"* |
@@ -408,7 +425,9 @@ fuerte que tiene la demo.** Si no hay tiempo, enseñar la comparativa con la eje
 | `A` | Aprobar la decisión seleccionada |
 | `D` | Denegar (abre el cuadro del motivo, que es obligatorio) |
 | `Espacio` | Pausa global del mundo |
-| `Esc` | Cerrar el panel abierto |
+| `G` | Vista de agentes a pantalla completa |
+| `P` | Ampliar el panel de mando a pantalla completa, sin el mapa delante (o volver al mapa) |
+| `Esc` | Cerrar el panel abierto o volver al mapa desde el panel ampliado |
 
 ## 7. Frases que cubren cada criterio del jurado
 

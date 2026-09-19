@@ -523,6 +523,12 @@ Abriendo túnel hacia http://localhost:3456 …
   (solo se pierde el webhook de resultado).
 - Sin túnel, `PUBLIC_BASE_URL` con `localhost` se ignora a propósito: el cliente de HappyRobot
   devuelve `undefined` en vez de mandar una URL de webhook que nunca respondería.
+- **Al cerrar el script** (Ctrl+C, cerrar el terminal o caída de cloudflared) `data/url-publica.txt`
+  se vacía: si quedara la URL vieja, el QR del móvil apuntaría a un túnel muerto. Además el cuadro
+  "Unir un móvil" comprueba que la URL responde (`GET /api/movil/enlace`) y lo avisa si no.
+- **Redes que bloquean trycloudflare.com** (la WiFi de la UPM, con filtro DNS: `api.trycloudflare.com`
+  devuelve SERVFAIL y el puerto 7844 está cerrado): cloudflared muere con `no such host`. El script lo
+  detecta antes de arrancar. Solución: conectar el Mac al hotspot del móvil (comprobado el 19-09-2026).
 
 ---
 

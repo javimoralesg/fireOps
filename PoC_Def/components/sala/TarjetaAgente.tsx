@@ -3,7 +3,7 @@
 // controles (pausar / asumir el control / forzar ciclo). DUEÑO: constructor E.
 
 import Link from "next/link";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { AlertTriangle, ExternalLink, Hand, Pause, Play, RefreshCw, Unlock } from "lucide-react";
 import type { CategoriaAgente, EstadoAgente, EstadoAgenteApp } from "@/lib/dominio/tipos";
 import { accionAgente, mensajeDeError, type AccionAgente } from "@/lib/cliente/api";
@@ -99,6 +99,10 @@ export function ControlesAgente({
         variante="secundario"
         icono={agente.pausado ? <Play /> : <Pause />}
         cargando={ocupado === `${agente.id}:${agente.pausado ? "reanudar" : "pausar"}`}
+        // Con su fuente apagada por el escenario no corre de todos modos: pausarlo
+        // solo confundiría (y reanudarlo no lo arrancaría).
+        disabled={Boolean(agente.desactivadoPorEscenario) && !agente.pausado}
+        title={agente.desactivadoPorEscenario && !agente.pausado ? `Sin ciclos: la fuente «${agente.desactivadoPorEscenario}» está apagada por el escenario` : undefined}
         onClick={() => ejecutar(agente, agente.pausado ? "reanudar" : "pausar")}
       >
         {agente.pausado ? "Reanudar" : "Pausar"}
@@ -125,7 +129,8 @@ export function ControlesAgente({
   );
 }
 
-export function TarjetaAgente({
+/** `memo` (constructor R): una tarjeta solo se repinta si cambia SU agente. */
+function TarjetaAgenteBase({
   agente,
   ejecutar,
   ocupado,
@@ -144,7 +149,9 @@ export function TarjetaAgente({
   const ultima = agente.trazas?.[agente.trazas.length - 1];
   // Con el mundo en pausa el orquestador cancela los ciclos: nadie está pensando.
   const pensando = !mundoPausado && ultima?.estado === "en_curso";
-  const parado = mundoPausado || agente.pausado || agente.estado === "pausado";
+  // Fuente apagada por el escenario del mando: no lo ha pausado nadie, pero no corre.
+  const fuenteApagada = Boolean(agente.desactivadoPorEscenario) && !agente.pausado;
+  const parado = mundoPausado || agente.pausado || agente.estado === "pausado" || fuenteApagada;
 
   return (
     <article
@@ -195,9 +202,14 @@ export function TarjetaAgente({
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <Insignia pequena tono={parado ? "aviso" : tonoEstadoAgente(agente.estado)} punto>
-          {mundoPausado ? "Pausado (mundo)" : agente.pausado ? "Pausado" : TEXTO_ESTADO_AGENTE[agente.estado]}
+          {mundoPausado ? "Pausado (mundo)" : agente.pausado ? "Pausado" : fuenteApagada ? "Sin ciclos" : TEXTO_ESTADO_AGENTE[agente.estado]}
         </Insignia>
         {agente.controlHumano ? <Insignia pequena tono="aviso">Control humano</Insignia> : null}
+        {fuenteApagada ? (
+          <Insignia pequena tono="info" title="El mando apagó esta fuente de detección en el desplegable de ejecución (modo desarrollo)">
+            Fuente apagada: {agente.desactivadoPorEscenario}
+          </Insignia>
+        ) : null}
         <Insignia pequena tono="neutro" title="Modelo de IA que usa este agente">
           {agente.modelo}
         </Insignia>
@@ -224,3 +236,5 @@ export function TarjetaAgente({
     </article>
   );
 }
+
+export const TarjetaAgente = memo(TarjetaAgenteBase);

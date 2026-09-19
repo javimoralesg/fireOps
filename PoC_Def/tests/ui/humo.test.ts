@@ -179,6 +179,15 @@ describe("Sala de mando", () => {
     }
     const pagina = await navegador!.newPage();
     try {
+      // El botón "Declarar foco" solo se ve con el modo desarrollo (preferencia
+      // del navegador en localStorage): se enciende antes de cargar la sala.
+      await pagina.addInitScript(() => {
+        try {
+          localStorage.setItem("atalaya:desarrollo", "1");
+        } catch {
+          /* almacenamiento bloqueado: la prueba fallará al no ver el botón, y con razón */
+        }
+      });
       await pagina.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90_000 });
       await pagina.waitForSelector(".leaflet-container", { timeout: 60_000 });
       await dormir(3000);

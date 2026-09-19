@@ -30,7 +30,6 @@ import { DialogoAtajos } from "@/components/sala/DialogoAtajos";
 import { DialogoDeclararFoco } from "@/components/sala/DialogoDeclararFoco";
 import { DialogoMovil } from "@/components/sala/DialogoMovil";
 import { PanelDerecho, type ClavePestana } from "@/components/sala/PanelDerecho";
-import { TiraMetricas } from "@/components/sala/TiraMetricas";
 import { QUIEN } from "@/components/sala/TarjetaDecision";
 import { aprobarDecision } from "@/lib/cliente/api";
 import { useToast } from "@/components/ui/Toast";
@@ -369,8 +368,6 @@ export default function SalaDeMando() {
           incendioSeleccionado={focoResaltado}
         />
       </main>
-
-      <TiraMetricas snapshot={snapshot} />
 
       <DialogoDeclararFoco punto={puntoFoco} onCerrar={() => setPuntoFoco(null)} onConfirmar={confirmarFoco} ocupado={declarandoFoco} />
       <DialogoAtajos abierto={atajos} onCerrar={() => setAtajos(false)} />

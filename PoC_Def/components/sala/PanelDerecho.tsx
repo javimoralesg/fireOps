@@ -3,17 +3,16 @@
 // los focos, el registro vivo y las lecciones. En tablet se convierte en hoja
 // inferior. DUEÑO: constructor E.
 
-import { Bot, Flame, GraduationCap, Inbox, PanelRightClose, PanelRightOpen, ScrollText } from "lucide-react";
+import { Flame, GraduationCap, Inbox, PanelRightClose, PanelRightOpen, ScrollText } from "lucide-react";
 import type { Snapshot } from "@/lib/dominio/tipos";
 import { PanelPestana, Pestanas, type Pestana } from "@/components/ui/Pestanas";
 import { Boton } from "@/components/ui/Boton";
-import { PestanaAgentes } from "./PestanaAgentes";
 import { PestanaDecisiones } from "./PestanaDecisiones";
 import { PestanaFocos } from "./PestanaFocos";
 import { PestanaLecciones } from "./PestanaLecciones";
 import { PestanaRegistro } from "./PestanaRegistro";
 
-export type ClavePestana = "decisiones" | "agentes" | "focos" | "registro" | "lecciones";
+export type ClavePestana = "decisiones" | "focos" | "registro" | "lecciones";
 
 export function PanelDerecho({
   snapshot,
@@ -38,12 +37,9 @@ export function PanelDerecho({
 }) {
   const pendientes = (snapshot?.decisiones ?? []).filter((d) => d.estado === "pendiente_humano" || d.estado === "escalada").length;
   const focosActivos = (snapshot?.incendios ?? []).filter((i) => !["extinguido", "descartado", "fusionado"].includes(i.estado)).length;
-  const agentesConError = (snapshot?.agentes ?? []).filter((a) => a.estado === "error").length;
-  const mundoPausado = Boolean(snapshot?.reloj.pausado);
 
   const pestanas: Pestana[] = [
     { id: "decisiones", etiqueta: "Requiere tu decisión", cuenta: pendientes, icono: <Inbox />, urgente: true },
-    { id: "agentes", etiqueta: "Agentes", cuenta: snapshot?.agentes.length ?? 0, icono: <Bot />, urgente: agentesConError > 0 },
     { id: "focos", etiqueta: "Focos", cuenta: focosActivos, icono: <Flame /> },
     { id: "registro", etiqueta: "Registro", icono: <ScrollText /> },
     { id: "lecciones", etiqueta: "Lecciones", cuenta: snapshot?.lecciones.length ?? 0, icono: <GraduationCap /> },
@@ -90,9 +86,6 @@ export function PanelDerecho({
             onCentrarIncendio={onCentrarIncendio}
             onCentrarUnidad={onCentrarUnidad}
           />
-        </PanelPestana>
-        <PanelPestana id="agentes" activa={activa} idBase="panel">
-          <PestanaAgentes agentes={snapshot?.agentes ?? []} onTrasAccion={onRefrescar} mundoPausado={mundoPausado} />
         </PanelPestana>
         <PanelPestana id="focos" activa={activa} idBase="panel">
           <PestanaFocos snapshot={snapshot} onCentrar={onCentrarIncendio} onTrasCambio={onRefrescar} seleccionado={incendioSeleccionado} />

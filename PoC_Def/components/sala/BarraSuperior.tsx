@@ -44,6 +44,7 @@ import { PuntosSalud } from "./PuntosSalud";
 const FACTORES = [6, 12, 30];
 
 const ENLACES = [
+  { href: "/agentes", etiqueta: "Agentes", icono: Bot },
   { href: "/conocimiento", etiqueta: "Conocimiento", icono: BookOpen },
   { href: "/politica", etiqueta: "Política", icono: Settings2 },
   { href: "/informes", etiqueta: "Informes", icono: ScrollText },
@@ -58,7 +59,6 @@ export function BarraSuperior({
   onDeclararFoco,
   declarando,
   onAtajos,
-  onVistaAgentes,
   onUnirMovil,
 }: {
   snapshot?: Snapshot;
@@ -66,7 +66,6 @@ export function BarraSuperior({
   onDeclararFoco: () => void;
   declarando: boolean;
   onAtajos: () => void;
-  onVistaAgentes: () => void;
   onUnirMovil: () => void;
 }) {
   const toast = useToast();
@@ -78,6 +77,7 @@ export function BarraSuperior({
   const ejec = snapshot?.ejecucion;
   const pausado = Boolean(reloj?.pausado);
   const mostrarSaludServicios = debugActivado(process.env.NEXT_PUBLIC_DEBUG);
+  const agentesConError = (snapshot?.agentes ?? []).filter((agente) => agente.estado === "error" || Boolean(agente.ultimoError)).length;
   const focosActivos = (snapshot?.incendios ?? []).filter((i) => !["extinguido", "descartado", "controlado"].includes(i.estado));
   const vientoForzado = focosActivos.find((i) => i.meteoForzada);
 
@@ -232,9 +232,6 @@ export function BarraSuperior({
         >
           Viento global
         </Boton>
-        <Boton tamano="sm" icono={<Bot />} onClick={onVistaAgentes}>
-          Vista de agentes
-        </Boton>
         <Boton tamano="sm" icono={<Smartphone />} onClick={onUnirMovil}>
           Unir un móvil
         </Boton>
@@ -279,6 +276,11 @@ export function BarraSuperior({
               className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-muted hover:bg-panel-2 hover:text-foreground"
             >
               <Icono className="size-3.5" aria-hidden /> {etiqueta}
+              {href === "/agentes" && agentesConError > 0 ? (
+                <span className="rounded-full bg-danger px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white dark:text-[#2a0d10]">
+                  {agentesConError} con error
+                </span>
+              ) : null}
             </Link>
           ))}
         </nav>

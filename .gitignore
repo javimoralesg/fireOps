@@ -5,4 +5,5 @@ node_modules
 .next
 PoC_Def/data/aprendizaje/
 PoC_Def/data/url-publica.txt
+PoC_Def/data/happyrobot-workflows.json
 PoC_Def/tsconfig.tsbuildinfo

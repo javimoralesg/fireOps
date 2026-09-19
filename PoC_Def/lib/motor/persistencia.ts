@@ -26,6 +26,7 @@
 import type { TrazaCiclo } from "../dominio/tipos";
 import { establecerEstado, obtenerEstado, type Estado } from "./estado";
 import { mensajeDe } from "./enriquecer";
+import { obtenerClienteSupabase } from "../db/cliente";
 import {
   cargarEjecucionActiva,
   guardarEjecucion,
@@ -399,7 +400,13 @@ export async function arrancarPersistencia(): Promise<void> {
     // El cliente acepta SUPABASE_SERVICE_ROLE_KEY o, en su defecto, SUPABASE_ANON_KEY
     // (ver lib/db/cliente.ts): el mensaje debe nombrar las dos o parece que falta una
     // clave que en realidad no hace falta.
-    estado.marcarServicio("Supabase", false, "Sin SUPABASE_URL o sin SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY: la ejecución vive solo en memoria");
+    estado.marcarServicio(
+      "Supabase",
+      false,
+      obtenerClienteSupabase()
+        ? "Esta instancia no guarda la ejecución (SUPABASE_PERSISTIR sin activar): vive solo en memoria"
+        : "Sin SUPABASE_URL o sin SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY: la ejecución vive solo en memoria",
+    );
     return;
   }
 

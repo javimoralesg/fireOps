@@ -21,8 +21,53 @@ import type {
   TrazaCiclo,
   Unidad,
 } from "../dominio/tipos";
+import { hostname } from "node:os";
 import { Estado } from "../motor/estado";
 import { obtenerClienteSupabase } from "./cliente";
+
+/**
+ * AISLAMIENTO POR INSTANCIA (2026-09-19): el proyecto Supabase lo comparten
+ * varios `next dev` del equipo. Antes cada servidor recuperaba al arrancar la
+ * ejecución «activa» más reciente de CUALQUIERA, y los ids deterministas
+ * (`firms:…`, `exa:…`, `dgt:…`) de uno pisaban por upsert las filas del otro.
+ * Ahora cada instancia marca su ejecución (`datos.instancia`), solo recupera y
+ * lista las suyas, antepone su nombre al id de cada fila y guarda su propia
+ * política. Nombre: `ATALAYA_INSTANCIA`; si no, el servicio de Railway (estable
+ * entre despliegues) o el nombre del equipo. No se usa la IP: cambia al pasar
+ * de la WiFi de la UPM al hotspot y el servidor no la conoce sin preguntar fuera.
+ * Lecciones y conocimiento (RAG) siguen siendo comunes a propósito.
+ */
+export function nombreInstancia(): string {
+  const bruto =
+    process.env.ATALAYA_INSTANCIA?.trim() ||
+    (process.env.RAILWAY_SERVICE_ID ? `railway-${process.env.RAILWAY_SERVICE_ID}` : "") ||
+    hostname();
+  return bruto.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 60) || "local";
+}
+
+/**
+ * SOLO UNA INSTANCIA ESCRIBE (2026-09-19): con cuatro `next dev` volcando cada
+ * tick en el mismo proyecto pequeño, la base se colapsó dos veces. Por eso la
+ * ejecución (estado, trazas, informes, política) solo se guarda donde se pide:
+ * `SUPABASE_PERSISTIR=1` la enciende y `=0` la apaga; sin la variable, solo
+ * persiste Railway. Los demás servidores viven en memoria sin tocar la base
+ * de nadie; lecciones y conocimiento se siguen leyendo de Supabase.
+ */
+export function persistenciaActivada(): boolean {
+  const valor = process.env.SUPABASE_PERSISTIR?.trim().toLowerCase();
+  if (valor) return ["1", "true", "si", "sí"].includes(valor);
+  return !!process.env.RAILWAY_SERVICE_ID;
+}
+
+/** Cliente para la ejecución: null si falta configuración o esta instancia no persiste. */
+function clienteEjecucion() {
+  return persistenciaActivada() ? obtenerClienteSupabase() : null;
+}
+
+/** Id de la fila en la base: el de la entidad con la instancia delante. */
+function idFila(id: string): string {
+  return `${nombreInstancia()}/${id}`;
+}
 
 /** Tablas genéricas (id, ejecucion_id, incendio_id, datos jsonb, actualizado_en). */
 export type TablaEntidad =
@@ -49,10 +94,10 @@ export async function guardarTrazas(
   trazas: { traza: TrazaCiclo; agenteId: string; incendioId?: string }[],
   ejecucionId: string,
 ): Promise<number> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente || trazas.length === 0) return 0;
   const filas = trazas.map(({ traza, agenteId, incendioId }) => ({
-    id: traza.id,
+    id: idFila(traza.id),
     ejecucion_id: ejecucionId,
     agente_id: agenteId,
     incendio_id: incendioId ?? null,
@@ -66,16 +111,16 @@ export async function guardarTrazas(
 
 /** Recupera una traza ya persistida (la auditoría la busca cuando ya no está en memoria). */
 export async function buscarTrazaPersistida(trazaId: string): Promise<TrazaCiclo | undefined> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return undefined;
-  const { data, error } = await cliente.from("trazas").select("datos").eq("id", trazaId).limit(1);
+  const { data, error } = await cliente.from("trazas").select("datos").eq("id", idFila(trazaId)).limit(1);
   if (error) throw new Error(`trazas: ${error.message}`);
   return (data?.[0]?.datos as TrazaCiclo) ?? undefined;
 }
 
 /** Cuántas trazas e informes hay guardados de una ejecución (para /api/salud). */
 export async function contarPersistidos(ejecucionId: string): Promise<{ trazas: number; informes: number }> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return { trazas: 0, informes: 0 };
   const [t, i] = await Promise.all([
     cliente.from("trazas").select("id", { count: "exact", head: true }).eq("ejecucion_id", ejecucionId),
@@ -85,12 +130,12 @@ export async function contarPersistidos(ejecucionId: string): Promise<{ trazas: 
 }
 
 export function hayPersistencia(): boolean {
-  return obtenerClienteSupabase() !== null;
+  return clienteEjecucion() !== null;
 }
 
 function fila(entidad: { id: string }, opciones: OpcionesGuardado) {
   return {
-    id: entidad.id,
+    id: idFila(entidad.id),
     ejecucion_id: opciones.ejecucionId,
     incendio_id: opciones.incendioId ?? null,
     datos: entidad,
@@ -100,7 +145,7 @@ function fila(entidad: { id: string }, opciones: OpcionesGuardado) {
 
 /** Upsert de una entidad. Lanza si Supabase responde con error (el que llama decide). */
 export async function guardarEntidad(tabla: TablaEntidad, entidad: { id: string }, opciones: OpcionesGuardado): Promise<void> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return;
   const { error } = await cliente.from(tabla).upsert(fila(entidad, opciones), { onConflict: "id" });
   if (error) throw new Error(`${tabla}: ${error.message}`);
@@ -108,7 +153,7 @@ export async function guardarEntidad(tabla: TablaEntidad, entidad: { id: string 
 
 /** Upsert en lote (una sola petición por tabla). */
 export async function guardarLote(tabla: TablaEntidad, entidades: { id: string }[], opciones: OpcionesGuardado): Promise<number> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente || entidades.length === 0) return 0;
   const filas = entidades.map((e) => fila(e, { ...opciones, incendioId: (e as { incendioId?: string }).incendioId ?? opciones.incendioId }));
   const { error } = await cliente.from(tabla).upsert(filas, { onConflict: "id" });
@@ -122,15 +167,15 @@ export async function guardarLote(tabla: TablaEntidad, entidades: { id: string }
  * siguiente arranque los volvería a cargar con su riesgo viejo.
  */
 export async function borrarLote(tabla: TablaEntidad, ids: string[]): Promise<number> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente || ids.length === 0) return 0;
-  const { error } = await cliente.from(tabla).delete().in("id", ids);
+  const { error } = await cliente.from(tabla).delete().in("id", ids.map(idFila));
   if (error) throw new Error(`${tabla}: ${error.message}`);
   return ids.length;
 }
 
 export async function guardarEjecucion(ejecucion: Ejecucion): Promise<void> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return;
   const { error } = await cliente.from("ejecuciones").upsert(
     {
@@ -141,7 +186,7 @@ export async function guardarEjecucion(ejecucion: Ejecucion): Promise<void> {
       estado: ejecucion.estado,
       metricas: ejecucion.metricas,
       comparativa: ejecucion.comparativa ?? null,
-      datos: ejecucion,
+      datos: { ...ejecucion, instancia: nombreInstancia() },
     },
     { onConflict: "id" },
   );
@@ -149,9 +194,14 @@ export async function guardarEjecucion(ejecucion: Ejecucion): Promise<void> {
 }
 
 export async function listarEjecuciones(limite = 20): Promise<Ejecucion[]> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return [];
-  const { data, error } = await cliente.from("ejecuciones").select("datos").order("inicio", { ascending: false }).limit(limite);
+  const { data, error } = await cliente
+    .from("ejecuciones")
+    .select("datos")
+    .eq("datos->>instancia", nombreInstancia())
+    .order("inicio", { ascending: false })
+    .limit(limite);
   if (error) throw new Error(`ejecuciones: ${error.message}`);
   return (data ?? []).map((f) => f.datos as Ejecucion).filter(Boolean);
 }
@@ -164,7 +214,7 @@ export async function listarEjecuciones(limite = 20): Promise<Ejecucion[]> {
  * azar. Lo que no entre sigue en Supabase y se consulta por su ruta.
  */
 async function cargarTabla<T>(tabla: TablaEntidad, ejecucionId: string, limite = 1000): Promise<T[]> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return [];
   const { data, error } = await cliente
     .from(tabla)
@@ -181,12 +231,13 @@ async function cargarTabla<T>(tabla: TablaEntidad, ejecucionId: string, limite =
  * Railway). Devuelve undefined si no hay cliente o no hay ejecución activa.
  */
 export async function cargarEjecucionActiva(): Promise<Estado | undefined> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return undefined;
   const { data, error } = await cliente
     .from("ejecuciones")
     .select("datos")
     .eq("estado", "activa")
+    .eq("datos->>instancia", nombreInstancia())
     .order("inicio", { ascending: false })
     .limit(1);
   if (error) throw new Error(`ejecuciones: ${error.message}`);
@@ -215,7 +266,7 @@ export async function cargarEjecucionActiva(): Promise<Estado | undefined> {
   estado.eventos = eventos.sort((a, b) => a.en.localeCompare(b.en));
 
   // Política vigente, si se guardó
-  const { data: pol } = await cliente.from("politica").select("datos").eq("id", "vigente").limit(1);
+  const { data: pol } = await cliente.from("politica").select("datos").eq("id", idFila("vigente")).limit(1);
   // Solo se respeta la política guardada si la editó una persona: la de "sistema" es una copia
   // antigua de la de fábrica y pisaría los cambios de lib/dominio/politica-defecto.ts.
   const politicaGuardada = pol?.[0]?.datos as typeof estado.politica | undefined;
@@ -226,9 +277,9 @@ export async function cargarEjecucionActiva(): Promise<Estado | undefined> {
 
 /** Guarda la política vigente (la edita el humano desde /politica). */
 export async function guardarPolitica(politica: unknown): Promise<void> {
-  const cliente = obtenerClienteSupabase();
+  const cliente = clienteEjecucion();
   if (!cliente) return;
-  const { error } = await cliente.from("politica").upsert({ id: "vigente", datos: politica, actualizada_en: new Date().toISOString() }, { onConflict: "id" });
+  const { error } = await cliente.from("politica").upsert({ id: idFila("vigente"), datos: politica, actualizada_en: new Date().toISOString() }, { onConflict: "id" });
   if (error) throw new Error(`politica: ${error.message}`);
 }
 

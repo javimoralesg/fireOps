@@ -43,6 +43,7 @@ import { evaluarCompetencia } from "../dominio/politica";
 import { anotarTraza, ejecutarConTraza, resumir, sinTraza, trazaActual } from "./traza";
 import { generarActaAccion, generarActaDecision } from "./actas";
 import { describirFueraEspana, enEspana } from "../dominio/espana";
+import { requiereSupervisorIndependiente } from "../dominio/supervision";
 import { esServicioDeterminista } from "../dominio/clase-agente";
 import { sanearFueraEspana } from "./saneamientoEspana";
 
@@ -861,13 +862,31 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   d.competencia = competencia;
   d.riesgo = riesgo;
 
-  // (c) Supervisor de calidad --------------------------------------------
+  // (c) Supervisor de calidad · POR MUESTREO (F5) -------------------------
+  // El supervisor ya no evalúa TODAS las decisiones antes de enrutarlas: su
+  // llamada de razonamiento va en el camino crítico (~25 s medidos) y para un
+  // aviso preventivo de riesgo 20 que la política declara autónomo no compra
+  // nada. La regla vive en lib/dominio/supervision.ts y la lee de la POLÍTICA,
+  // así que sigue al mando si edita los umbrales en /politica.
+  // Lo irreversible —evacuar, confinar, cortar una carretera, elevar el nivel—
+  // y todo lo que vaya a manos de una persona SIEMPRE se evalúa antes.
+  // El ataque inicial ya iba por esta vía desde antes: ahora es un caso más.
+  const falloSupervision = requiereSupervisorIndependiente(d, estado.politica);
+  const revisaDespues = esAtaqueInicial || !falloSupervision.procede;
+
   let evaluacion: EvaluacionSupervisor | undefined;
   let supervisorCaido = false;
   let motivoSupervisorCaido = "";
   try {
     const { evaluarDecision } = await import("../agentes/supervision/supervisor");
-    if (esAtaqueInicial) {
+    if (revisaDespues) {
+      // Por qué no ha esperado, en el registro: nunca se salta en silencio.
+      estado.registrarEvento("agente", `Supervisión a posteriori de «${d.titulo}»: ${esAtaqueInicial ? "ataque inicial (doctrina)" : falloSupervision.motivo}`, {
+        agenteId: "supervisor",
+        incendioId: d.incendioId,
+        nivel: "info",
+        datos: { decisionId: d.id, muestreo: !esAtaqueInicial, motivo: falloSupervision.motivo },
+      });
       // No bloquea: la evaluación llega después y queda en la decisión y en el acta.
       // Va en su PROPIA traza de supervisor (fuera de la del agente proponente) para
       // que su latencia se mida donde corresponde y se vea en /agentes/supervisor.
@@ -876,7 +895,7 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
           estado.actualizar(estado.decisiones, d.id, { evaluacion: ev });
           estado.marcarServicio("Supervisor", true, `${ev.puntuacion}/100`);
           if (!ev.aprueba) {
-            estado.registrarEvento("decision_escalada", `El supervisor revisa a posteriori el ataque inicial (${ev.puntuacion}/100): ${ev.motivoEscalado ?? "revisar el dispositivo"}`, {
+            estado.registrarEvento("decision_escalada", `El supervisor revisa a posteriori «${d.titulo}» (${ev.puntuacion}/100): ${ev.motivoEscalado ?? "conviene revisarla"}`, {
               agenteId: d.agenteId,
               incendioId: d.incendioId,
               nivel: "aviso",
@@ -919,7 +938,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     });
   }
 
-  const aprueba = esAtaqueInicial || (!supervisorCaido && !!evaluacion?.aprueba);
+  // Las que se revisan a posteriori se enrutan con la política, que es
+  // determinista y ya ha dicho que son autónomas de bajo riesgo.
+  const aprueba = revisaDespues || (!supervisorCaido && !!evaluacion?.aprueba);
 
   // (d) Enrutado ----------------------------------------------------------
   if (aprueba && competencia === "autonoma") {

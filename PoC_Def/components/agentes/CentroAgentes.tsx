@@ -10,7 +10,6 @@ import { useEstado } from "@/lib/cliente/useEstado";
 import { numero } from "@/lib/cliente/formato";
 import { Marca } from "@/components/marca/Logo";
 import { SelectorTema } from "@/components/marca/SelectorTema";
-import { Boton } from "@/components/ui/Boton";
 import { Insignia } from "@/components/ui/Insignia";
 import { PanelPestana, Pestanas } from "@/components/ui/Pestanas";
 import { Vacio } from "@/components/ui/Vacio";
@@ -48,8 +47,12 @@ export function CentroAgentes() {
         <Link href="/" className="rounded-lg">
           <Marca organismo="Centro de agentes · operación y trazabilidad" />
         </Link>
-        <Link href="/" className="ml-auto">
-          <Boton icono={<ArrowLeft />}>Volver a la sala</Boton>
+        <Link
+          href="/"
+          className="ml-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-panel-border-strong bg-panel px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-panel-2"
+        >
+          <ArrowLeft className="size-4 shrink-0" aria-hidden />
+          <span>Volver a la sala</span>
         </Link>
         <SelectorTema compacto />
       </header>

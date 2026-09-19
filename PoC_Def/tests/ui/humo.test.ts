@@ -12,6 +12,7 @@ import { BASE, api, dormir, medir } from "../integracion/ayudas";
 const RUTAS = [
   "/",
   "/auditoria",
+  "/agentes",
   "/agentes/coordinador",
   "/conocimiento",
   "/informes",

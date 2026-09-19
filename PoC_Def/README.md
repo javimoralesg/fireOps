@@ -125,8 +125,9 @@ Son dieciséis agentes:
 
 ## Ponerlo en marcha
 
-Hace falta Node 20.9 o superior (está desarrollado con Node 24) y una clave del proveedor de IA.
-Sin ella arrancan las pantallas y los agentes que no razonan, pero poco más.
+Hace falta Node 22.12 o superior (está desarrollado con Node 24, que es lo que fija `.nvmrc`) y
+una clave del proveedor de IA. Sin ella arrancan las pantallas y los agentes que no razonan, pero
+poco más.
 
 ```bash
 npm install
@@ -180,6 +181,32 @@ resincroniza el agente de voz. Hace falta para tres cosas: que el teléfono pued
 ubicación (el navegador las exige bajo HTTPS), que las llamadas y los SMS puedan devolver su
 resultado, y que el QR de la sala funcione.
 
+#### El teléfono del 112 y los SMS (HappyRobot)
+
+Hace falta una organización en `https://platform.eu.happyrobot.ai` con una clave de API
+(**Settings → API keys**; empieza por `sk_live_`) y un número de teléfono comprado en
+**Phone numbers**: es el que atiende las llamadas y desde el que salen los SMS. En `.env.local`
+van `HAPPYROBOT_API_KEY`, un `HAPPYROBOT_WEBHOOK_SECRET` inventado (`openssl rand -hex 24`) y
+`TELEFONO_AVISOS_SMS`, el móvil en formato `+34…` que recibirá los SMS del agente. Los slugs de los
+workflows y el número no se rellenan a mano: los escribe el script que los monta y publica.
+
+```bash
+node scripts/happyrobot-workflows.mjs sms        # monta y publica «Atalaya · SMS saliente» → HAPPYROBOT_WORKFLOW_SLUG_SMS
+npm run dev:movil                                # con la clave puesta, al abrir el túnel crea y sincroniza «Atalaya · 112 entrante»
+node scripts/happyrobot-workflows.mjs entrante   # lo mismo a mano, con el túnel abierto → HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE y HAPPYROBOT_NUMERO_ENTRANTE
+node scripts/happyrobot-workflows.mjs estado     # qué workflows hay en la plataforma y cuáles están publicados
+node scripts/happyrobot-workflows.mjs sms-prueba +34600000000 "Prueba"   # manda un SMS de verdad y enseña el run
+```
+
+El 112 entrante necesita la URL pública del túnel, porque el agente de voz llama a Atalaya durante
+la llamada; por eso `npm run dev:movil` lo vuelve a sincronizar cada vez que la URL cambia. Si la
+organización tiene varios números, `HAPPYROBOT_NUMERO_ENTRANTE` elige cuál atiende. Después de que
+el script escriba en `.env.local` hay que reiniciar el servidor.
+
+Comprobación final: `curl -s http://localhost:3000/api/happyrobot/salud` dice qué canales están
+configurados, qué workflows existen y cuáles están publicados. En la sala, la barra de servicios
+enseña en rojo lo que falte, con el nombre exacto de la variable.
+
 ### Pruebas
 
 ```bash
@@ -193,7 +220,8 @@ npm run test:ui            # recorre las pantallas con un navegador
 
 Pensado para Railway: `npm run build`, `npm run start`, comprobación de salud en `/api/salud` y
 **una sola réplica**, porque el mundo está en memoria y dos réplicas serían dos mundos distintos.
-Al cambiar de dominio hay que fijar `PUBLIC_BASE_URL` y volver a apuntar los webhooks.
+Al cambiar de dominio hay que fijar `PUBLIC_BASE_URL` y volver a apuntar los webhooks
+(`node scripts/happyrobot-workflows.mjs sincronizar` para el 112 entrante).
 
 ## Conviene saber
 

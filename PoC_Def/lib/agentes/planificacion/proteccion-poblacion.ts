@@ -38,10 +38,22 @@ const MAX_FOCOS_POR_CICLO = 2;
  * sola vez y lo que crece es solo la lista de pueblos y la respuesta.
  */
 const MAX_POBLACIONES_POR_FOCO = 4;
-/** Tokens de salida reservados por pueblo (guion de llamada + SMS + razonamiento). */
-const TOKENS_POR_POBLACION = 2200;
+/**
+ * Tokens de salida reservados por pueblo (guion de llamada + SMS + razonamiento).
+ *
+ * MEDIDO EN VIVO (2026-09-19, verificación de F3): con 2.200 por pueblo, una
+ * respuesta de dos pueblos salió con EXACTAMENTE 4.400 tokens —el tope— o sea
+ * truncada, y disparó el reintento de reparación de `completarJson`. Resultado:
+ * DOS llamadas de razonamiento en vez de una, que es justo lo que esta fase
+ * venía a evitar. El agente de un solo pueblo usaba 6.000 él solo; agrupando se
+ * comparte el contexto de ENTRADA, pero la SALIDA de cada pueblo (su guion de
+ * llamada y su SMS) no se comparte y hay que pagarla entera.
+ * El tope no es un objetivo: si la respuesta es más corta, se gasta menos.
+ */
+const TOKENS_BASE = 1500;
+const TOKENS_POR_POBLACION = 3500;
 /** Techo de la respuesta, pase lo que pase. */
-const MAX_TOKENS = 9000;
+const MAX_TOKENS = 14_000;
 
 /**
  * Distancia (km) por debajo de la cual un núcleo con colectivos vulnerables o con
@@ -234,7 +246,7 @@ async function decidirPoblaciones(
       esquema: ESQUEMA,
       nombreEsquema: "medidas_poblacion",
       papel: "razonamiento",
-      maxTokens: Math.min(MAX_TOKENS, poblaciones.length * TOKENS_POR_POBLACION),
+      maxTokens: Math.min(MAX_TOKENS, TOKENS_BASE + poblaciones.length * TOKENS_POR_POBLACION),
       signal: ctx.abortSignal,
     });
 

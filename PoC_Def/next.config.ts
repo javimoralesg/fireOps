@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   // recursos de desarrollo pedidos desde ese origen.
   allowedDevOrigins: ["*.trycloudflare.com"],
 
+  // Oculta el indicador flotante de Next ("N") que aparece en `next dev`.
+  devIndicators: false,
+
   // output: "standalone" NO se activa a propósito: en Railway arrancamos con
   // `npm run start` (= next start), que necesita el build completo. El modo
   // standalone obligaría a cambiar el comando a `node .next/standalone/server.js`

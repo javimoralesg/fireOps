@@ -2,7 +2,7 @@
 // Diálogo modal accesible: foco atrapado, Escape cierra, aria-modal, se devuelve
 // el foco al elemento que lo abrió. DUEÑO: constructor E.
 
-import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 export interface DialogoProps {
@@ -28,12 +28,21 @@ export function Dialogo({ abierto, onCerrar, titulo, descripcion, pie, ancho = "
   const idTitulo = useId();
   const idDesc = useId();
 
-  const alPulsarTecla = useCallback(
-    (e: KeyboardEvent) => {
-      if (!abierto) return;
+  // `onCerrar` suele llegar como flecha en línea (nueva en cada render) y la sala
+  // se re-renderiza con cada Snapshot del SSE. Si el efecto dependiera de ella se
+  // re-ejecutaría sin parar: volvería a enfocar el primer control del diálogo y el
+  // navegador haría scroll hasta él, devolviendo el contenido arriba mientras se lee.
+  const cerrar = useRef(onCerrar);
+  useEffect(() => {
+    cerrar.current = onCerrar;
+  }, [onCerrar]);
+
+  useEffect(() => {
+    if (!abierto) return;
+    const alPulsarTecla = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onCerrar();
+        cerrar.current();
         return;
       }
       if (e.key !== "Tab" || !caja.current) return;
@@ -48,16 +57,11 @@ export function Dialogo({ abierto, onCerrar, titulo, descripcion, pie, ancho = "
         e.preventDefault();
         primero.focus();
       }
-    },
-    [abierto, onCerrar],
-  );
-
-  useEffect(() => {
-    if (!abierto) return;
+    };
     anterior.current = document.activeElement as HTMLElement | null;
     const t = setTimeout(() => {
       const focables = caja.current?.querySelectorAll<HTMLElement>(FOCABLES);
-      (focables && focables.length > 1 ? focables[1] : focables?.[0])?.focus();
+      (focables && focables.length > 1 ? focables[1] : focables?.[0])?.focus({ preventScroll: true });
     }, 30);
     document.addEventListener("keydown", alPulsarTecla, true);
     const overflow = document.body.style.overflow;
@@ -66,9 +70,9 @@ export function Dialogo({ abierto, onCerrar, titulo, descripcion, pie, ancho = "
       clearTimeout(t);
       document.removeEventListener("keydown", alPulsarTecla, true);
       document.body.style.overflow = overflow;
-      anterior.current?.focus?.();
+      anterior.current?.focus?.({ preventScroll: true });
     };
-  }, [abierto, alPulsarTecla]);
+  }, [abierto]);
 
   if (!abierto) return null;
 

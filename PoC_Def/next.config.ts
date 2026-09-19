@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // proceso) y sharp el tratamiento de imágenes de las cámaras.
   serverExternalPackages: ["@huggingface/transformers", "onnxruntime-node", "sharp"],
 
+  // En `next dev`, permite abrir la app desde el móvil vía túnel de Cloudflare
+  // (HTTPS, necesario para la cámara). Sin esto Next rechaza el HMR y los
+  // recursos de desarrollo pedidos desde ese origen.
+  allowedDevOrigins: ["*.trycloudflare.com"],
+
   // output: "standalone" NO se activa a propósito: en Railway arrancamos con
   // `npm run start` (= next start), que necesita el build completo. El modo
   // standalone obligaría a cambiar el comando a `node .next/standalone/server.js`

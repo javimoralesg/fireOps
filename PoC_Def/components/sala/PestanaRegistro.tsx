@@ -2,7 +2,7 @@
 // Pestaña "Registro": eventos en vivo con filtro por nivel e incendio.
 // DUEÑO: constructor E.
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -24,7 +24,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import type { Evento, Snapshot, TipoEvento } from "@/lib/dominio/tipos";
+import type { Evento, Incendio, Observacion, TipoEvento } from "@/lib/dominio/tipos";
 import { hora } from "@/lib/cliente/formato";
 import { urlSegura } from "@/lib/cliente/enlaces";
 import { EnlaceExterno } from "@/components/ui/Enlace";
@@ -93,9 +93,44 @@ const NIVELES = [
   { id: "critico", etiqueta: "Solo críticos" },
 ] as const;
 
-export function PestanaRegistro({ snapshot }: { snapshot?: Snapshot }) {
+/** Lista vacía compartida: evita crear un array nuevo (y romper memos) por render. */
+const VACIO: never[] = [];
+
+/** Líneas que se montan en el primer render al abrir la pestaña. */
+const LINEAS_DE_ENTRADA = 40;
+
+/**
+ * Montaje escalonado (constructor R): el registro pinta hasta 250 líneas. Las
+ * primeras entran con el clic y el resto en la siguiente tarea del hilo, así que
+ * abrir la pestaña responde al momento sin recortar el registro.
+ */
+function useMontajeEscalonado(): boolean {
+  const [completo, setCompleto] = useState(false);
+  useEffect(() => {
+    if (completo) return;
+    const id = setTimeout(() => setCompleto(true), 0);
+    return () => clearTimeout(id);
+  }, [completo]);
+  return completo;
+}
+
+/**
+ * RENDIMIENTO (constructor R): recibe PORCIONES del snapshot, no el snapshot
+ * entero, y está memoizado: un tick que solo mueve el reloj o las métricas ya no
+ * vuelve a filtrar ni a ordenar los eventos.
+ */
+function PestanaRegistroBase({
+  eventos: todos,
+  observaciones,
+  incendios,
+}: {
+  eventos?: readonly Evento[];
+  observaciones?: readonly Observacion[];
+  incendios?: readonly Incendio[];
+}) {
   const [nivel, setNivel] = useState<(typeof NIVELES)[number]["id"]>("todos");
   const [incendioId, setIncendioId] = useState("todos");
+  const montajeCompleto = useMontajeEscalonado();
 
   /**
    * URL de la fuente de cada observación, para poder abrir la noticia, el post
@@ -104,29 +139,32 @@ export function PestanaRegistro({ snapshot }: { snapshot?: Snapshot }) {
    */
   const urlPorObservacion = useMemo(() => {
     const mapa = new Map<string, string>();
-    for (const o of snapshot?.observaciones ?? []) {
+    for (const o of observaciones ?? VACIO) {
       const url = urlSegura(o.urlFuente);
       if (url) mapa.set(o.id, url);
     }
     return mapa;
-  }, [snapshot?.observaciones]);
+  }, [observaciones]);
 
   /** Fuente abrible de un evento: la suya propia o la de su observación. */
-  const urlDeEvento = (e: Evento): string | undefined => {
-    const datos = (e.datos ?? {}) as Record<string, unknown>;
-    const propia = urlSegura(typeof datos.url === "string" ? datos.url : undefined);
-    if (propia) return propia;
-    const obs = typeof datos.observacionId === "string" ? datos.observacionId : undefined;
-    return obs ? urlPorObservacion.get(obs) : undefined;
-  };
+  const urlDeEvento = useCallback(
+    (e: Evento): string | undefined => {
+      const datos = (e.datos ?? {}) as Record<string, unknown>;
+      const propia = urlSegura(typeof datos.url === "string" ? datos.url : undefined);
+      if (propia) return propia;
+      const obs = typeof datos.observacionId === "string" ? datos.observacionId : undefined;
+      return obs ? urlPorObservacion.get(obs) : undefined;
+    },
+    [urlPorObservacion],
+  );
 
   const eventos = useMemo(() => {
-    let lista: Evento[] = snapshot?.eventos ?? [];
+    let lista: readonly Evento[] = todos ?? VACIO;
     if (nivel === "critico") lista = lista.filter((e) => e.nivel === "critico");
     else if (nivel === "aviso") lista = lista.filter((e) => e.nivel !== "info");
     if (incendioId !== "todos") lista = lista.filter((e) => e.incendioId === incendioId);
     return [...lista].sort((a, b) => b.en.localeCompare(a.en)).slice(0, 250);
-  }, [snapshot?.eventos, nivel, incendioId]);
+  }, [todos, nivel, incendioId]);
 
   return (
     <div className="space-y-2">
@@ -147,7 +185,7 @@ export function PestanaRegistro({ snapshot }: { snapshot?: Snapshot }) {
             </button>
           ))}
         </div>
-        {(snapshot?.incendios.length ?? 0) > 0 ? (
+        {(incendios?.length ?? 0) > 0 ? (
           <>
             <label htmlFor="filtro-incendio" className="solo-lectores">
               Filtrar por incendio
@@ -159,7 +197,7 @@ export function PestanaRegistro({ snapshot }: { snapshot?: Snapshot }) {
               className="min-h-9 rounded-lg border border-panel-border-strong bg-panel px-2 text-[12px] text-foreground"
             >
               <option value="todos">Todos los focos</option>
-              {snapshot?.incendios.map((i) => (
+              {incendios?.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.nombre}
                 </option>
@@ -177,33 +215,43 @@ export function PestanaRegistro({ snapshot }: { snapshot?: Snapshot }) {
         />
       ) : (
         <ul className="divide-y divide-panel-border rounded-xl border border-panel-border bg-panel">
-          {eventos.map((e) => {
-            const Icono = iconoDe(e);
-            const color = e.nivel === "critico" ? "text-danger" : e.nivel === "aviso" ? "text-warning" : "text-muted";
-            const detalle = detalleComunicacion(e);
-            const url = urlDeEvento(e);
-            return (
-              <li key={e.id} className="flex items-start gap-2 px-2.5 py-1.5">
-                <Icono className={`mt-0.5 size-4 shrink-0 ${color}`} aria-hidden />
-                <p className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground">
-                  {e.mensaje}
-                  {e.agenteId ? <span className="text-subtle"> · {e.agenteId}</span> : null}
-                  {detalle ? <span className="block text-[11px] text-subtle">{detalle}</span> : null}
-                  {/* Si lo que originó el evento tiene fuente, se puede abrir. */}
-                  {url ? (
-                    <EnlaceExterno href={url} className="mt-0.5 text-[11px]" siNoHayUrl="nada" titulo="Abrir la fuente de esta entrada">
-                      Ver la fuente
-                    </EnlaceExterno>
-                  ) : null}
-                </p>
-                <span className="tabular shrink-0 text-[11px] text-subtle" title={`Hora de mundo · ${e.enMundo}`}>
-                  {hora(e.enMundo || e.en)}
-                </span>
-              </li>
-            );
-          })}
+          {(montajeCompleto ? eventos : eventos.slice(0, LINEAS_DE_ENTRADA)).map((e) => (
+            <FilaEvento key={e.id} evento={e} Icono={iconoDe(e)} url={urlDeEvento(e)} />
+          ))}
         </ul>
       )}
     </div>
   );
 }
+
+/**
+ * Una línea del registro. `memo`: solo se repinta si cambia SU evento, así que
+ * un tick del SSE que añade un evento ya no vuelve a pintar las otras 249.
+ * El icono llega resuelto desde el padre (es un componente, no puede crearse
+ * dentro del render de la fila).
+ */
+const FilaEvento = memo(function FilaEvento({ evento: e, Icono, url }: { evento: Evento; Icono: LucideIcon; url?: string }) {
+  const color = e.nivel === "critico" ? "text-danger" : e.nivel === "aviso" ? "text-warning" : "text-muted";
+  const detalle = detalleComunicacion(e);
+  return (
+    <li className="flex items-start gap-2 px-2.5 py-1.5">
+      <Icono className={`mt-0.5 size-4 shrink-0 ${color}`} aria-hidden />
+      <p className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground">
+        {e.mensaje}
+        {e.agenteId ? <span className="text-subtle"> · {e.agenteId}</span> : null}
+        {detalle ? <span className="block text-[11px] text-subtle">{detalle}</span> : null}
+        {/* Si lo que originó el evento tiene fuente, se puede abrir. */}
+        {url ? (
+          <EnlaceExterno href={url} className="mt-0.5 text-[11px]" siNoHayUrl="nada" titulo="Abrir la fuente de esta entrada">
+            Ver la fuente
+          </EnlaceExterno>
+        ) : null}
+      </p>
+      <span className="tabular shrink-0 text-[11px] text-subtle" title={`Hora de mundo · ${e.enMundo}`}>
+        {hora(e.enMundo || e.en)}
+      </span>
+    </li>
+  );
+});
+
+export const PestanaRegistro = memo(PestanaRegistroBase);

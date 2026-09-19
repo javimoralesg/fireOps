@@ -2,18 +2,48 @@
 // "Vista de agentes": tablero a pantalla completa con todos los agentes y su
 // última traza, para que se vea el sistema pensar en directo. DUEÑO: constructor E.
 
-import { useEffect } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { Bot, X } from "lucide-react";
-import type { Snapshot } from "@/lib/dominio/tipos";
+import type { EstadoAgenteApp } from "@/lib/dominio/tipos";
 import { numero } from "@/lib/cliente/formato";
 import { Boton } from "@/components/ui/Boton";
 import { Insignia } from "@/components/ui/Insignia";
 import { Vacio } from "@/components/ui/Vacio";
 import { ORDEN_CATEGORIAS, TEXTO_CATEGORIA, TarjetaAgente, useAccionesAgente } from "./TarjetaAgente";
 
-export function VistaAgentes({ snapshot, abierta, onCerrar, onRefrescar }: { snapshot?: Snapshot; abierta: boolean; onCerrar: () => void; onRefrescar?: () => void }) {
+/** Lista vacía compartida: evita crear un array nuevo (y romper memos) por render. */
+const VACIO: never[] = [];
+
+/**
+ * RENDIMIENTO (constructor R): recibe la PORCIÓN `agentes` (no el snapshot
+ * entero) y va envuelta en `memo`, así que cerrada no cuesta nada y abierta solo
+ * se repinta cuando cambian los agentes.
+ */
+function VistaAgentesBase({
+  agentes: lista,
+  mundoPausado = false,
+  abierta,
+  onCerrar,
+  onRefrescar,
+}: {
+  agentes?: readonly EstadoAgenteApp[];
+  mundoPausado?: boolean;
+  abierta: boolean;
+  onCerrar: () => void;
+  onRefrescar?: () => void;
+}) {
   const { ejecutar, ocupado } = useAccionesAgente(onRefrescar);
-  const agentes = snapshot?.agentes ?? [];
+  const agentes = lista ?? VACIO;
+  /** Agrupación por categoría: una pasada memoizada en vez de un filtro por grupo. */
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, EstadoAgenteApp[]>();
+    for (const a of agentes) {
+      const grupo = mapa.get(a.categoria);
+      if (grupo) grupo.push(a);
+      else mapa.set(a.categoria, [a]);
+    }
+    return mapa;
+  }, [agentes]);
 
   useEffect(() => {
     if (!abierta) return;
@@ -26,7 +56,6 @@ export function VistaAgentes({ snapshot, abierta, onCerrar, onRefrescar }: { sna
 
   if (!abierta) return null;
 
-  const mundoPausado = Boolean(snapshot?.reloj.pausado);
   const pensando = mundoPausado ? 0 : agentes.filter((a) => a.trazas?.[a.trazas.length - 1]?.estado === "en_curso").length;
   const conError = agentes.filter((a) => a.estado === "error").length;
   const llamadas = agentes.reduce((n, a) => n + (a.trazas ?? []).reduce((m, t) => m + t.llamadasIA.length, 0), 0);
@@ -65,8 +94,8 @@ export function VistaAgentes({ snapshot, abierta, onCerrar, onRefrescar }: { sna
         ) : (
           <div className="space-y-4">
             {ORDEN_CATEGORIAS.map((categoria) => {
-              const grupo = agentes.filter((a) => a.categoria === categoria);
-              if (grupo.length === 0) return null;
+              const grupo = grupos.get(categoria);
+              if (!grupo || grupo.length === 0) return null;
               return (
                 <section key={categoria}>
                   <h3 className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-subtle">
@@ -86,3 +115,5 @@ export function VistaAgentes({ snapshot, abierta, onCerrar, onRefrescar }: { sna
     </div>
   );
 }
+
+export const VistaAgentes = memo(VistaAgentesBase);

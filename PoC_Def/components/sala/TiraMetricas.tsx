@@ -1,16 +1,25 @@
 "use client";
 // Tira inferior con las métricas de la ejecución: lo que el jurado mira para
 // juzgar si el sistema decide y actúa bien. DUEÑO: constructor E.
+//
+// RENDIMIENTO (constructor R): recibe SOLO las métricas, no el snapshot entero.
+// Como `memo` compara esa porción, la tira deja de repintarse en cada tick del
+// SSE y en cada interacción de la sala mientras los números no cambien.
 
-import type { Snapshot } from "@/lib/dominio/tipos";
+import { memo, useMemo } from "react";
+import type { MetricasEjecucion } from "@/lib/dominio/tipos";
 import { minutos, numero } from "@/lib/cliente/formato";
 import { Tooltip } from "@/components/ui/Tooltip";
 
-export function TiraMetricas({ snapshot }: { snapshot?: Snapshot }) {
-  const m = snapshot?.ejecucion?.metricas;
-  if (!m) return null;
+interface Celda {
+  etiqueta: string;
+  valor: string;
+  ayuda: string;
+  alerta?: boolean;
+}
 
-  const celdas: { etiqueta: string; valor: string; ayuda: string; alerta?: boolean }[] = [
+function construirCeldas(m: MetricasEjecucion): Celda[] {
+  return [
     { etiqueta: "Focos", valor: numero(m.incendios), ayuda: "Incendios abiertos en esta ejecución." },
     { etiqueta: "Propuestas", valor: numero(m.decisionesPropuestas), ayuda: "Decisiones que han propuesto los agentes." },
     { etiqueta: "Aprobadas", valor: numero(m.decisionesAprobadas), ayuda: "Aprobadas por un humano o por la política." },
@@ -45,6 +54,11 @@ export function TiraMetricas({ snapshot }: { snapshot?: Snapshot }) {
       ayuda: "Puntuación media que el supervisor da a las decisiones.",
     },
   ];
+}
+
+function TiraMetricasBase({ metricas }: { metricas?: MetricasEjecucion }) {
+  const celdas = useMemo(() => (metricas ? construirCeldas(metricas) : null), [metricas]);
+  if (!celdas) return null;
 
   return (
     <div className="flex items-stretch gap-0 overflow-x-auto border-t border-panel-border bg-panel scroll-fino">
@@ -59,3 +73,5 @@ export function TiraMetricas({ snapshot }: { snapshot?: Snapshot }) {
     </div>
   );
 }
+
+export const TiraMetricas = memo(TiraMetricasBase);

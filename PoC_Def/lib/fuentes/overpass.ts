@@ -54,6 +54,9 @@ export interface EntornoIncendio {
 //                      `timestamp_osm_base` no sea una fecha reciente.
 //   maps.mail.ru     → 200 con datos reales: pueblos 2,5-5,3 s · medios 3,7-7,4 s
 //                      · superficies 2,6 s. Es el único espejo sano hoy.
+// OJO: esa foto duró horas. Esa misma tarde se midió lo contrario (maps.mail.ru
+// colgado, overpass-api.de en 1,5 s). Por eso el orden ya no se escribe a mano:
+// lo decide `servidoresOrdenados()` con la latencia medida. Ver el bloque de abajo.
 // (overpass-api.de era el PRIMERO de la lista por ser el de referencia; desde
 // la 2.ª pasada del constructor T el orden lo manda la salud medida, ver abajo.)
 //
@@ -361,6 +364,21 @@ function esFalloDuro(motivo: string): boolean {
   return /econnrefused|enotfound|eai_again|econnreset|fetch failed|espejo no fiable|desfasada|\b40[34]\b/i.test(motivo);
 }
 
+/** Ventana en la que una respuesta buena sigue probando que el espejo está vivo. */
+const EXITO_RECIENTE_MS = 2 * 60_000;
+
+/**
+ * ¿Este fallo "duro" es en realidad la cuota por IP de Overpass?
+ * Lo es cuando el espejo nos ha respondido hace nada: un servidor que acaba de
+ * mandar datos no ha desaparecido de la red en dos segundos. Un 404 o un espejo
+ * con la base desfasada NO entran aquí: eso sí está roto de verdad.
+ */
+export function esCuotaProbable(host: string, motivo: string): boolean {
+  if (/espejo no fiable|desfasada|\b40[34]\b/i.test(motivo)) return false;
+  const exito = latencias().get(host);
+  return !!exito && Date.now() - exito.en < EXITO_RECIENTE_MS;
+}
+
 /** Cuánto castiga el cortacircuitos a un servidor según cómo haya fallado. */
 function castigoPara(motivo: string): number {
   if (/espejo no fiable|desfasada/i.test(motivo)) return CORTACIRCUITOS_ESPEJO_MS;
@@ -463,10 +481,13 @@ async function consultar(
         return { elementos, url };
       } catch (e) {
         const motivo = mensaje(e);
-        // Deja de ser "el rápido": que vuelva a ganárselo respondiendo.
-        latencias().delete(host);
         ultimo = `${host}: ${motivo}`;
-        console.warn(`[overpass] ${etiqueta} falló en ${host} tras ${Date.now() - t0} ms: ${motivo}${anotarFallo(host, motivo, sinCastigo)}`);
+        // El orden: `anotarFallo` ANTES de borrar la latencia, porque necesita saber
+        // si este espejo acababa de responder para no castigarlo como si estuviera muerto.
+        const nota = anotarFallo(host, motivo, sinCastigo);
+        // Y después deja de ser "el rápido": que vuelva a ganárselo respondiendo.
+        latencias().delete(host);
+        console.warn(`[overpass] ${etiqueta} falló en ${host} tras ${Date.now() - t0} ms: ${motivo}${nota}`);
       }
     }
     if (vuelta < VUELTAS - 1) await dormir(500);
@@ -485,14 +506,26 @@ function anotarFallo(host: string, motivo: string, sinCastigo: boolean): string 
   if (sinCastigo) return "";
   const previo = muertos().get(host);
   const fallosSeguidos = (previo?.fallosSeguidos ?? 0) + 1;
-  if (!esFalloDuro(motivo) && fallosSeguidos < FALLOS_PARA_ABRIR) {
+
+  // Un espejo que acaba de devolver datos NO está muerto: lo que hay es una cuota.
+  // Overpass solo da 2 conexiones por IP y RECHAZA LA CONEXIÓN cuando te pasas, lo
+  // que llega aquí como `fetch failed` — indistinguible de un servidor caído si solo
+  // se mira el mensaje. Medido el 2026-09-19:
+  //   pueblos 30 km · overpass-api.de · 1612 ms · 281 elementos
+  //   medios  30 km · overpass-api.de ·  152 ms: fetch failed · fuera 300 s
+  // 1,6 s entre una cosa y la otra. El castigo de 5 minutos dejaba fuera al ÚNICO
+  // espejo sano y tumbaba el enriquecimiento de todos los focos.
+  const duro = esFalloDuro(motivo) && !esCuotaProbable(host, motivo);
+  if (!duro && fallosSeguidos < FALLOS_PARA_ABRIR) {
     muertos().set(host, { fallosSeguidos, hasta: 0, motivo });
     return ` · fallo ${fallosSeguidos}/${FALLOS_PARA_ABRIR} (aún no se descarta)`;
   }
   // Si era el ÚLTIMO espejo en pie, el castigo se recorta: quedarse sin ninguno
   // durante 5 minutos es peor que volver a preguntar en 90 s.
   const quedanVivos = servidoresOverpass().some((s) => s.vivo && s.host !== host);
-  const castigo = quedanVivos ? castigoPara(motivo) : Math.min(castigoPara(motivo), CORTACIRCUITOS_ULTIMO_MS);
+  // A una cuota se le aplica el castigo corto de un 429, no el de "no existe".
+  const base = esCuotaProbable(host, motivo) ? CORTACIRCUITOS_HTTP_MS : castigoPara(motivo);
+  const castigo = quedanVivos ? base : Math.min(base, CORTACIRCUITOS_ULTIMO_MS);
   muertos().set(host, { fallosSeguidos, hasta: Date.now() + castigo, motivo });
   return ` · fuera ${Math.round(castigo / 1000)} s`;
 }

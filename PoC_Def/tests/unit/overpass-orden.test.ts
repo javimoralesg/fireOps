@@ -22,7 +22,7 @@
 // DUEÑO: constructor L (escrito en la fase F3 de la migración).
 // =====================================================================
 import { beforeEach, describe, expect, it } from "vitest";
-import { latenciasOverpass, servidoresOverpass } from "@/lib/fuentes/overpass";
+import { esCuotaProbable, latenciasOverpass, servidoresOverpass } from "@/lib/fuentes/overpass";
 
 type Global = typeof globalThis & {
   __atalayaOverpassLatencias?: Map<string, { latenciaMs: number; en: number }>;
@@ -102,5 +102,29 @@ describe("el cortacircuitos sigue informando aparte", () => {
     expect(caido?.vuelveEnS).toBeGreaterThan(0);
     // Nada inventado: si está caído, se dice y se dice por qué.
     expect(caido?.vuelveEnS).toBeLessThanOrEqual(120);
+  });
+});
+
+describe("una cuota no es un servidor muerto", () => {
+  it("un rechazo de red en un espejo que acaba de responder se trata como cuota", () => {
+    // El caso medido: overpass-api.de devolvió 281 elementos y 1,6 s después
+    // rechazó la conexión. Overpass da 2 conexiones por IP y corta el resto.
+    anotar("overpass-api.de", 1_612);
+    expect(esCuotaProbable("overpass-api.de", "fetch failed")).toBe(true);
+  });
+
+  it("el mismo rechazo en un espejo que nunca respondió SÍ es un servidor muerto", () => {
+    expect(esCuotaProbable("maps.mail.ru", "fetch failed")).toBe(false);
+  });
+
+  it("un éxito viejo no sirve de coartada", () => {
+    (g.__atalayaOverpassLatencias ??= new Map()).set("overpass-api.de", { latenciaMs: 1_612, en: Date.now() - 10 * 60_000 });
+    expect(esCuotaProbable("overpass-api.de", "fetch failed")).toBe(false);
+  });
+
+  it("un 404 o una base desfasada están rotos de verdad, respondieran o no", () => {
+    anotar("overpass-api.de", 1_000);
+    expect(esCuotaProbable("overpass-api.de", "404 Not Found")).toBe(false);
+    expect(esCuotaProbable("overpass-api.de", "espejo no fiable: base desfasada")).toBe(false);
   });
 });

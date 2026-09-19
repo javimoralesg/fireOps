@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, FileSearch, PauseOctagon, Users, WifiOff } from "lucide-react";
+import { Activity, ArrowLeft, FileSearch, Users, WifiOff } from "lucide-react";
 import { useEstado } from "@/lib/cliente/useEstado";
 import { numero } from "@/lib/cliente/formato";
 import { Marca } from "@/components/marca/Logo";
@@ -87,13 +87,6 @@ export function CentroAgentes() {
           {conError ? <Insignia tono="peligro">{numero(conError)} con error</Insignia> : null}
         </div>
       </section>
-
-      {mundoPausado ? (
-        <p role="status" className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/50 bg-warning/12 px-3 py-2 text-[12.5px] font-medium text-warning">
-          <PauseOctagon className="size-4 shrink-0" aria-hidden />
-          Mundo en pausa: se muestra la última cadena operativa; ningún agente ni modelo está trabajando ahora.
-        </p>
-      ) : null}
 
       {!conectado ? (
         <p role="status" className="flex items-center gap-2 rounded-xl border border-warning/45 bg-warning/10 px-3 py-2 text-[12px] text-warning">

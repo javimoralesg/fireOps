@@ -36,7 +36,7 @@ import { agenteDesactivadoPorEscenario, quitarPoblacionesDe, sincronizarAgentesC
 import { establecerEstado, obtenerEstado, Estado } from "./estado";
 import { nuevoId } from "./ids";
 import { actualizarReloj, minutosMundoEntre, reiniciarAncla } from "./reloj";
-import { areaHaCirculo, distanciaKm, enriquecerIncendio, mensajeDe, RADIO_CAMARAS_KM } from "./enriquecer";
+import { areaHaCirculo, arrancarVigilanteEntorno, distanciaKm, enriquecerIncendio, mensajeDe, RADIO_CAMARAS_KM } from "./enriquecer";
 import { areaHa as areaDePoligono } from "../simulacion/geometria";
 import { perimetroDeSuperficie } from "../simulacion/propagacion";
 import { evaluarCompetencia } from "../dominio/politica";
@@ -268,6 +268,8 @@ export function arrancarOrquestador(): void {
   }, TICK_MS);
   // No mantener vivo el proceso solo por el temporizador.
   (n.intervalo as unknown as { unref?: () => void }).unref?.();
+  // Repara solo los focos que se quedan sin pueblos o unidades porque Overpass falló.
+  arrancarVigilanteEntorno(estado);
 
   estado.registrarEvento("sistema", `Orquestador en marcha (tick ${TICK_MS} ms, aceleración ×${estado.reloj.factor})`, { nivel: "info" });
 
@@ -1082,7 +1084,8 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     void sinTraza(() => generarActaAccion(id, resultado.id)).catch((e) =>
       console.error(`[orquestador] no se pudo redactar el acta de la acción ${resultado.id}: ${mensajeDe(e)}`),
     );
-    if (exito && resultado.tipo === "llamar") sumarMetrica(estado, "llamadasRealizadas");
+    // Voz saliente desactivada (ejecutor, VOZ_DESACTIVADA): una acción «llamar» sale como SMS y no cuenta como llamada.
+    if (exito && resultado.tipo === "llamar" && !resultado.resultado?.datos?.vozDesactivada) sumarMetrica(estado, "llamadasRealizadas");
     if (exito && (resultado.tipo === "avisar_poblacion" || resultado.tipo === "confinar_poblacion" || resultado.tipo === "evacuar_poblacion")) {
       sumarMetrica(estado, "poblacionesAvisadas");
     }

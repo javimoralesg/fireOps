@@ -109,10 +109,13 @@ export async function GET(): Promise<Response> {
     const hayClaves =
       !!process.env.SUPABASE_URL?.trim() &&
       (!!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || !!process.env.SUPABASE_ANON_KEY?.trim());
+    const { persistenciaActivada } = await import("@/lib/db/repositorio");
     integraciones.Supabase = {
       ok: false,
       detalle: hayClaves
-        ? "Configurada, pendiente del primer volcado"
+        ? persistenciaActivada()
+          ? "Configurada, pendiente del primer volcado"
+          : "Esta instancia no guarda la ejecución (SUPABASE_PERSISTIR sin activar): vive solo en memoria"
         : "Sin SUPABASE_URL o sin SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY: la ejecución vive solo en memoria",
     };
   }

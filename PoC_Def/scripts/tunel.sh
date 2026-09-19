@@ -62,6 +62,12 @@ echo "Abriendo túnel hacia http://localhost:$PUERTO …"
       echo "==> URL pública: ${BASH_REMATCH[1]}   (móvil: ${BASH_REMATCH[1]}/movil)"
       echo "    Deja este terminal abierto durante la demo: al cerrarlo la URL deja de existir."
       echo
+      # El 112 por teléfono (HappyRobot) llama a Atalaya por esta URL: se resincroniza y republica
+      # el workflow «Atalaya · 112 entrante» en segundo plano (scripts/happyrobot-entrante.mjs).
+      # TUNEL_SIN_HAPPYROBOT=1 abre el túnel sin tocar el workflow (pruebas del guardián).
+      if [[ -z "${TUNEL_SIN_HAPPYROBOT:-}" ]] && grep -q '^HAPPYROBOT_API_KEY=.\+' "$DIR/.env.local" 2>/dev/null; then
+        ( cd "$DIR" && node scripts/happyrobot-workflows.mjs sincronizar 2>&1 | sed 's/^/[happyrobot] /' ) &
+      fi
     fi
     if [[ "$linea" == *"failed to request quick Tunnel"* ]] || [[ "$linea" == *"no such host"* ]]; then
       echo

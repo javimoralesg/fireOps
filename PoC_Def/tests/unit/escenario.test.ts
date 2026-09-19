@@ -97,9 +97,11 @@ describe("reglas del escenario", () => {
     expect(canalPuedeDeclararFoco(soloSatelite, { canal: "telegram" })).toBe(true);
 
     const sinCiudadanos = { fuentesDesactivadas: ["avisos_ciudadanos" as const] };
-    for (const canal of ["llamada", "sms", "email", "telegram", "web"] as const) {
+    for (const canal of ["sms", "email", "telegram", "web"] as const) {
       expect(canalPuedeDeclararFoco(sinCiudadanos, { canal })).toBe(false);
     }
+    // La llamada por teléfono al 112 virtual (HappyRobot) es suelo: no se apaga con los avisos ciudadanos.
+    expect(canalPuedeDeclararFoco(sinCiudadanos, { canal: "llamada", referenciaExterna: "run-hr-1" })).toBe(true);
     expect(canalPuedeDeclararFoco(sinCiudadanos, { canal: "prensa" })).toBe(true);
   });
 
@@ -110,11 +112,16 @@ describe("reglas del escenario", () => {
     expect(canalPuedeDeclararFoco(sinFijas, { canal: "camara" })).toBe(false);
   });
 
-  it("la mano y el sensor pasan siempre, incluso en simulacro", () => {
+  it("la mano, el sensor, el móvil y las llamadas al 112 pasan siempre, incluso en simulacro", () => {
     const simulacro = { fuentesDesactivadas: TODAS };
     expect(canalPuedeDeclararFoco(simulacro, { canal: "manual" })).toBe(true);
     expect(canalPuedeDeclararFoco(simulacro, { canal: "sensor" })).toBe(true);
     expect(canalPuedeDeclararFoco(simulacro, { canal: "camara", referenciaExterna: "movil:abc" })).toBe(true);
+    expect(canalPuedeDeclararFoco(simulacro, { canal: "llamada" })).toBe(true);
+    expect(fuenteQueBloquea(simulacro, { canal: "llamada", referenciaExterna: "run-hr-1" })).toBeUndefined();
+    // El resto de avisos ciudadanos sigue apagado.
+    expect(fuenteQueBloquea(simulacro, { canal: "sms" })?.id).toBe("avisos_ciudadanos");
+    expect(fuenteQueBloquea(simulacro, { canal: "web" })?.id).toBe("avisos_ciudadanos");
     expect(canalPuedeDeclararFoco(simulacro, { canal: "satelite" })).toBe(false);
   });
 
@@ -278,9 +285,10 @@ describe("apagar cualquier fuente retira lo que SOLO sostenía esa fuente (prens
 
   /**
    * inc-1 (manual, activo) + un foco sin confirmar por cada fuente apagable, uno
-   * de cámara de MÓVIL, uno de prensa corroborado por una llamada (sin llegar a
-   * confirmado) y uno de prensa ya confirmado. Todos lejos entre sí para que
-   * ningún pueblo pase a otro foco.
+   * de cámara de MÓVIL, uno de una LLAMADA al 112 por teléfono y otro de un aviso
+   * WEB (los dos de «avisos ciudadanos»: la llamada es suelo del simulacro, la web
+   * no), uno de prensa corroborado por una llamada (sin llegar a confirmado) y uno
+   * de prensa ya confirmado. Todos lejos entre sí para que ningún pueblo pase a otro foco.
    */
   function conFocosDeTodo(): Estado {
     const e = estadoDePrueba();
@@ -291,6 +299,7 @@ describe("apagar cualquier fuente retira lo que SOLO sostenía esa fuente (prens
       obs("o-llamada", "llamada", { incendioId: "inc-llamada", punto: { lat: 38.5, lon: -0.5 } }),
       obs("o-prensa-2", "prensa", { incendioId: "inc-prensa-llamada", punto: { lat: 37.5, lon: -4.5 } }),
       obs("o-llamada-2", "llamada", { incendioId: "inc-prensa-llamada", punto: { lat: 37.5, lon: -4.5 }, impacto: "confirma" }),
+      obs("o-web", "web", { incendioId: "inc-web", punto: { lat: 41.6, lon: -0.9 } }),
     ];
     for (const o of observaciones) e.observaciones.set(o.id, o);
     const focos: Incendio[] = [
@@ -300,6 +309,7 @@ describe("apagar cualquier fuente retira lo que SOLO sostenía esa fuente (prens
       incendio({ id: "inc-llamada", nombre: "Incendio de Alcoy", origen: "llamada", estado: "detectado", confianza: 0.55, fuenteDeteccion: "Llamada 112", observaciones: ["o-llamada"], centro: { lat: 38.5, lon: -0.5 } }),
       incendio({ id: "inc-prensa-llamada", nombre: "Incendio de Lucena", origen: "prensa", estado: "detectado", confianza: 0.65, observaciones: ["o-prensa-2", "o-llamada-2"], centro: { lat: 37.5, lon: -4.5 } }),
       incendio({ id: "inc-prensa-ok", nombre: "Incendio de Ponteareas", origen: "prensa", estado: "confirmado", confianza: 0.85, centro: { lat: 42.17, lon: -8.5 } }),
+      incendio({ id: "inc-web", nombre: "Incendio de Zuera", origen: "web", estado: "detectado", confianza: 0.55, fuenteDeteccion: "Formulario web", observaciones: ["o-web"], centro: { lat: 41.6, lon: -0.9 } }),
     ];
     for (const f of focos) e.incendios.set(f.id, f);
     e.poblaciones.set("osm:node/tuejar", poblacion("Tuéjar", 1.2, 30, { id: "osm:node/tuejar", incendioId: "inc-prensa", riesgo: "alto" }));
@@ -346,35 +356,48 @@ describe("apagar cualquier fuente retira lo que SOLO sostenía esa fuente (prens
     expect(estadoDe(e, "inc-movil")).toBe("detectado");
   });
 
-  it("apagar los avisos ciudadanos descarta el foco de la llamada y respeta el de prensa corroborado (la prensa sigue activa)", async () => {
+  it("apagar los avisos ciudadanos descarta el foco del aviso web pero respeta el de la llamada al 112 por teléfono", async () => {
     const e = conFocosDeTodo();
     await cambiarFuentesDesactivadas(e, ["avisos_ciudadanos"], "mando", SIN_RED);
-    expect(estadoDe(e, "inc-llamada")).toBe("descartado");
-    expect(e.poblaciones.has("osm:node/alcoy")).toBe(false);
+    expect(estadoDe(e, "inc-web")).toBe("descartado");
+    expect(estadoDe(e, "inc-llamada")).toBe("detectado");
+    expect(e.poblaciones.has("osm:node/alcoy")).toBe(true);
     expect(estadoDe(e, "inc-prensa-llamada")).toBe("detectado");
     expect(estadoDe(e, "inc-prensa")).toBe("detectado");
+    expect(e.eventos.find((x) => x.tipo === "humano")?.mensaje).toContain("1 foco de avisos ciudadanos sin confirmar descartado");
   });
 
-  it("el simulacro deja solo lo confirmado, lo declarado a mano y lo de móvil, y el evento cuenta los descartes por fuente", async () => {
+  it("sin la observación en memoria, un foco de origen llamada tampoco se descarta con los avisos apagados", async () => {
+    const e = conFocosDeTodo();
+    e.observaciones.delete("o-llamada");
+    e.observaciones.delete("o-web");
+    await cambiarFuentesDesactivadas(e, ["avisos_ciudadanos"], "mando", SIN_RED);
+    expect(estadoDe(e, "inc-llamada")).toBe("detectado");
+    expect(estadoDe(e, "inc-web")).toBe("descartado");
+  });
+
+  it("el simulacro deja solo lo confirmado, lo declarado a mano, lo de móvil y lo de las llamadas al 112, y el evento cuenta los descartes por fuente", async () => {
     const e = conFocosDeTodo();
     const r = await cambiarFuentesDesactivadas(e, TODAS, "mando", SIN_RED);
     expect(r.cambiado).toBe(true);
     expect(estadoDe(e, "inc-prensa")).toBe("descartado");
     expect(estadoDe(e, "inc-dgt")).toBe("descartado");
-    expect(estadoDe(e, "inc-llamada")).toBe("descartado");
-    expect(estadoDe(e, "inc-prensa-llamada")).toBe("descartado"); // sus dos fuentes están apagadas
+    expect(estadoDe(e, "inc-web")).toBe("descartado");
+    expect(estadoDe(e, "inc-llamada")).toBe("detectado"); // llamada al 112 por teléfono: suelo del simulacro
+    expect(estadoDe(e, "inc-prensa-llamada")).toBe("detectado"); // la prensa está apagada, pero la llamada lo sostiene
     expect(estadoDe(e, "inc-movil")).toBe("detectado");
     expect(estadoDe(e, "inc-prensa-ok")).toBe("confirmado");
     expect(estadoDe(e, "inc-1")).toBe("activo");
     expect(e.poblaciones.has("osm:node/tuejar")).toBe(false);
-    expect(e.poblaciones.has("osm:node/alcoy")).toBe(false);
+    expect(e.poblaciones.has("osm:node/alcoy")).toBe(true);
     const humano = e.eventos.find((x) => x.tipo === "humano");
     expect(humano?.mensaje).toContain("SIMULACRO");
-    expect(humano?.mensaje).toContain("4 focos sin confirmar descartados (prensa y redes 2, cámaras fijas 1, avisos ciudadanos 1)");
-    expect(humano?.datos).toMatchObject({ focosDescartados: 4 });
+    expect(humano?.mensaje).toContain("llamadas por teléfono al 112 virtual");
+    expect(humano?.mensaje).toContain("3 focos sin confirmar descartados (prensa y redes 1, cámaras fijas 1, avisos ciudadanos 1)");
+    expect(humano?.datos).toMatchObject({ focosDescartados: 3 });
     // Quedan en el mapa exactamente los que el simulacro promete.
     const vivos = e.incendiosActivos().map((i) => i.id).sort();
-    expect(vivos).toEqual(["inc-1", "inc-movil", "inc-prensa-ok"]);
+    expect(vivos).toEqual(["inc-1", "inc-llamada", "inc-movil", "inc-prensa-llamada", "inc-prensa-ok"]);
   });
 
   it("apagar el satélite vacía las detecciones crudas de NASA FIRMS (capa del mapa); apagar otra fuente las deja", async () => {

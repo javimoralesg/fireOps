@@ -10,6 +10,10 @@
 //   node scripts/happyrobot-workflows.mjs limpiar --confirmar   # borra cascarones vacíos
 //   node scripts/happyrobot-workflows.mjs todo         # crear + configurar + publicar + env
 //   node scripts/happyrobot-workflows.mjs estado       # qué hay en la plataforma
+//   node scripts/happyrobot-workflows.mjs entrante     # 112 por TELÉFONO: crea/sincroniza y publica «Atalaya · 112 entrante»
+//   node scripts/happyrobot-workflows.mjs sincronizar  # igual que `entrante` (repetir cuando cambie la URL del túnel)
+//   node scripts/happyrobot-workflows.mjs sms          # SMS saliente: completa el workflow nodo a nodo (Send text) y lo publica
+//   node scripts/happyrobot-workflows.mjs sms-prueba [+34…] [texto]   # manda un SMS REAL por ese workflow y enseña el run
 //
 // Estado entre pasos: data/happyrobot-workflows.json (ids, slugs, nodos).
 // Contrato verificado el 2026-09-19 contra /api/v2/docs/json de la instancia EU.
@@ -17,6 +21,8 @@
 // =====================================================================
 import fs from "node:fs";
 import path from "node:path";
+import { elegirNumero, montarEntrante, NOMBRE_ENTRANTE, publicarEntrante } from "./happyrobot-entrante.mjs";
+import { montarSms, NOMBRE_SMS, probarSms, publicarSms } from "./happyrobot-sms.mjs";
 
 const RAIZ = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const ENV_PATH = path.join(RAIZ, ".env.local");
@@ -53,9 +59,10 @@ function urlPublica() {
 
 // ---- API ---------------------------------------------------------------
 async function api(metodo, ruta, cuerpo) {
+  // Content-Type solo con cuerpo: un DELETE con "application/json" y sin cuerpo lo rechaza la API (400).
   const res = await fetch(`${BASE}/api/v2${ruta}`, {
     method: metodo,
-    headers: { Authorization: `Bearer ${CLAVE}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${CLAVE}`, ...(cuerpo === undefined ? {} : { "Content-Type": "application/json" }) },
     body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
   });
   const texto = await res.text();
@@ -84,7 +91,7 @@ const WORKFLOWS = {
   voz:     { nombre: "Atalaya · Llamada saliente", plantilla: "voice-agent",         agente: "Atalaya · Sala de coordinación", icono: "phone",   variable: "HAPPYROBOT_WORKFLOW_SLUG_VOZ" },
   sms:     { nombre: "Atalaya · SMS saliente",     plantilla: "sms-agent",           agente: "Atalaya · SMS",                  icono: "message", variable: "HAPPYROBOT_WORKFLOW_SLUG_SMS" },
   email:   { nombre: "Atalaya · Email saliente",   plantilla: "email-agent",         agente: "Atalaya · Email",                icono: "mail",    variable: "HAPPYROBOT_WORKFLOW_SLUG_EMAIL" },
-  entrante:{ nombre: "Atalaya · 112 entrante",     plantilla: "inbound-voice-agent", agente: "Atalaya · Centralita 112",       icono: "phone",   variable: "HAPPYROBOT_WEB_CALL_URL" },
+  entrante:{ nombre: "Atalaya · 112 entrante",     plantilla: null /* se monta de cero: trigger telefónico */, agente: "Atalaya · Centralita 112", icono: "phone", variable: "HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE" },
 };
 
 // ---- Prompts (salen de docs/HAPPYROBOT.md, no se duplican aquí) --------
@@ -113,6 +120,18 @@ function leerEstado() {
 function guardarEstado(e) {
   fs.mkdirSync(path.dirname(ESTADO_PATH), { recursive: true });
   fs.writeFileSync(ESTADO_PATH, JSON.stringify(e, null, 2));
+}
+/**
+ * Cambia UNA entrada sobre lo que hay en disco AHORA (relee, cambia, guarda). Las órdenes que se
+ * encadenan («configurar» → «sms» → «entrante») no se pisan: antes «configurar» guardaba una copia
+ * vieja después de que «sms» escribiera la suya y borraba la entrada sms recién creada (revisión
+ * del PR, 19-09).
+ */
+function actualizarEstado(clave, valor) {
+  const e = leerEstado();
+  e[clave] = valor;
+  guardarEstado(e);
+  return e;
 }
 
 // ---- Payload de muestra: define las variables data.* del trigger ---------
@@ -149,6 +168,8 @@ async function crear() {
   const est = leerEstado();
   const existentes = lista(await api("GET", "/workflows"));
   for (const [clave, def] of Object.entries(WORKFLOWS)) {
+    if (clave === "entrante") continue; // lo monta «entrante» desde cero (trigger «Inbound to number», scripts/happyrobot-entrante.mjs)
+    if (clave === "sms") continue; // lo completa «sms» nodo a nodo (la plantilla sms-agent exige Twilio; scripts/happyrobot-sms.mjs)
     if (est[clave]?.id) { console.log(`· ${def.nombre}: ya creado (${est[clave].slug}), no lo repito`); continue; }
     // La plataforma no admite dos workflows con el mismo nombre: si hay uno, o se adopta o se borra.
     for (const w of existentes.filter((x) => x.name === def.nombre)) {
@@ -156,7 +177,7 @@ async function crear() {
       const det = await api("GET", `/versions/${v.id}/`);
       if ((det.node_count ?? 0) > 1) {
         est[clave] = { id: w.id, slug: w.slug, versionId: v.id, nombre: def.nombre };
-        guardarEstado(est);
+        actualizarEstado(clave, est[clave]);
         console.log(`· ${def.nombre}: ya existe con ${det.node_count} nodos (${w.slug}); lo adopto en vez de crear otro`);
         break;
       }
@@ -171,7 +192,7 @@ async function crear() {
         from_template: { template: def.plantilla, inputs: { agent_name: def.agente } },
       });
       est[clave] = { id: w.id, slug: w.slug, versionId: w.latest_version?.id, nombre: def.nombre };
-      guardarEstado(est);
+      actualizarEstado(clave, est[clave]);
       console.log(`✔ ${def.nombre}: slug=${w.slug} versión=${w.latest_version?.id}`);
     } catch (e) {
       console.log(`✘ ${def.nombre} (plantilla ${def.plantilla}): ${e.message}`);
@@ -329,63 +350,42 @@ function configWebhook(T, trigger, canal, agente, salidas) {
   };
 }
 
-async function configurarEntrante(w) {
-  const nodos = lista(await api("GET", `/versions/${w.versionId}/nodes`));
-  const { trigger, agente, prompt, webhook } = clasificar(nodos);
-  if (agente) {
-    const conf = {
-      ...agente.configuration,
-      agent: {
-        ...(agente.configuration?.agent || {}),
-        name: [{ type: "paragraph", children: [texto(WORKFLOWS.entrante.agente)] }],
-        voices: [{ type: "static", static: VOZ_ES }],
-        languages: [{ type: "static", static: IDIOMA }],
-        language_accents: [{ type: "static", static: ACENTO }],
-      },
-      record: true,
-    };
-    await actualizarNodo(w.versionId, agente, { name: "Centralita 112", configuration: conf });
-    console.log(`   ✔ agente entrante: voz ${VOZ_ES.name} (es-ES)`);
-  }
-  if (prompt) {
-    const inicial = [{ type: "paragraph", children: [texto("Emergencias, ciento doce, incendios forestales. ¿Hay alguien en peligro ahora mismo?")] }];
-    await actualizarNodo(w.versionId, prompt, { prompt_md: PROMPT_ENTRANTE, initial_message: inicial, initial_message_uninterruptible: false, model: MODELO });
-    console.log(`   ✔ prompt de la centralita`);
-  }
+// ---- 112 entrante: llamada AL número de HappyRobot ----------------------
+// Todo el montaje vive en scripts/happyrobot-entrante.mjs (contrato verificado el
+// 2026-09-19). Idempotente: crea el workflow si no existe (o si lo que hay es un
+// cascarón sin trigger telefónico), sincroniza número, voz, prompt y las URLs de las
+// herramientas con la URL pública ACTUAL, publica y escribe las variables en .env.local.
+async function entrante() {
   const publica = urlPublica();
   if (!publica) {
-    console.log(`   ⚠ sin URL pública (túnel o PUBLIC_BASE_URL): no añado el webhook de llamada ni la herramienta de contexto. Abre el túnel y repite "configurar".`);
-  } else if (agente) {
-    const secreto = ENV.HAPPYROBOT_WEBHOOK_SECRET || "";
-    const vars = webhook ? [] : [];
-    const conf = {
-      url: [{ type: "paragraph", children: [texto(`${publica}/api/webhooks/happyrobot/llamada`)] }],
-      params: [],
-      headers: [
-        { key: "x-webhook-secret", value: [{ type: "paragraph", children: [texto(secreto)] }] },
-        { key: "content-type", value: [{ type: "paragraph", children: [texto("application/json")] }] },
-      ],
-      authType: "none", ignore5XX: false, contentType: "application/json", xssProtection: true, responseHeaders: [], webhookSchemaVersion: 2,
-      body: { raw: JSON.stringify({ run_id: "{{$var:current.run_id}}", run_url: "{{$var:current.run_url}}", en: "{{$var:time.now_iso}}", canal: "llamada" }), parts: [], contentType: "application/json", schemaVersion: 2 },
-    };
-    if (webhook) await actualizarNodo(w.versionId, webhook, { name: "Entregar la llamada a Atalaya", configuration: conf });
-    else await api("POST", `/versions/${w.versionId}/nodes`, { nodes: [{ type: "action", event_id: EVENTO.webhookPost, name: "Entregar la llamada a Atalaya", parent_node_id: agente.id, configuration: conf }] });
-    console.log(`   ✔ webhook de llamada → ${publica}/api/webhooks/happyrobot/llamada (añade transcripción/resumen cuando el agente exponga sus variables)`);
-    void vars;
+    console.log("✘ Sin URL pública https (data/url-publica.txt vía scripts/tunel.sh, o PUBLIC_BASE_URL): el agente de voz no podría llamar a Atalaya. Abre el túnel y repite «entrante».");
+    return;
   }
-  console.log(`   ℹ trigger: ${trigger?.name} (evento ${trigger?.event_id}). El enlace público del Web Call se copia desde el nodo trigger en la plataforma → HAPPYROBOT_WEB_CALL_URL.`);
+  if (!ENV.HAPPYROBOT_WEBHOOK_SECRET) {
+    console.log("✘ Falta HAPPYROBOT_WEBHOOK_SECRET en .env.local: las herramientas del agente no podrían autenticarse.");
+    return;
+  }
+  const numero = await elegirNumero(api, ENV.HAPPYROBOT_NUMERO_ENTRANTE);
+  console.log(`\n${NOMBRE_ENTRANTE} · número ${numero.number} · URL pública ${publica}`);
+  const r = await montarEntrante(api, { urlPublica: publica, secreto: ENV.HAPPYROBOT_WEBHOOK_SECRET, numero, prompt: PROMPT_ENTRANTE });
+  actualizarEstado("entrante", { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_ENTRANTE, numero: numero.number, numeroId: numero.id, urlPublica: publica, nodos: r.ids });
+  await publicarEntrante(api, r.versionId, ENTORNO);
+  env();
+  console.log(`\n==> Llama al ${numero.number}: te atiende «${NOMBRE_ENTRANTE}» y registra el aviso en ${publica}.`);
+  console.log(`    Comprobación: curl -s ${publica}/api/happyrobot/salud | jq .entrante`);
 }
 
 async function configurar() {
-  const est = leerEstado();
   for (const clave of ["voz", "sms", "email", "entrante"]) {
-    const w = est[clave];
+    if (clave === "entrante") { await entrante(); continue; }
+    if (clave === "sms") { await sms(); continue; }
+    // Se relee en cada paso: «sms» y «entrante» acaban de escribir su entrada y una copia vieja la pisaría.
+    const w = leerEstado()[clave];
     if (!w?.versionId) { console.log(`· ${WORKFLOWS[clave].nombre}: no creado, lo salto`); continue; }
     console.log(`\n${w.nombre} (${w.slug})`);
     try {
-      const ids = clave === "entrante" ? await configurarEntrante(w) : await configurarSaliente(clave, w);
-      est[clave].nodos = ids;
-      guardarEstado(est);
+      const ids = await configurarSaliente(clave, w);
+      actualizarEstado(clave, { ...w, nodos: ids });
     } catch (e) {
       console.log(`   ✘ ${e.message}`);
     }
@@ -395,9 +395,11 @@ async function configurar() {
 async function publicar() {
   const est = leerEstado();
   for (const clave of ["voz", "sms", "email", "entrante"]) {
+    if (clave === "entrante") continue; // lo publica la orden «entrante»
+    if (clave === "sms") continue; // lo publica la orden «sms»
     const w = est[clave];
     if (!w?.versionId) continue;
-    if (clave === "voz" && !ENV.DESTINO_DEMO) {
+    if (clave === "voz" && !(ENV.DESTINO_DEMO || ENV.TELEFONO_AVISOS_SMS)) {
       console.log(`· ${w.nombre}: NO publico. Al publicar, la plataforma prueba los nodos sin probar y el de voz marcaría el teléfono de muestra. Pon DESTINO_DEMO=+34… en .env.local, repite "configurar" y luego "publicar".`);
       continue;
     }
@@ -422,8 +424,11 @@ function env() {
     console.log(`  ${variable}=${valor}`);
   };
   for (const clave of ["voz", "sms", "email"]) poner(WORKFLOWS[clave].variable, est[clave]?.slug);
+  // 112 por teléfono: slug del workflow y número al que llamar (lib/happyrobot/entrante.ts).
+  poner(WORKFLOWS.entrante.variable, est.entrante?.slug);
+  poner("HAPPYROBOT_NUMERO_ENTRANTE", est.entrante?.numero);
   fs.writeFileSync(ENV_PATH, contenido);
-  console.log(`\n.env.local actualizado. HAPPYROBOT_WEB_CALL_URL se copia a mano del trigger Web Call. Reinicia npm run dev.`);
+  console.log(`\n.env.local actualizado. Reinicia npm run dev para que la app lea las variables nuevas.`);
 }
 
 async function limpiar() {
@@ -444,8 +449,38 @@ async function limpiar() {
   }
 }
 
+// ---- SMS saliente: workflow completo nodo a nodo -----------------------
+// La plantilla sms-agent exige credenciales de Twilio y dejó un cascarón vacío (0 nodos,
+// sin publicar). El montaje real (trigger «Predefined request» → «Send text» → webhook de
+// resultado) vive en scripts/happyrobot-sms.mjs y conserva el slug que ya está en .env.local.
+// Lo usan las acciones enviar_sms del ejecutor y los SMS del agente del 112
+// (lib/happyrobot/sms-avisos.ts → TELEFONO_AVISOS_SMS).
+async function sms() {
+  const r = await montarSms(api, { log: console.log });
+  actualizarEstado("sms", { id: r.workflow.id, slug: r.workflow.slug, versionId: r.versionId, nombre: NOMBRE_SMS, nodos: r.ids, salidas: r.salidas });
+  await publicarSms(api, r.versionId, ENTORNO);
+  env();
+  console.log(`\n==> SMS listo: Atalaya dispara POST /api/v2/workflows/${r.workflow.slug}/runs?environment=${ENTORNO} con { payload: { telefono, texto, … } }.`);
+  console.log(`    Prueba real: node scripts/happyrobot-workflows.mjs sms-prueba +34… "texto"`);
+}
+
+/** Manda un SMS DE VERDAD por el workflow publicado (destino: argumento, TELEFONO_AVISOS_SMS o DESTINO_DEMO). */
+async function smsPrueba() {
+  const est = leerEstado();
+  const slug = est.sms?.slug || ENV.HAPPYROBOT_WORKFLOW_SLUG_SMS;
+  if (!slug) { console.log("✘ No hay workflow de SMS: ejecuta antes «sms»."); return; }
+  const arg = (process.argv[3] || "").trim();
+  const esTelefono = /^\+\d{7,15}$/.test(arg);
+  const destino = esTelefono ? arg : ENV.TELEFONO_AVISOS_SMS || ENV.DESTINO_DEMO;
+  if (!destino) { console.log("✘ Falta el destino: pásalo como argumento (+34…) o pon TELEFONO_AVISOS_SMS / DESTINO_DEMO en .env.local."); return; }
+  const textoSms = (esTelefono ? process.argv[4] : process.argv[3]) || `Atalaya 112: SMS de prueba del workflow ${slug} (${new Date().toLocaleTimeString("es-ES")}).`;
+  const publica = urlPublica();
+  console.log(`\n${NOMBRE_SMS} (${slug}) → ${destino} · webhook de resultado: ${publica ? publica + "/api/webhooks/happyrobot/resultado" : "(sin URL pública: no habrá retorno)"}`);
+  await probarSms(api, { slug, entorno: ENTORNO, destino, texto: textoSms, webhookUrl: publica ? `${publica}/api/webhooks/happyrobot/resultado` : "", secreto: ENV.HAPPYROBOT_WEBHOOK_SECRET || "" });
+}
+
 // ---- main ---------------------------------------------------------------
 const orden = process.argv[2] || "estado";
-const pasos = { estado, crear, configurar, publicar, env, limpiar, todo: async () => { await crear(); await configurar(); await publicar(); env(); } };
+const pasos = { estado, crear, configurar, publicar, env, limpiar, entrante, sincronizar: entrante, sms, "sms-prueba": smsPrueba, todo: async () => { await crear(); await configurar(); await publicar(); env(); } };
 if (!pasos[orden]) { console.error(`Orden desconocida: ${orden}. Usa: ${Object.keys(pasos).join(" | ")}`); process.exit(1); }
 pasos[orden]().catch((e) => { console.error(`✘ ${e.message}`); process.exit(1); });

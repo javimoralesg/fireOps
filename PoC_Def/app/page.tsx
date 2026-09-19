@@ -330,7 +330,7 @@ export default function SalaDeMando() {
     async (p: Poblacion) => {
       try {
         await avisarPoblacion(p.id, { quien: QUIEN });
-        toast.exito(`Avisando a ${p.nombre}`, "La llamada o el mensaje se están ejecutando de verdad.");
+        toast.exito(`Avisando a ${p.nombre}`, "El SMS se está enviando de verdad.");
         await refrescar();
       } catch (e) {
         toast.error(`No se ha podido avisar a ${p.nombre}`, mensajeDeError(e));

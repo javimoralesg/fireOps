@@ -20,6 +20,7 @@ import {
   normalizarFuentes,
   PREFIJO_CAMARA_MOVIL,
   RADIO_CAMARAS_FIJAS_KM,
+  SUELO_SIMULACRO,
 } from "../dominio/fuentes-deteccion";
 import { haversine, rumbo } from "../fuentes/geo";
 import { riesgoPorDistancia } from "../simulacion/propagacion";
@@ -291,7 +292,7 @@ export async function cambiarFuentesDesactivadas(
 
     const simulacro = esSimulacro(estado.ejecucion);
     const mensaje = simulacro
-      ? `${quien} activa el SIMULACRO: solo la declaración a mano y las cámaras de móvil crean focos (apagadas: ${listaFuentes(despues)})`
+      ? `${quien} activa el SIMULACRO: solo ${SUELO_SIMULACRO} crean focos (apagadas: ${listaFuentes(despues)})`
       : despues.length === 0
         ? `${quien} vuelve a la operación real: todas las fuentes de detección activas`
         : `${quien} cambia las fuentes de detección · apagadas: ${listaFuentes(despues)}${encendidasNuevas.length ? ` · encendidas de nuevo: ${listaFuentes(encendidasNuevas)}` : ""}`;
@@ -326,12 +327,13 @@ export async function cambiarFuentesDesactivadas(
     }
   }
 
-  try {
-    const { guardarEjecucion } = await import("../db/repositorio");
-    await guardarEjecucion(estado.ejecucion);
-  } catch (e) {
-    estado.marcarServicio("Supabase", false, `No se pudo guardar el escenario: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  // El guardado NO se espera: con la base lenta o caída la respuesta a la sala
+  // tardaba más de lo que el navegador aguarda y enseñaba un error por un cambio
+  // que en memoria ya estaba hecho. Si falla, la persistencia periódica lo vuelve
+  // a subir sola (la huella de la ejecución ha cambiado).
+  void import("../db/repositorio")
+    .then(({ guardarEjecucion }) => guardarEjecucion(estado.ejecucion))
+    .catch((e: unknown) => estado.marcarServicio("Supabase", false, `No se pudo guardar el escenario: ${e instanceof Error ? e.message : String(e)}`));
 
   return { cambiado: true, ejecucion: estado.ejecucion };
 }

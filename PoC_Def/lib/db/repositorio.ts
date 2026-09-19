@@ -116,6 +116,19 @@ export async function guardarLote(tabla: TablaEntidad, entidades: { id: string }
   return filas.length;
 }
 
+/**
+ * Borrado en lote por id (tolerante: sin cliente no hace nada). Lo usa el
+ * descarte de un foco para sus pueblos: si solo se quitaran de memoria, el
+ * siguiente arranque los volvería a cargar con su riesgo viejo.
+ */
+export async function borrarLote(tabla: TablaEntidad, ids: string[]): Promise<number> {
+  const cliente = obtenerClienteSupabase();
+  if (!cliente || ids.length === 0) return 0;
+  const { error } = await cliente.from(tabla).delete().in("id", ids);
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+  return ids.length;
+}
+
 export async function guardarEjecucion(ejecucion: Ejecucion): Promise<void> {
   const cliente = obtenerClienteSupabase();
   if (!cliente) return;
@@ -143,10 +156,22 @@ export async function listarEjecuciones(limite = 20): Promise<Ejecucion[]> {
   return (data ?? []).map((f) => f.datos as Ejecucion).filter(Boolean);
 }
 
-async function cargarTabla<T>(tabla: TablaEntidad, ejecucionId: string, limite = 5000): Promise<T[]> {
+/**
+ * Carga una tabla de la ejecución, LO MÁS RECIENTE PRIMERO y con tope.
+ * RENDIMIENTO (constructor S, 2026-09-19): antes se traían hasta 5000 filas por
+ * tabla sin ordenar, así que un reinicio metía en RAM decenas de miles de
+ * entidades (incluidos informes con el Markdown entero) y elegía cuáles por
+ * azar. Lo que no entre sigue en Supabase y se consulta por su ruta.
+ */
+async function cargarTabla<T>(tabla: TablaEntidad, ejecucionId: string, limite = 1000): Promise<T[]> {
   const cliente = obtenerClienteSupabase();
   if (!cliente) return [];
-  const { data, error } = await cliente.from(tabla).select("datos").eq("ejecucion_id", ejecucionId).limit(limite);
+  const { data, error } = await cliente
+    .from(tabla)
+    .select("datos")
+    .eq("ejecucion_id", ejecucionId)
+    .order("actualizado_en", { ascending: false })
+    .limit(limite);
   if (error) throw new Error(`${tabla}: ${error.message}`);
   return (data ?? []).map((f) => f.datos as T).filter(Boolean);
 }
@@ -170,14 +195,15 @@ export async function cargarEjecucionActiva(): Promise<Estado | undefined> {
 
   const estado = new Estado(ejecucion);
   const [incendios, unidades, poblaciones, observaciones, decisiones, informes, comunicados, eventos] = await Promise.all([
-    cargarTabla<Incendio>("incendios", ejecucion.id),
-    cargarTabla<Unidad>("unidades", ejecucion.id),
-    cargarTabla<Poblacion>("poblaciones", ejecucion.id),
-    cargarTabla<Observacion>("observaciones", ejecucion.id, 1000),
-    cargarTabla<Decision>("decisiones", ejecucion.id),
-    cargarTabla<Informe>("informes", ejecucion.id),
-    cargarTabla<Comunicado>("comunicados", ejecucion.id),
-    cargarTabla<Evento>("eventos", ejecucion.id, 2000),
+    // Topes alineados con la poda de memoria del orquestador (MEMORIA_MAX_*).
+    cargarTabla<Incendio>("incendios", ejecucion.id, 500),
+    cargarTabla<Unidad>("unidades", ejecucion.id, 1000),
+    cargarTabla<Poblacion>("poblaciones", ejecucion.id, 1000),
+    cargarTabla<Observacion>("observaciones", ejecucion.id, 500),
+    cargarTabla<Decision>("decisiones", ejecucion.id, 300),
+    cargarTabla<Informe>("informes", ejecucion.id, 200),
+    cargarTabla<Comunicado>("comunicados", ejecucion.id, 200),
+    cargarTabla<Evento>("eventos", ejecucion.id, 1000),
   ]);
   for (const i of incendios) estado.incendios.set(i.id, i);
   for (const u of unidades) estado.unidades.set(u.id, u);

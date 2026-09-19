@@ -74,7 +74,9 @@ export function PaginaAprendizaje() {
 
   const cargar = useCallback(async () => {
     try {
-      const r = await fetch("/api/aprendizaje", { cache: "no-store" });
+      // Sin `no-store`: la ruta responde con ETag y el navegador manda If-None-Match,
+      // así el sondeo de 20 s se resuelve con un 304 vacío cuando no hay cambios.
+      const r = await fetch("/api/aprendizaje");
       const d = (await r.json()) as Datos & { error?: string };
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
       setDatos(d);

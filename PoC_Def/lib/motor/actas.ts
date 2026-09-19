@@ -10,6 +10,13 @@
 // datos (`conNarrativaIA: false`). Sin IA se pierde la prosa, nunca la
 // trazabilidad. Cada acta lleva su huella SHA-256 para detectar cambios.
 //
+// RENDIMIENTO (constructor S, 2026-09-19): la narrativa de IA se reserva al
+// estado FINAL de la decisión (ver ESTADOS_CON_NARRATIVA) y sale por el carril
+// de prioridad "baja" de lib/ia/llm.ts, con su propio hueco. Antes cada uno de
+// los cinco estados por los que pasa una decisión pedía una llamada de
+// razonamiento (~25 s) en la cola "normal" de 4 huecos, y esas llamadas
+// tapaban al supervisor, al coordinador y a la percepción.
+//
 // DUEÑO: constructor A. Dependencias: lib/agentes/informes/redactor.ts (C).
 // =====================================================================
 
@@ -209,6 +216,20 @@ function contextoDe(estado: Estado, agenteId: string): ContextoAgente {
   };
 }
 
+/**
+ * Estados en los que un acta merece narrativa de IA: los FINALES. Los
+ * intermedios (propuesta → pendiente_humano → aprobada → ejecutando) se
+ * auditan igual de bien con el acta determinista y no justifican una llamada
+ * de razonamiento de ~25 s cada uno. MEDIDO 2026-09-19: cinco llamadas por
+ * decisión, todas en la cola "normal", tapando a los agentes de decisión.
+ */
+const ESTADOS_CON_NARRATIVA: ReadonlySet<Decision["estado"]> = new Set<Decision["estado"]>([
+  "ejecutada",
+  "denegada",
+  "fallida",
+  "caducada",
+]);
+
 async function pedirNarrativa(
   estado: Estado,
   d: Decision,
@@ -217,7 +238,11 @@ async function pedirNarrativa(
   try {
     const modulo = await import("../agentes/informes/redactor");
     const redactar = modulo.redactarInforme as unknown as RedactorAmpliado;
-    const informe = await redactar(d, contextoDe(estado, d.agenteId), opciones);
+    const { conPrioridadLLM } = await import("../ia/llm");
+    // Carril de prioridad BAJA: el redactor llama al LLM por su cuenta y hereda
+    // esta prioridad por AsyncLocalStorage, así que su hueco es propio y no le
+    // quita ninguno al supervisor, al coordinador ni a la percepción.
+    const informe = await conPrioridadLLM("baja", () => redactar(d, contextoDe(estado, d.agenteId), opciones));
     return informe ?? undefined;
   } catch {
     // Sin IA o con el redactor caído: se sigue con el acta determinista.
@@ -251,7 +276,11 @@ export async function generarActaDecision(
 
   try {
     const traza = buscarTraza(estado, d.trazaId);
-    const narrativa = await pedirNarrativa(estado, d, { tipo: "decision" });
+    // Solo el estado FINAL se redacta con IA (ver ESTADOS_CON_NARRATIVA): los
+    // intermedios llevan acta determinista, que es igual de auditable.
+    const narrativa = ESTADOS_CON_NARRATIVA.has(estadoDecision)
+      ? await pedirNarrativa(estado, d, { tipo: "decision" })
+      : undefined;
     const determinista = actaDecisionDeterminista(estado, d, traza);
 
     // Si el redactor de C ha escrito el acta, manda la suya (el formato es

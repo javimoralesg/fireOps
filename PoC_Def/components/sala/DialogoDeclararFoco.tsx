@@ -2,13 +2,14 @@
 // Confirmación de un foco declarado a mano: nombre opcional y notas.
 // DUEÑO: constructor E.
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Flame } from "lucide-react";
 import type { Punto } from "@/lib/dominio/tipos";
 import { Boton } from "@/components/ui/Boton";
 import { Dialogo } from "@/components/ui/Dialogo";
 
-export function DialogoDeclararFoco({
+/** `memo` (constructor R): no se repinta con cada snapshot de la sala. */
+function DialogoDeclararFocoBase({
   punto,
   onCerrar,
   onConfirmar,
@@ -76,3 +77,5 @@ export function DialogoDeclararFoco({
     </Dialogo>
   );
 }
+
+export const DialogoDeclararFoco = memo(DialogoDeclararFocoBase);

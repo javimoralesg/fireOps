@@ -6,8 +6,12 @@
 // grandes, textos cortos y ningún menú. Pide permiso de ubicación
 // (watchPosition) y de cámara trasera (getUserMedia facingMode "environment"),
 // enseña la vista previa y envía un fotograma JPEG (≤ 800 px, calidad 0,7)
-// cada 15 s a POST /api/camaras/movil, donde el Vigía lo analiza con el modelo
-// de visión. También permite dar parte por escrito (POST /api/ingesta/observacion).
+// cada 10 s a POST /api/camaras/movil, que lo analiza AL MOMENTO con el modelo
+// de visión y devuelve el veredicto en la misma respuesta. Si el primer análisis
+// da humo o fuego, el siguiente fotograma sale enseguida para confirmarlo.
+// El botón «Congelar imagen» fija el fotograma actual y lo reenvía en cada
+// intervalo: sirve para ensayar cómo reacciona la sala ante un fuego sostenido.
+// También permite dar parte por escrito (POST /api/ingesta/observacion).
 //
 // OJO: los navegadores solo dan cámara y GPS en HTTPS (o en localhost). En
 // local hace falta el túnel; en Railway ya es HTTPS.
@@ -15,7 +19,10 @@
 // =====================================================================
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const INTERVALO_MS = 15_000;
+const INTERVALO_MS = 10_000;
+/** Tras un primer positivo, el fotograma de confirmación sale casi de inmediato. */
+const ESPERA_CONFIRMACION_MS = 1_500;
+const CONFIANZA_MINIMA = 0.6;
 const ANCHO_MAXIMO = 800;
 const CALIDAD = 0.7;
 const CLAVE_ID = "atalaya:movil:id";
@@ -64,6 +71,15 @@ export default function VigilanciaMovil() {
   const [errorEnvio, setErrorEnvio] = useState<string>();
   const [analisis, setAnalisis] = useState<AnalisisRecibido>();
   const [enviando, setEnviando] = useState(false);
+  /** true mientras el modelo sigue con el último fotograma enviado (la respuesta llegó sin veredicto). */
+  const [analizando, setAnalizando] = useState(false);
+  const enviandoRef = useRef(false);
+  const positivoAnteriorRef = useRef(false);
+  /** Última versión de enviarFotograma, para el envío de confirmación programado con setTimeout. */
+  const enviarRef = useRef<() => Promise<void>>(async () => undefined);
+  /** Fotograma congelado (data URL): mientras exista se envía y analiza ESTA imagen en cada intervalo. */
+  const [congelado, setCongelado] = useState<string>();
+  const congeladoRef = useRef<string | undefined>(undefined);
 
   const [parte, setParte] = useState("");
   const [parteEstado, setParteEstado] = useState<{ ok: boolean; texto: string }>();
@@ -159,11 +175,15 @@ export default function VigilanciaMovil() {
       setErrorEnvio("Todavía no tengo tu ubicación.");
       return;
     }
-    const imagenBase64 = capturar();
+    // Con una imagen congelada se envía siempre esa misma (misma escena, secuencia nueva:
+    // el Vigía la analiza cada vez, para ver cómo reacciona la sala a un fuego sostenido).
+    const imagenBase64 = congeladoRef.current ?? capturar();
     if (!imagenBase64) {
       setErrorEnvio("La cámara aún no da imagen.");
       return;
     }
+    if (enviandoRef.current) return; // un envío a la vez: el de confirmación no debe solaparse con el periódico
+    enviandoRef.current = true;
     setEnviando(true);
     try {
       const res = await fetch("/api/camaras/movil", {
@@ -179,16 +199,48 @@ export default function VigilanciaMovil() {
           mime: "image/jpeg",
         }),
       });
-      const j = (await res.json()) as { error?: string; recibidoEn?: string };
+      const j = (await res.json()) as { error?: string; recibidoEn?: string; analisis?: AnalisisRecibido | null; analizando?: boolean };
       if (!res.ok) throw new Error(j.error ?? `Error ${res.status}`);
       setUltimoEnvio(j.recibidoEn ?? new Date().toISOString());
       setErrorEnvio(undefined);
+      setAnalizando(Boolean(j.analizando));
+      if (j.analisis) {
+        setAnalisis(j.analisis);
+        // Primer positivo: el Vigía necesita dos seguidos para confirmar, así que el
+        // siguiente fotograma sale ya, sin esperar al intervalo.
+        const positivo = (j.analisis.humo || j.analisis.fuego) && j.analisis.confianza >= CONFIANZA_MINIMA;
+        if (positivo && !positivoAnteriorRef.current) setTimeout(() => void enviarRef.current(), ESPERA_CONFIRMACION_MS);
+        positivoAnteriorRef.current = positivo;
+      }
     } catch (e) {
       setErrorEnvio(e instanceof Error ? e.message : String(e));
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   }, [capturar, dispositivoId, nombre, posicion]);
+
+  useEffect(() => {
+    enviarRef.current = enviarFotograma;
+  }, [enviarFotograma]);
+
+  // Congelar: fija el fotograma actual y lo envía ya; hasta descongelar, cada
+  // intervalo vuelve a enviar esa misma imagen.
+  const congelar = () => {
+    const imagen = capturar();
+    if (!imagen) {
+      setErrorEnvio("La cámara aún no da imagen que congelar.");
+      return;
+    }
+    congeladoRef.current = imagen;
+    setCongelado(imagen);
+    positivoAnteriorRef.current = false; // el primer positivo de la imagen congelada dispara la confirmación rápida
+    void enviarFotograma();
+  };
+  const descongelar = () => {
+    congeladoRef.current = undefined;
+    setCongelado(undefined);
+  };
 
   // Envío periódico mientras la vigilancia esté activa (el primer envío lo
   // dispara el propio botón, no este efecto).
@@ -220,6 +272,7 @@ export default function VigilanciaMovil() {
   const alternarVigilancia = async () => {
     if (vigilando) {
       setVigilando(false);
+      descongelar();
       flujo.current?.getTracks().forEach((t) => t.stop());
       flujo.current = null;
       return;
@@ -285,8 +338,18 @@ export default function VigilanciaMovil() {
         />
       </label>
 
-      <section className="overflow-hidden rounded-[var(--radius-panel)] border border-[var(--panel-border)] bg-black">
+      <section className="relative overflow-hidden rounded-[var(--radius-panel)] border border-[var(--panel-border)] bg-black">
         <video ref={video} playsInline muted className="aspect-video w-full object-cover" />
+        {congelado && (
+          <>
+            {/* El vídeo sigue debajo (así la cámara no se para): la imagen congelada lo tapa. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={congelado} alt="Fotograma congelado que se está enviando" className="absolute inset-0 h-full w-full object-cover" />
+            <span className="absolute left-3 top-3 rounded-full bg-[var(--danger)] px-3 py-1 text-xs font-semibold text-white shadow">
+              Imagen congelada · se analiza esta misma cada {INTERVALO_MS / 1000} s
+            </span>
+          </>
+        )}
       </section>
       <canvas ref={lienzo} className="hidden" />
 
@@ -301,14 +364,25 @@ export default function VigilanciaMovil() {
       </button>
 
       {vigilando && (
-        <button
-          type="button"
-          onClick={() => void enviarFotograma()}
-          disabled={enviando}
-          className="w-full rounded-2xl border-2 border-[var(--brand)] px-6 py-4 text-base font-semibold text-[var(--brand)] disabled:opacity-50"
-        >
-          {enviando ? "Enviando…" : "Enviar ahora"}
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => void enviarFotograma()}
+            disabled={enviando}
+            className="w-full rounded-2xl border-2 border-[var(--brand)] px-4 py-4 text-base font-semibold text-[var(--brand)] disabled:opacity-50"
+          >
+            {enviando ? "Analizando…" : "Enviar ahora"}
+          </button>
+          <button
+            type="button"
+            onClick={congelado ? descongelar : congelar}
+            className={`w-full rounded-2xl px-4 py-4 text-base font-semibold ${
+              congelado ? "bg-[var(--danger)] text-white" : "border-2 border-[var(--fuego)] text-[var(--fuego)]"
+            }`}
+          >
+            {congelado ? "Descongelar" : "Congelar imagen"}
+          </button>
+        </div>
       )}
 
       <section className="rounded-[var(--radius-panel)] border border-[var(--panel-border)] bg-[var(--panel)] p-4 text-sm">
@@ -318,6 +392,7 @@ export default function VigilanciaMovil() {
         </p>
         <p className="mt-1 text-[var(--muted)]">Analizado: {veredicto}</p>
         {analisis?.descripcion && <p className="mt-1 text-[var(--muted)]">{analisis.descripcion}</p>}
+        {(enviando || analizando) && <p className="mt-1 text-[var(--brand)]">{enviando ? "Enviando y analizando el fotograma…" : "El modelo sigue con el último fotograma; el veredicto llega enseguida."}</p>}
         <p className="mt-2 text-[var(--muted)]">
           {posicion
             ? `Ubicación: ${posicion.lat.toFixed(5)}, ${posicion.lon.toFixed(5)}${posicion.precisionM ? ` (±${Math.round(posicion.precisionM)} m)` : ""}`

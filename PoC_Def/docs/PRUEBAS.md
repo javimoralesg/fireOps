@@ -64,6 +64,7 @@ npm run test:tipos     # type-check de tests/** y vitest.config.mts
 | `reloj.test.ts` | `lib/motor/reloj.ts` | ×12: 5 s reales = 1 min de mundo, sin deriva en 12 ticks; **la pausa congela el mundo de verdad** (10 min reales en pausa no mueven `ahoraMundo`); la bandera global que ve `llm.ts`; reanudar no recupera el tiempo perdido; pausar es idempotente; cambiar el factor no reescribe el pasado; recorte [0,1 · 600]; `avanzarMinutos` exacto, funciona en pausa y nunca retrocede; cada cambio sube `version` |
 | `traza.test.ts` | `lib/motor/traza.ts` | `ejecutarConTraza` publica `en_curso` y cierra en `ok`; un fallo cierra en `error` y relanza; **un `AbortError` cierra como `cancelado`**; tope de 20 trazas; `agenteActual`/`trazaActual` solo dentro del ciclo; **`anotarLlamadaIA` fuera de un ciclo no hace nada y no lanza**; tope de 30 llamadas; no se filtra a otro agente; `sinTraza` aísla el trabajo en segundo plano (bug J-3) |
 | `llm.test.ts` | `lib/ia/llm.ts` | `mundoEnPausa()` con la bandera global y su integración real con `pausar()`/`reanudar()`; solo `true` cuenta como pausa; `estadoColaLLM()` en reposo; `abortarLlamadasIA()` idempotente; proveedor activo = HelmCode y modelo por papel; contadores a cero |
+| `recencia.test.ts` | `lib/fuentes/recencia.ts` | Ventana de 15 días para prensa y redes: acepta hasta el límite exacto, descarta lo anterior, deja pasar lo que no tiene fecha (decide el modelo); `desdeVentana` para el `since` de Bluesky |
 | `verificador.test.ts` | `lib/agentes/analisis/verificador.ts` | Contrato del agente (id, categoría, `despiertaCon`, modelo). **La regla "una noticia no confirma otra noticia" no se puede probar aislada: ver fallo L-1.** |
 
 ### 2.2 Integración (`tests/integracion/`) — servidor vivo
@@ -97,10 +98,16 @@ cámara DGT caída…). Rutas: `/`, `/auditoria`, `/agentes/coordinador`, `/cono
 `/incidencias/<id>` del primer foco vivo. Además:
 
 - **El mapa Leaflet monta** (`.leaflet-container`) y el reloj de mundo se ve.
-- **"Declarar foco" → clic en el mapa → confirmar → toast "Foco declarado"**. El clic tiene
-  que caer en mapa vacío: si cae sobre un marcador (foco, unidad, cámara) Leaflet abre su
-  popup y el diálogo no sale, así que la prueba prueba varios puntos hasta que aparece
-  "Declarar un foco".
+- **"Declarar foco" → clic en el mapa → confirmar → toast "Foco declarado"**. El botón solo
+  se ve con el modo desarrollo, así que la prueba pone `localStorage["atalaya:desarrollo"] =
+  "1"` con `addInitScript` antes de cargar la sala. El clic tiene que caer en mapa vacío: si
+  cae sobre un marcador (foco, unidad, cámara) Leaflet abre su popup y el diálogo no sale, así
+  que la prueba prueba varios puntos hasta que aparece "Declarar un foco".
+- **Fuentes de detección**: `tests/unit/escenario.test.ts` (puro, sin red) cubre el catálogo,
+  el simulacro, qué agente se apaga, qué canal queda bloqueado (la cámara de móvil pasa, la
+  fija no) y `cambiarFuentesDesactivadas` (evento, marcas de agente, desarme/rearme de
+  cámaras). `ejecucionNueva` de las pruebas de integración manda `fuentesDesactivadas: []`
+  para no heredar un simulacro dejado en el servidor compartido.
 - **El portal ciudadano pinta los comunicados**. `components/publico/PortalCiudadano.tsx` es
   un componente de cliente: el HTML que sirve el servidor trae "Cargando…" y una lista vacía,
   así que esto **solo** se puede comprobar con navegador.

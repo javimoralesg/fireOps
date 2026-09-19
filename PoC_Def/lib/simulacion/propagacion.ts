@@ -276,14 +276,20 @@ export function evaluarPoblaciones(incendio: Incendio, poblaciones: Poblacion[],
     // El riesgo es el MAYOR entre el que dicta el frente y el que dicta la mera
     // proximidad, y sube un escalón si el pueblo tiene colectivos vulnerables
     // (residencias, colegios, campings): no se pueden evacuar en diez minutos.
-    let riesgo: RiesgoPoblacion = yaDentro ? "inminente" : mayorRiesgo(riesgoPorEta(etaMin, enCono, p.distanciaKm), riesgoPorDistancia(p.distanciaKm));
+    const porEta = riesgoPorEta(etaMin, enCono, p.distanciaKm);
+    const porDistancia = riesgoPorDistancia(p.distanciaKm);
+    let riesgo: RiesgoPoblacion = yaDentro ? "inminente" : mayorRiesgo(porEta, porDistancia);
     if (!yaDentro && (p.vulnerables?.length ?? 0) > 0) riesgo = subirUnEscalon(riesgo);
+    // Cuando el frente no la amenaza pero está pegada al foco, manda la proximidad:
+    // la explicación tiene que decirlo o el usuario ve "fuera del cono" y "medio" sin relación.
+    const mandaProximidad = !yaDentro && nivelDe(porDistancia) > nivelDe(porEta);
 
     const explicacion = yaDentro
       ? `${p.nombre} está dentro del perímetro actual`
       : (enCono && etaMin !== undefined
           ? `${p.nombre} está a ${p.distanciaKm.toFixed(1)} km al ${gradosATexto(rumboPoblacion)}, en la trayectoria del frente (${theta.toFixed(0)}° del eje): ~${etaMin} min`
           : `${p.nombre} está a ${p.distanciaKm.toFixed(1)} km al ${gradosATexto(rumboPoblacion)}, fuera del cono del frente (${theta.toFixed(0)}° del eje)`) +
+        (mandaProximidad ? `; a ${p.distanciaKm.toFixed(1)} km basta un giro del viento para ponerla en trayectoria en minutos, así que el riesgo no baja de ${porDistancia}` : "") +
         ((p.vulnerables?.length ?? 0) > 0 ? `; tiene ${p.vulnerables?.length} colectivo(s) vulnerable(s), por lo que el riesgo sube un escalón` : "");
 
     return { poblacionId: p.id, nombre: p.nombre, etaMin, riesgo, anguloGrados: +theta.toFixed(1), enCono, distanciaKm: p.distanciaKm, explicacion };
@@ -350,4 +356,25 @@ export function predecir(incendio: Incendio, poblaciones: Poblacion[], factorExt
 /** Perímetro circular inicial para un foco recién declarado (lo usa A si lo necesita). */
 export function perimetroInicial(centro: Punto, radioM = RADIO_INICIAL_M): Trazado {
   return poligonoDesdeRadios(centro, new Array<number>(VERTICES).fill(radioM));
+}
+
+/**
+ * AÑADIDO (sesión superficie-real, 2026-09-19). Perímetro circular inicial
+ * cuya superficie MEDIDA (geometria.areaHa, la misma fórmula con la que el
+ * mapa mide lo que dibuja) es exactamente `hectareas`. Un polígono de 36
+ * lados inscrito en un círculo mide un 1 % menos que π·r²: si la fuente dice
+ * "24 ha", se guardaba 24 y se dibujaba un círculo de radio √(A/π) que medía
+ * 23,7. Aquí se corrige el radio para que la cifra y el trazado coincidan.
+ */
+export function perimetroDeSuperficie(centro: Punto, hectareas: number): Trazado {
+  const objetivo = Math.max(0.01, hectareas);
+  let radioM = Math.sqrt((objetivo * 10_000) / Math.PI);
+  let poligono = perimetroInicial(centro, radioM);
+  const medida = areaDePoligono(poligono);
+  if (medida > 0) {
+    // El área escala con r², así que una sola corrección deja la medida clavada.
+    radioM *= Math.sqrt(objetivo / medida);
+    poligono = perimetroInicial(centro, radioM);
+  }
+  return poligono;
 }

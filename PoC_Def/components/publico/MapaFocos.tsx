@@ -7,6 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import type { Trazado } from "@/lib/dominio/tipos";
+import { areaHa } from "@/lib/simulacion/geometria";
+import { ANILLOS_ESPANA } from "@/lib/dominio/espana";
+import { instalarColocadorPopups } from "@/components/mapa/colocarPopups";
 
 export interface FocoPublico {
   id: string;
@@ -26,6 +29,14 @@ export interface FocoPublico {
   fuenteUrl?: string;
 }
 
+/** Anillo exterior de la máscara "fuera de España" (Mercator no llega a ±90°). */
+const MUNDO: [number, number][] = [
+  [-85, -180],
+  [-85, 180],
+  [85, 180],
+  [85, -180],
+];
+
 const COLOR: Record<string, string> = {
   detectado: "#f59e0b",
   confirmado: "#f97316",
@@ -34,6 +45,11 @@ const COLOR: Record<string, string> = {
   controlado: "#16a34a",
   extinguido: "#64748b",
 };
+
+/** Hectáreas MEDIDAS sobre el perímetro dibujado (misma fórmula que el servidor); sin perímetro, la cifra recibida. */
+function superficieHa(f: FocoPublico): number {
+  return f.perimetro?.length >= 3 ? areaHa(f.perimetro) : f.areaHa;
+}
 
 export default function MapaFocos({ focos }: { focos: FocoPublico[] }) {
   const contenedor = useRef<HTMLDivElement>(null);
@@ -55,11 +71,11 @@ export default function MapaFocos({ focos }: { focos: FocoPublico[] }) {
         const color = COLOR[f.estado] ?? "#dc2626";
         const etiqueta =
           `<strong>${f.nombre}</strong><br/>${f.municipio}${f.provincia ? `, ${f.provincia}` : ""}<br/>` +
-          `Estado: ${f.estado} · nivel ${f.nivelGravedad}<br/>Superficie estimada: ${f.areaHa.toFixed(0)} ha`;
+          `Estado: ${f.estado} · nivel ${f.nivelGravedad}<br/>Superficie estimada: ${superficieHa(f).toFixed(0)} ha`;
         if (f.perimetro?.length >= 3) {
-          L.polygon(f.perimetro, { color, weight: 2, fillOpacity: 0.25 }).bindPopup(etiqueta).addTo(c);
+          L.polygon(f.perimetro, { color, weight: 2, fillOpacity: 0.25 }).bindPopup(etiqueta, { autoPan: false }).addTo(c);
         }
-        L.circleMarker([f.centro.lat, f.centro.lon], { radius: 8, color, fillColor: color, fillOpacity: 0.9 }).bindPopup(etiqueta).addTo(c);
+        L.circleMarker([f.centro.lat, f.centro.lon], { radius: 8, color, fillColor: color, fillOpacity: 0.9 }).bindPopup(etiqueta, { autoPan: false }).addTo(c);
         puntos.push([f.centro.lat, f.centro.lon]);
       }
       if (puntos.length) m.fitBounds(L.latLngBounds(puntos).pad(0.4), { maxZoom: 11 });
@@ -70,6 +86,7 @@ export default function MapaFocos({ focos }: { focos: FocoPublico[] }) {
   // Creación del mapa: una sola vez, con Leaflet cargado a demanda.
   useEffect(() => {
     let cancelado = false;
+    let desinstalarColocador: (() => void) | null = null;
     void (async () => {
       const L = (await import("leaflet")).default;
       if (cancelado || !contenedor.current || mapa.current) return;
@@ -78,11 +95,17 @@ export default function MapaFocos({ focos }: { focos: FocoPublico[] }) {
         attribution: '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 18,
       }).addTo(mapa.current);
+      // El resto del mundo en rojo (zona excluida) con el contorno real de
+      // España como agujero: el portal solo cubre el territorio español.
+      L.polygon([MUNDO, ...ANILLOS_ESPANA], { stroke: false, fillColor: "#dc2626", fillOpacity: 0.2, fillRule: "evenodd", interactive: false }).addTo(mapa.current);
       capa.current = L.layerGroup().addTo(mapa.current);
+      // Los popups se colocan donde quepan enteros (encima, debajo o a un lado), sin mover el mapa.
+      desinstalarColocador = instalarColocadorPopups(mapa.current);
       setListo((n) => n + 1);
     })();
     return () => {
       cancelado = true;
+      desinstalarColocador?.();
       mapa.current?.remove();
       mapa.current = null;
       capa.current = null;

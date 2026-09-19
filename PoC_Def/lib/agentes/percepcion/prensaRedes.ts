@@ -10,6 +10,9 @@
 // {esIncendio, municipio, provincia, resumen, gravedad, fiabilidad},
 // geocodifica el municipio con Nominatim y crea Observaciones de canal
 // "prensa" o "rrss" con su urlFuente. Máximo 10 ítems por ciclo.
+// Solo se analizan publicaciones de los últimos 15 días: cada fuente ya
+// aplica la ventana (lib/fuentes/recencia.ts) y aquí se vuelve a comprobar
+// la fecha antes de gastar una llamada al modelo.
 // =====================================================================
 import { z } from "zod";
 import type { Agente, ContextoAgente } from "../../motor/contratos";
@@ -17,6 +20,7 @@ import type { Observacion } from "../../dominio/tipos";
 import { buscarPosts } from "../../fuentes/bluesky";
 import { buscarNoticias, exaDisponible } from "../../fuentes/exa";
 import { noticiasGoogle } from "../../fuentes/rss";
+import { esReciente } from "../../fuentes/recencia";
 import { geocodificar } from "../../fuentes/nominatim";
 import { completarJson, proveedorDisponible } from "../../ia/llm";
 import { nuevoId } from "../../motor/ids";
@@ -126,6 +130,7 @@ async function recolectar(ctx: ContextoAgente): Promise<{ items: Item[]; fallos:
   const nuevos = items.filter((i) => {
     const clave = i.url || i.id;
     if (m.vistos.has(clave) || m.vistos.has(i.id)) return false;
+    if (!esReciente(i.publicado)) return false;
     return true;
   });
   return { items: nuevos.slice(0, MAX_ITEMS_CICLO), fallos };

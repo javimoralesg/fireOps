@@ -70,10 +70,15 @@ export default function DetalleAgente({ params }: { params: Promise<{ id: string
             subtitulo={agente.descripcion}
             accion={
               <div className="flex flex-wrap items-center gap-1.5">
-                <Insignia tono={tonoEstadoAgente(agente.estado)} punto>
-                  {agente.pausado ? "Pausado" : TEXTO_ESTADO_AGENTE[agente.estado]}
+                <Insignia tono={agente.desactivadoPorEscenario && !agente.pausado ? "aviso" : tonoEstadoAgente(agente.estado)} punto>
+                  {agente.pausado ? "Pausado" : agente.desactivadoPorEscenario ? "Sin ciclos" : TEXTO_ESTADO_AGENTE[agente.estado]}
                 </Insignia>
                 {agente.controlHumano ? <Insignia tono="aviso">Control humano</Insignia> : null}
+                {agente.desactivadoPorEscenario && !agente.pausado ? (
+                  <Insignia tono="info" title="El mando apagó esta fuente de detección en el desplegable de ejecución (modo desarrollo)">
+                    Fuente apagada: {agente.desactivadoPorEscenario}
+                  </Insignia>
+                ) : null}
               </div>
             }
           >

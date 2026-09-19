@@ -38,13 +38,19 @@ export function Logo({ tamano = 28, className = "" }: { tamano?: number; classNa
 }
 
 /** Logo + nombre, para la barra superior. */
-export function Marca({ organismo }: { organismo?: string }) {
+/**
+ * Logo + nombre + organismo. `compacta` esconde el organismo por debajo de
+ * 1840 px: lo usa la barra de la sala, que en modo desarrollo tiene que caber
+ * en UNA línea a 1280 px con el reloj, la ejecución, la insignia de fuentes y
+ * los botones (medido: todo con su texto completo necesita ~1800 px).
+ */
+export function Marca({ organismo, compacta = false }: { organismo?: string; compacta?: boolean }) {
   return (
     <span className="flex items-center gap-2.5">
       <Logo tamano={30} className="shrink-0 text-brand" />
       <span className="flex min-w-0 flex-col leading-tight">
         <span className="text-[15px] font-semibold tracking-tight text-foreground">Atalaya</span>
-        <span className="truncate text-[11px] text-muted">{organismo ?? "Sala de mando · Incendios forestales"}</span>
+        <span className={`truncate text-[11px] text-muted ${compacta ? "hidden min-[1840px]:inline" : ""}`}>{organismo ?? "Sala de mando · Incendios forestales"}</span>
       </span>
     </span>
   );

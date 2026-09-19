@@ -6,6 +6,8 @@
 //   {oeste,sur,este,norte}/{DIAS}
 // · El endpoint por país (/api/country/...) NO existe: siempre bbox.
 // · Límite: 5.000 transacciones / 10 min → cacheamos 15 min.
+// · Rango de días: 1..5 (MEDIDO 2026-09-19: con 7 o 10 responde 400
+//   "Invalid day range. Expects [1..5]"; la documentación decía 10).
 // · SIN MAP_KEY no hay datos: se lanza un error claro y el agente satélite
 //   marca el servicio en rojo. No hay alternativa sin clave:
 //   EFFIS `viirs.hs` responde sin clave pero su WFS devuelve datos de 2019
@@ -15,16 +17,23 @@
 // =====================================================================
 import type { FocoSatelite, Punto } from "../dominio/tipos";
 import { haversine } from "./geo";
+import { enEspana } from "../dominio/espana";
 
 const BASE = "https://firms.modaps.eosdis.nasa.gov/api/area/csv";
-/** España peninsular + Baleares. Canarias va aparte. */
+/**
+ * España peninsular + Baleares. Canarias va aparte. Son cajas de PETICIÓN a
+ * FIRMS: incluyen Portugal, el sur de Francia y el norte de Marruecos, así que
+ * `parsearCsv` descarta con `enEspana` todo píxel fuera del territorio español.
+ */
 export const BBOX_ESPANA = "-9.5,35.9,4.4,43.9";
 export const BBOX_CANARIAS = "-18.3,27.5,-13.3,29.5";
 const FUENTES = ["VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT"] as const;
 const TIMEOUT_MS = 20_000;
 const CACHE_MS = 15 * 60_000;
+/** Máximo de días que admite el endpoint de área (medido: `Expects [1..5]`). */
+export const MAX_DIAS_FIRMS = 5;
 
-type Global = typeof globalThis & { __atalayaFirms?: { en: number; datos: FocoSatelite[] } };
+type Global = typeof globalThis & { __atalayaFirms?: Record<string, { en: number; datos: FocoSatelite[] }> };
 const g = globalThis as Global;
 
 export const firmsDisponible = (): boolean => Boolean(process.env.FIRMS_MAP_KEY);
@@ -74,6 +83,8 @@ function parsearCsv(csv: string, fuenteApi: string): FocoSatelite[] {
     const lat = Number(c[iLat]);
     const lon = Number(c[iLon]);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    // La caja envolvente trae píxeles de Portugal, Francia, Andorra y Marruecos: fuera de España no entra.
+    if (!enEspana({ lat, lon })) continue;
     const fechaHora = fechaHoraDe(c[iFecha] ?? "", c[iHora] ?? "");
     focos.push({
       id: `firms:${fuenteApi}:${lat.toFixed(5)},${lon.toFixed(5)}:${fechaHora}`,
@@ -109,10 +120,13 @@ export async function focosEspana(opciones: { dias?: number; incluirCanarias?: b
       "FIRMS_MAP_KEY no configurada: no hay detección satelital real. Consíguela en https://firms.modaps.eosdis.nasa.gov/api/map_key/ (llega por email en minutos) y ponla en .env.local.",
     );
   }
-  const cache = g.__atalayaFirms;
+  // Caché por (días, Canarias): el agente pide 1 día para el mapa y 5 para
+  // reconocer fuentes estáticas; una sola entrada mezclaba las dos consultas.
+  const dias = Math.max(1, Math.min(MAX_DIAS_FIRMS, opciones.dias ?? 1));
+  const claveCache = `${dias}d:${opciones.incluirCanarias ? "con-canarias" : "peninsula"}`;
+  const cache = (g.__atalayaFirms ??= {})[claveCache];
   if (cache && Date.now() - cache.en < CACHE_MS) return cache.datos;
 
-  const dias = Math.max(1, Math.min(10, opciones.dias ?? 1));
   const cajas = opciones.incluirCanarias ? [BBOX_ESPANA, BBOX_CANARIAS] : [BBOX_ESPANA];
   const tareas: Promise<FocoSatelite[]>[] = [];
   for (const caja of cajas) for (const f of FUENTES) tareas.push(pedirFuente(clave, f, caja, dias));
@@ -124,7 +138,7 @@ export async function focosEspana(opciones: { dias?: number; incluirCanarias?: b
     throw new Error(`FIRMS no respondió: ${err?.reason instanceof Error ? err.reason.message : err?.reason}`);
   }
   const focos = ok.flatMap((r) => r.value).sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
-  g.__atalayaFirms = { en: Date.now(), datos: focos };
+  (g.__atalayaFirms ??= {})[claveCache] = { en: Date.now(), datos: focos };
   return focos;
 }
 
@@ -145,4 +159,29 @@ export function agruparFocos(focos: FocoSatelite[], distanciaKm = 2): { centro: 
     }
   }
   return grupos.sort((a, b) => b.frpTotal - a.frpTotal);
+}
+
+/**
+ * Días distintos (YYYY-MM-DD, UTC) con algún píxel a menos de `distanciaKm`
+ * del punto dentro de un histórico de varios días.
+ */
+export function diasConDeteccion(centro: Punto, historico: FocoSatelite[], distanciaKm = 2): number {
+  const dias = new Set<string>();
+  for (const f of historico) if (haversine(centro, f.punto) <= distanciaKm) dias.add(f.fechaHora.slice(0, 10));
+  return dias.size;
+}
+
+/**
+ * Un punto caliente que aparece un día sí y otro también NO es un incendio
+ * forestal: es una refinería, una acería, una antorcha o una quema controlada
+ * (FIRMS lo llama "other static land source"). MEDIDO 2026-09-19 sobre España:
+ * 30 grupos del último día, 14 vistos en ≥ 3 de los últimos 5 días (la Pobla de
+ * Mafumet, 64 MW, 10 píxeles, es la refinería de Tarragona: 3 de 5 días). Con
+ * este umbral se quedaban fuera exactamente los 14 y ninguno de los que solo
+ * habían aparecido ese día.
+ */
+export const DIAS_FUENTE_ESTATICA = 3;
+
+export function esFuenteEstatica(centro: Punto, historico: FocoSatelite[], distanciaKm = 2): boolean {
+  return diasConDeteccion(centro, historico, distanciaKm) >= DIAS_FUENTE_ESTATICA;
 }

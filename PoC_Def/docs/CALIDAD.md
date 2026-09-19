@@ -472,7 +472,7 @@ Revisados los 16 uno a uno. `⏱` = cadencia, `⚡` = eventos que lo despiertan.
 |---|---:|---|---|---|
 | `vigia_camaras` | 20 s | `incendio_nuevo` | Analiza cámaras DGT/Madrid/móvil con visión; **2 positivos seguidos → `Observacion` + `camara_positiva`** | Nada |
 | `satelite` | 600 s | — | Focos FIRMS agrupados → `Observacion` + evento `satelite` | Nada |
-| `prensa_redes` | 180 s | `incendio_nuevo` | Exa + Google News + Bluesky → `Observacion` de canal `prensa`/`rrss` (confianza ≤ 0,7) | Nada |
+| `prensa_redes` | 180 s | `incendio_nuevo` | Exa + Google News + Bluesky (solo últimos 15 días) → `Observacion` de canal `prensa`/`rrss` (confianza ≤ 0,7) | Nada |
 | `centralita` | 30 s | — (entra por webhook) | Extrae lugar/gravedad de llamadas, SMS, email, Telegram y web → `Observacion` | Nada |
 | `meteorologo` | 60 s | `incendio_nuevo` | Meteo por foco, avisos, índice de peligro, 30 zonas de España; **giro > 30° → `viento_gira`**, subida → `peligro_sube` | Nada |
 | `verificador` | 45 s | `observacion`, `satelite`, `camara_positiva` | Deduplica, cruza fuentes, sube confianza, **crea o confirma el foco** | Nada |

@@ -262,6 +262,36 @@ body {
 .leaflet-popup-content {
   margin: 12px 14px;
   line-height: 1.45;
+  /* Tope que pone components/mapa/colocarPopups.ts: lo que cabe en el lado elegido. */
+  max-height: var(--popup-alto-max, none);
+  overflow-y: auto;
+}
+/* Popups colocados por components/mapa/colocarPopups.ts: el lado va en `data-lado`
+   y la punta (el mismo rombo de Leaflet, girado) sigue señalando al marcador. */
+.leaflet-popup .leaflet-popup-tip-container {
+  left: var(--punta-x, 50%);
+}
+.leaflet-popup[data-lado="abajo"] .leaflet-popup-tip-container {
+  top: -18px;
+  transform: rotate(180deg);
+}
+.leaflet-popup[data-lado="derecha"] .leaflet-popup-tip-container,
+.leaflet-popup[data-lado="izquierda"] .leaflet-popup-tip-container {
+  top: var(--punta-y, 50%);
+  margin-top: -10px;
+  margin-left: 0;
+}
+.leaflet-popup[data-lado="derecha"] .leaflet-popup-tip-container {
+  left: -29px;
+  transform: rotate(90deg);
+}
+.leaflet-popup[data-lado="izquierda"] .leaflet-popup-tip-container {
+  left: calc(100% - 11px);
+  transform: rotate(-90deg);
+}
+/* Popup suelto: no toca al marcador (arrinconado junto a un panel), así que sin punta. */
+.leaflet-popup[data-suelto] .leaflet-popup-tip-container {
+  display: none;
 }
 .leaflet-tooltip {
   background: var(--panel);
@@ -346,4 +376,24 @@ body {
   * {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Dibujo de la zona de filtro (recuadro o lazo, components/mapa/SeleccionZona.tsx):
+   cruz, sin gestos táctiles del navegador y las capas dejan de capturar el
+   puntero para que el trazo sea continuo y no abra fichas por el camino. */
+.mapa-dibujando,
+.mapa-dibujando .leaflet-grab,
+.mapa-dibujando .leaflet-interactive {
+  cursor: crosshair !important;
+}
+.mapa-dibujando {
+  touch-action: none;
+}
+.mapa-dibujando .leaflet-marker-pane,
+.mapa-dibujando .leaflet-overlay-pane,
+.mapa-dibujando .leaflet-shadow-pane,
+.mapa-dibujando .leaflet-tooltip-pane,
+.mapa-dibujando .leaflet-popup-pane,
+.mapa-dibujando .leaflet-interactive {
+  pointer-events: none !important;
 }

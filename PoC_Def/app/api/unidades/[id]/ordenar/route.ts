@@ -5,6 +5,7 @@ import { z } from "zod";
 import { obtenerEstado } from "@/lib/motor/estado";
 import { cuerpoValidado, error, json, mensajeDeError } from "@/lib/motor/respuestas";
 import { decisionManual } from "@/lib/agentes/ejecucion/orden-manual";
+import { describirFueraEspana, enEspana } from "@/lib/dominio/espana";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export async function POST(peticion: Request, ctx: { params: Promise<{ id: strin
   } else {
     destino = datos.destino;
   }
+  if (!enEspana(destino)) return error(describirFueraEspana(destino), 400);
 
   try {
     const decision = await decisionManual({

@@ -11,6 +11,16 @@ export const LIMITES_ESPANA: [[number, number], [number, number]] = [
   [43.9, 4.6],
 ];
 
+/**
+ * Hasta dónde se puede desplazar el mapa: España con margen. El sistema solo
+ * trabaja el territorio español (lib/dominio/espana.ts), así que no tiene
+ * sentido navegar a París o Lisboa.
+ */
+export const LIMITES_NAVEGACION: [[number, number], [number, number]] = [
+  [24.5, -21.5],
+  [46.5, 7.5],
+];
+
 const rad = (g: number) => (g * Math.PI) / 180;
 const grad = (r: number) => (r * 180) / Math.PI;
 

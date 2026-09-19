@@ -7,6 +7,43 @@ import { json } from "@/lib/motor/respuestas";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// ---------------------------------------------------------------------
+// Recuento de Supabase: cacheado 30 s y refrescado EN SEGUNDO PLANO
+// ---------------------------------------------------------------------
+// (constructor T, 2026-09-19) `contarPersistidos` son dos `count` contra
+// Supabase y se llevaban ~0,5 s de los ~0,6 s de este endpoint, que es el
+// healthcheck de Railway y la barra de servicios (se pide cada pocos segundos).
+// Con la caché la petición no espera nunca a la base de datos: devuelve el
+// último recuento conocido —con su marca de tiempo— y pide el siguiente aparte.
+const CACHE_RECUENTO_MS = 30_000;
+type GlobalSalud = typeof globalThis & {
+  __atalayaRecuento?: { en: number; ejecucionId: string; valor: { trazas: number; informes: number } | null };
+  __atalayaRecuentoEnCurso?: Promise<void>;
+};
+const gs = globalThis as GlobalSalud;
+
+function recuentoPersistido(ejecucionId: string): { trazas: number; informes: number; en: string } | null {
+  const c = gs.__atalayaRecuento;
+  const vigente = c && c.ejecucionId === ejecucionId && Date.now() - c.en < CACHE_RECUENTO_MS;
+  if (!vigente && !gs.__atalayaRecuentoEnCurso) {
+    gs.__atalayaRecuentoEnCurso = (async () => {
+      try {
+        const { contarPersistidos } = await import("@/lib/db/repositorio");
+        const valor = await contarPersistidos(ejecucionId);
+        gs.__atalayaRecuento = { en: Date.now(), ejecucionId, valor };
+      } catch {
+        // Sin base de datos o sin respuesta: se dice (null), no se inventa.
+        gs.__atalayaRecuento = { en: Date.now(), ejecucionId, valor: null };
+      } finally {
+        gs.__atalayaRecuentoEnCurso = undefined;
+      }
+    })();
+  }
+  const c2 = gs.__atalayaRecuento;
+  if (!c2 || c2.ejecucionId !== ejecucionId || !c2.valor) return null;
+  return { ...c2.valor, en: new Date(c2.en).toISOString() };
+}
+
 export async function GET(): Promise<Response> {
   arrancarOrquestador();
   const estado = obtenerEstado();
@@ -18,19 +55,12 @@ export async function GET(): Promise<Response> {
   const trazasEnMemoria = [...estado.agentes.values()].reduce((n, a) => n + (a.trazas?.length ?? 0), 0);
   const informesPorTipo: Record<string, number> = {};
   for (const i of estado.informes.values()) informesPorTipo[i.tipo] = (informesPorTipo[i.tipo] ?? 0) + 1;
-  // El recuento en Supabase va con tope de 1,5 s: este endpoint es el
-  // healthcheck de Railway y no puede quedarse colgado de la base de datos
-  // (si tardase, Railway reiniciaría el contenedor por un fallo que no es suyo).
-  let persistidos: { trazas: number; informes: number } | null = null;
-  try {
-    const { contarPersistidos } = await import("@/lib/db/repositorio");
-    persistidos = await Promise.race([
-      contarPersistidos(estado.ejecucion.id),
-      new Promise<null>((resolver) => setTimeout(() => resolver(null), 1500)),
-    ]);
-  } catch {
-    persistidos = null; // sin base de datos o sin respuesta: se dice, no se inventa
-  }
+  // El recuento en Supabase NO se espera: este endpoint es el healthcheck de
+  // Railway y no puede quedarse colgado de la base de datos (si tardase,
+  // Railway reiniciaría el contenedor por un fallo que no es suyo). Se sirve el
+  // último recuento conocido (≤ 30 s) y el siguiente se pide en segundo plano.
+  // `null` = sin base de datos o sin recuento todavía: se dice, no se inventa.
+  const persistidos = recuentoPersistido(estado.ejecucion.id);
 
   // --- IA: proveedor, modelos, contadores y cola de concurrencia -------
   let ia: Record<string, unknown> = { ok: false, detalle: "No se ha podido leer la capa de IA" };

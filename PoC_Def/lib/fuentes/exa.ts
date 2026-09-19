@@ -3,7 +3,10 @@
 // POST https://api.exa.ai/search con cabecera x-api-key.
 // Requiere EXA_API_KEY: sin ella se lanza un error claro y el agente de
 // prensa se queda con Google News RSS + Bluesky (que no necesitan clave).
+// La ventana `horas` nunca pasa de 15 días (lib/fuentes/recencia.ts) y los
+// resultados con publishedDate más antiguo se descartan al parsear.
 // =====================================================================
+import { MAX_HORAS_PRENSA, esReciente } from "./recencia";
 
 const URL_EXA = "https://api.exa.ai/search";
 const TIMEOUT_MS = 20_000;
@@ -43,7 +46,7 @@ export async function buscarNoticias(
     category: "news",
     numResults: Math.max(1, Math.min(25, opciones.max ?? 10)),
     userLocation: "ES",
-    maxAgeHours: Math.max(1, Math.min(720, opciones.horas ?? 24)),
+    maxAgeHours: Math.max(1, Math.min(MAX_HORAS_PRENSA, opciones.horas ?? 24)),
     contents: { text: { maxCharacters: 600 } },
   };
   const res = await fetch(URL_EXA, {
@@ -57,6 +60,7 @@ export async function buscarNoticias(
   const j = (await res.json()) as { results?: FilaExa[] };
   return (j.results ?? [])
     .filter((r) => Boolean(r.url))
+    .filter((r) => esReciente(r.publishedDate ?? undefined))
     .map((r) => ({
       id: `exa:${r.id ?? r.url}`,
       titulo: (r.title ?? "").trim() || (r.url as string),

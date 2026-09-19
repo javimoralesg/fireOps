@@ -9,10 +9,15 @@
 //     "satelite" (dos fuentes independientes confirmando lo mismo).
 // Sin FIRMS_MAP_KEY: estado "error" con el motivo y servicio en rojo. Nunca
 // se inventa un foco.
+// AÑADIDO (sesión riesgo-fundado, 2026-09-19): un grupo visto en ≥ 3 de los
+// últimos 5 días es una FUENTE ESTÁTICA (refinería, acería, antorcha) y un
+// grupo cuyos píxeles son todos de confianza baja es ruido: ninguno crea aviso
+// (se registra una vez por qué). Antes la refinería de Tarragona salía como
+// "Incendio de la Pobla de Mafumet" con 59 pueblos "en peligro".
 // =====================================================================
 import type { Agente, ContextoAgente } from "../../motor/contratos";
 import type { Observacion } from "../../dominio/tipos";
-import { agruparFocos, firmsDisponible, focosEspana } from "../../fuentes/firms";
+import { DIAS_FUENTE_ESTATICA, MAX_DIAS_FIRMS, agruparFocos, diasConDeteccion, esFuenteEstatica, firmsDisponible, focosEspana } from "../../fuentes/firms";
 import { haversine } from "../../fuentes/geo";
 import { nuevoId } from "../../motor/ids";
 
@@ -58,10 +63,21 @@ export const agenteSatelite: Agente = {
     for (const f of focos) if (!ctx.estado.focosSatelite.has(f.id)) ctx.estado.focosSatelite.set(f.id, f);
     ctx.estado.tocar();
 
+    // Histórico de varios días SOLO para reconocer fuentes estáticas (no entra
+    // en el estado: el mapa enseña el último día). Si falla, no se filtra nada.
+    let historico: Awaited<ReturnType<typeof focosEspana>> = [];
+    try {
+      historico = await focosEspana({ dias: MAX_DIAS_FIRMS });
+    } catch (e) {
+      console.warn("[satelite] sin histórico de FIRMS para reconocer fuentes estáticas:", e instanceof Error ? e.message : e);
+    }
+
     const grupos = agruparFocos(focos, DISTANCIA_GRUPO_KM);
     const incendios = ctx.estado.incendiosActivos();
     const observaciones: Observacion[] = [];
     let confirmados = 0;
+    let estaticos = 0;
+    let debiles = 0;
 
     for (const grupo of grupos) {
       const cercano = incendios
@@ -89,6 +105,28 @@ export const agenteSatelite: Agente = {
       if (vistos.has(clave)) continue;
       vistos.add(clave);
 
+      const donde = `${grupo.centro.lat.toFixed(3)}, ${grupo.centro.lon.toFixed(3)}`;
+      if (historico.length && esFuenteEstatica(grupo.centro, historico, DISTANCIA_GRUPO_KM)) {
+        estaticos += 1;
+        const dias = diasConDeteccion(grupo.centro, historico, DISTANCIA_GRUPO_KM);
+        ctx.registrar(
+          "satelite",
+          `Punto caliente persistente en ${donde}: visto ${dias} de los últimos ${MAX_DIAS_FIRMS} días (${grupo.frpTotal.toFixed(0)} MW, ${grupo.focos.length} píxel(es)). ` +
+            `Es una fuente estática (industria, refinería, antorcha o quema controlada), no un incendio: no se crea aviso.`,
+          { nivel: "info", datos: { punto: grupo.centro, frpTotal: grupo.frpTotal, focos: grupo.focos.length, dias, umbralDias: DIAS_FUENTE_ESTATICA, fuenteEstatica: true } },
+        );
+        continue;
+      }
+      if (grupo.focos.every((f) => f.confianza === "baja")) {
+        debiles += 1;
+        ctx.registrar(
+          "satelite",
+          `Punto caliente de confianza baja en ${donde} (${grupo.frpTotal.toFixed(0)} MW, ${grupo.focos.length} píxel(es)): FIRMS lo marca como probable falso positivo. No se crea aviso.`,
+          { nivel: "info", datos: { punto: grupo.centro, frpTotal: grupo.frpTotal, focos: grupo.focos.length, confianzaBaja: true } },
+        );
+        continue;
+      }
+
       const principal = grupo.focos[0];
       const hora = new Date(principal.fechaHora).toLocaleString("es-ES", { timeZone: "Europe/Madrid", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
       const observacion: Observacion = {
@@ -113,7 +151,10 @@ export const agenteSatelite: Agente = {
       );
     }
 
-    const resumen = `${focos.length} focos VIIRS en España, ${grupos.length} agrupaciones: ${observaciones.length} sin incendio conocido, ${confirmados} confirmando incendios activos`;
+    const resumen =
+      `${focos.length} focos VIIRS en España, ${grupos.length} agrupaciones: ${observaciones.length} sin incendio conocido, ${confirmados} confirmando incendios activos` +
+      (estaticos ? `, ${estaticos} fuente(s) estática(s) ignoradas` : "") +
+      (debiles ? `, ${debiles} de confianza baja ignoradas` : "");
     ctx.informarTarea(resumen);
     return { resumen, observaciones: observaciones.length ? observaciones : undefined };
   },

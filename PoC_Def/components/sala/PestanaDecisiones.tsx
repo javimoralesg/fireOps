@@ -3,36 +3,55 @@
 // y debajo lo que se está ejecutando y lo recién ejecutado, con resultado real.
 // DUEÑO: constructor E.
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Inbox, Radio, ScrollText } from "lucide-react";
-import type { Decision, Informe, Snapshot } from "@/lib/dominio/tipos";
+import type { Decision, Incendio, Informe, Snapshot } from "@/lib/dominio/tipos";
 import { haceCuanto, recortar } from "@/lib/cliente/formato";
 import { Desplegable } from "@/components/ui/Desplegable";
 import { Insignia, TEXTO_ESTADO_DECISION, tonoEstadoDecision } from "@/components/ui/Insignia";
 import { Vacio } from "@/components/ui/Vacio";
 import { DialogoInforme } from "./DialogoInforme";
-import { LineaAccion, TarjetaDecision } from "./TarjetaDecision";
+import { LineaAccion, TarjetaDecision, type ObjetivoAccion } from "./TarjetaDecision";
 
-/** Minutos hasta que el frente alcance el pueblo más cercano de esa decisión. */
-function etaDe(d: Decision, snapshot?: Snapshot): number {
-  const poblaciones = (snapshot?.poblaciones ?? []).filter((p) => p.incendioId === d.incendioId && p.etaFrenteMin !== undefined);
-  if (poblaciones.length === 0) return Number.POSITIVE_INFINITY;
-  return Math.min(...poblaciones.map((p) => p.etaFrenteMin ?? Number.POSITIVE_INFINITY));
-}
+/** Lista vacía compartida: evita crear un array nuevo (y romper memos) por render. */
+const VACIO: never[] = [];
 
-export function PestanaDecisiones({
+function PestanaDecisionesBase({
   snapshot,
   onTrasDecidir,
   onCentrarIncendio,
   onCentrarUnidad,
+  onCentrarObjetivo,
+  amplio = false,
 }: {
   snapshot?: Snapshot;
   onTrasDecidir?: () => void;
   onCentrarIncendio?: (id: string) => void;
   onCentrarUnidad?: (id: string) => void;
+  /** Centra el mapa en el objetivo de una acción (pueblo avisado, cámara, punto). */
+  onCentrarObjetivo?: (objetivo: ObjetivoAccion) => void;
+  /** Panel ampliado a pantalla completa: las tarjetas se reparten en columnas. */
+  amplio?: boolean;
 }) {
-  const decisiones = useMemo(() => snapshot?.decisiones ?? [], [snapshot?.decisiones]);
+  const decisiones = useMemo(() => snapshot?.decisiones ?? VACIO, [snapshot?.decisiones]);
+
+  /**
+   * RENDIMIENTO (constructor R): minutos hasta que el frente alcance el pueblo
+   * más cercano de cada incendio. Antes esto recorría las 1000 poblaciones
+   * DENTRO del comparador del `sort` (O(n log n × 1000)); ahora se calcula una
+   * sola vez por porción y el orden es una simple lectura del mapa.
+   */
+  const etaPorIncendio = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const p of snapshot?.poblaciones ?? VACIO) {
+      if (!p.incendioId || p.etaFrenteMin === undefined) continue;
+      const previo = mapa.get(p.incendioId);
+      if (previo === undefined || p.etaFrenteMin < previo) mapa.set(p.incendioId, p.etaFrenteMin);
+    }
+    return mapa;
+  }, [snapshot?.poblaciones]);
+  const etaDe = (d: Decision) => (d.incendioId ? (etaPorIncendio.get(d.incendioId) ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY);
 
   /** Comunicados que esperan el visto bueno de una persona. */
   const comunicadosPendientes = useMemo(
@@ -44,8 +63,10 @@ export function PestanaDecisiones({
     () =>
       decisiones
         .filter((d) => d.estado === "pendiente_humano" || d.estado === "escalada")
-        .sort((a, b) => a.prioridad - b.prioridad || etaDe(a, snapshot) - etaDe(b, snapshot) || a.creadaEn.localeCompare(b.creadaEn)),
-    [decisiones, snapshot],
+        .sort((a, b) => a.prioridad - b.prioridad || etaDe(a) - etaDe(b) || a.creadaEn.localeCompare(b.creadaEn)),
+    // `etaDe` solo lee `etaPorIncendio`: depender del mapa basta (y no del snapshot entero).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [decisiones, etaPorIncendio],
   );
 
   const enEvaluacion = useMemo(() => decisiones.filter((d) => d.estado === "propuesta"), [decisiones]);
@@ -67,7 +88,12 @@ export function PestanaDecisiones({
     [decisiones],
   );
 
-  const incendioDe = (id?: string) => snapshot?.incendios.find((i) => i.id === id);
+  /** Índice de incendios: una sola pasada en vez de un `find` por tarjeta. */
+  const incendioPorId = useMemo(
+    () => new Map<string, Incendio>((snapshot?.incendios ?? VACIO).map((i) => [i.id, i])),
+    [snapshot?.incendios],
+  );
+  const informes = snapshot?.informes;
 
   return (
     <div className="space-y-3">
@@ -82,21 +108,24 @@ export function PestanaDecisiones({
           }
         />
       ) : (
-        <div className="space-y-2.5">
+        <div className={amplio ? "grid items-start gap-2.5 @3xl:grid-cols-2 @min-[96rem]:grid-cols-3" : "space-y-2.5"}>
           {pendientes.map((d) => (
             <TarjetaDecision
               key={d.id}
               decision={d}
-              incendio={incendioDe(d.incendioId)}
-              informes={snapshot?.informes}
+              incendio={d.incendioId ? incendioPorId.get(d.incendioId) : undefined}
+              informes={informes}
               onTrasDecidir={onTrasDecidir}
               onCentrarIncendio={onCentrarIncendio}
               onCentrarUnidad={onCentrarUnidad}
+              onCentrarObjetivo={onCentrarObjetivo}
             />
           ))}
         </div>
       )}
 
+      {/* Lo que ya está en marcha o hecho: en el panel ampliado (o ensanchado ≥ 64 rem), dos columnas. */}
+      <div className={amplio ? "grid items-start gap-3 @5xl:grid-cols-2" : "space-y-3"}>
       {comunicadosPendientes.length > 0 ? (
         <section>
           <h3 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">
@@ -127,7 +156,7 @@ export function PestanaDecisiones({
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">En ejecución</h3>
           <div className="space-y-1.5">
             {enMarcha.map((d) => (
-              <ResumenEjecucion key={d.id} decision={d} informes={snapshot?.informes} onCentrarUnidad={onCentrarUnidad} />
+              <ResumenEjecucion key={d.id} decision={d} informes={informes} onCentrarUnidad={onCentrarUnidad} onCentrarObjetivo={onCentrarObjetivo} />
             ))}
           </div>
         </section>
@@ -154,11 +183,12 @@ export function PestanaDecisiones({
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-subtle">Ejecutadas recientemente</h3>
           <div className="space-y-1.5">
             {recientes.map((d) => (
-              <ResumenEjecucion key={d.id} decision={d} informes={snapshot?.informes} onCentrarUnidad={onCentrarUnidad} />
+              <ResumenEjecucion key={d.id} decision={d} informes={informes} onCentrarUnidad={onCentrarUnidad} onCentrarObjetivo={onCentrarObjetivo} />
             ))}
           </div>
         </section>
       ) : null}
+      </div>
 
       {decisiones.length === 0 && (snapshot?.incendios.length ?? 0) > 0 ? (
         <Vacio
@@ -171,14 +201,19 @@ export function PestanaDecisiones({
   );
 }
 
-function ResumenEjecucion({
+const PestanaDecisionesMemo = memo(PestanaDecisionesBase);
+export { PestanaDecisionesMemo as PestanaDecisiones };
+
+function ResumenEjecucionBase({
   decision,
   informes,
   onCentrarUnidad,
+  onCentrarObjetivo,
 }: {
   decision: Decision;
   informes?: Informe[];
   onCentrarUnidad?: (id: string) => void;
+  onCentrarObjetivo?: (objetivo: ObjetivoAccion) => void;
 }) {
   const [acta, setActa] = useState<Informe | null>(null);
   const fallidas = decision.acciones.filter((a) => a.estado === "fallida").length;
@@ -228,6 +263,7 @@ function ResumenEjecucion({
                 accion={a}
                 onAbrirActa={(id) => setActa((informes ?? []).find((i) => i.id === id) ?? null)}
                 onCentrarUnidad={onCentrarUnidad}
+                onCentrarObjetivo={onCentrarObjetivo}
               />
             ))}
           </ul>
@@ -237,3 +273,6 @@ function ResumenEjecucion({
     </div>
   );
 }
+
+/** `memo`: una fila de "en ejecución"/"reciente" solo se repinta si cambia SU decisión. */
+const ResumenEjecucion = memo(ResumenEjecucionBase);

@@ -45,6 +45,15 @@ const esquema = z.object({
   mediosMencionados: z.string().describe("Medios que ya actúan según el texto (UME, medios aéreos, brigadas…); cadena vacía si no se dicen"),
 });
 
+/**
+ * Lote: el modelo devuelve una extracción por artículo, cada una con el `id` que
+ * se le dio. F4 de la migración (2026-09-19). Agrupar aquí es seguro porque el
+ * análisis de un titular NO depende del anterior — al contrario que el del
+ * verificador, que procesa uno a uno A PROPÓSITO, porque un aviso puede crear el
+ * foco que el siguiente debe confirmar. Ese no se agrupa nunca.
+ */
+export const esquemaLote = z.object({ extracciones: z.array(esquema.extend({ id: z.string() })) });
+
 const SISTEMA = `Analizas titulares de prensa y mensajes de redes sociales sobre incendios forestales en España para un centro de mando.
 Extrae SOLO lo que dice el texto. Marca esIncendio=false si:
 - habla de un incendio de otro país
@@ -52,7 +61,8 @@ Extrae SOLO lo que dice el texto. Marca esIncendio=false si:
 - es una noticia antigua conmemorativa, una opinión, una campaña de prevención o un dato estadístico
 - es publicidad, humor o una metáfora ("incendio" en sentido figurado)
 Gravedad: "leve" = conato o ya controlado; "moderada" = activo sin afectados; "grave" = desalojos, carreteras cortadas o viviendas amenazadas; "critica" = víctimas o evacuaciones masivas.
-Fiabilidad: alta para medios identificados y cuentas oficiales; baja para cuentas anónimas o mensajes sin datos. Responde SIEMPRE en español.`;
+Fiabilidad: alta para medios identificados y cuentas oficiales; baja para cuentas anónimas o mensajes sin datos. Responde SIEMPRE en español.
+Te dan VARIOS textos, cada uno con su id. Devuelve una extracción por CADA uno con su id EXACTO: no inventes ids, no te dejes ninguno y no mezcles los datos de un texto con los de otro.`;
 
 type Memoria = { vistos: Set<string> };
 type Global = typeof globalThis & { __atalayaPrensa?: Memoria };
@@ -165,23 +175,53 @@ export const agentePrensaRedes: Agente = {
 
     const observaciones: Observacion[] = [];
     let descartados = 0;
-    const finPlazo = Date.now() + MS_LIMITE_CICLO / 2;
+
     for (const item of items) {
-      if (ctx.abortSignal.aborted || Date.now() > finPlazo) break;
       m.vistos.add(item.url || item.id);
       m.vistos.add(item.id);
-      if (m.vistos.size > MAX_VISTOS) m.vistos = new Set([...m.vistos].slice(-MAX_VISTOS));
+    }
+    if (m.vistos.size > MAX_VISTOS) m.vistos = new Set([...m.vistos].slice(-MAX_VISTOS));
+
+    // UNA llamada para todos los textos del ciclo (F4 de la migración). Antes era
+    // una por artículo —hasta MAX_ITEMS_CICLO por ciclo, cada 180 s— y en cada una
+    // se reenviaba el mismo prompt de sistema.
+    let extracciones: z.infer<typeof esquemaLote>["extracciones"] = [];
+    try {
+      const { datos } = await completarJson({
+        system: SISTEMA,
+        user: items
+          .map(
+            (item, i) =>
+              `--- TEXTO ${i + 1} · id: ${item.id}\n` +
+              `Canal: ${item.canal === "prensa" ? "prensa" : "red social"}. Fuente: ${item.remitente}.` +
+              `${item.publicado ? ` Publicado: ${item.publicado}.` : ""}\n${item.texto.slice(0, 1200)}`,
+          )
+          .join("\n\n"),
+        esquema: esquemaLote,
+        nombreEsquema: "extraccion_prensa_lote",
+        papel: "rapido",
+        maxTokens: Math.min(8000, 1200 + items.length * 900),
+        signal: ctx.abortSignal,
+      });
+      extracciones = datos.extracciones;
+    } catch (e) {
+      const resumen = `No se han podido analizar ${items.length} publicaciones: ${e instanceof Error ? e.message : String(e)}`;
+      ctx.informarTarea(resumen);
+      return { resumen };
+    }
+
+    for (const item of items) {
+      if (ctx.abortSignal.aborted) break;
+      // El modelo puede devolver un id que no le dimos, o dejarse alguno: se
+      // descarta en silencio, igual que el mapeo del coordinador con una unidad
+      // inventada. Nunca se rellena con nada.
+      const datos = extracciones.find((x) => x.id === item.id);
+      if (!datos) {
+        descartados += 1;
+        continue;
+      }
 
       try {
-        const { datos } = await completarJson({
-          system: SISTEMA,
-          user: `Canal: ${item.canal === "prensa" ? "prensa" : "red social"}. Fuente: ${item.remitente}. ${item.publicado ? `Publicado: ${item.publicado}.` : ""}\n\nTexto:\n"""\n${item.texto.slice(0, 1200)}\n"""`,
-          esquema,
-          nombreEsquema: "extraccion_prensa",
-          papel: "rapido",
-          signal: ctx.abortSignal,
-        });
-
         if (!datos.esIncendio || datos.situacion === "controlado" || datos.situacion === "extinguido") {
           descartados += 1;
           continue;

@@ -812,6 +812,7 @@ export async function completarJson<T>(p: PeticionJson<T>): Promise<RespuestaLLM
     maxTokens,
     temperatura: 0.1,
     signal: p.signal,
+    permitirEnPausa: p.permitirEnPausa,
     prioridad: p.prioridad,
     sinRazonar: p.sinRazonar,
     formato: { type: "json_object" },

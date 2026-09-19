@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// DUEÑO: constructor A. Ver docs/DESPLIEGUE.md.
+// DUEÑO: constructor A. Ver README, «Despliegue».
 const nextConfig: NextConfig = {
   // Paquetes con binarios nativos: no los empaqueta el bundler, se cargan con
   // el require de Node. transformers.js/onnxruntime los usa C (embeddings en
@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
   // output: "standalone" NO se activa a propósito: en Railway arrancamos con
   // `npm run start` (= next start), que necesita el build completo. El modo
   // standalone obligaría a cambiar el comando a `node .next/standalone/server.js`
-  // y a copiar a mano `public/` y `.next/static/`. Ver docs/DESPLIEGUE.md.
+  // y a copiar a mano `public/` y `.next/static/`. Ver README, «Despliegue».
 };
 
 export default nextConfig;

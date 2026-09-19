@@ -71,7 +71,7 @@ const decision = (accion: Accion): Decision => ({
 
 const peticion = (ruta: string, cuerpo: unknown) =>
   new Request(`http://atalaya.test${ruta}`, { method: "POST", headers: { "content-type": "application/json", "x-webhook-secret": SECRETO }, body: JSON.stringify(cuerpo) });
-/** Cuerpo que manda el nodo Webhook del workflow «Atalaya · SMS saliente» (docs/HAPPYROBOT.md §3.2). */
+/** Cuerpo que manda el nodo Webhook del workflow «Atalaya · SMS saliente» (nodo Webhook de scripts/happyrobot-sms.mjs). */
 const resultadoSms = (extra: Record<string, unknown> = {}) => ({
   decisionId: "dec-1",
   accionId: "acc-1",

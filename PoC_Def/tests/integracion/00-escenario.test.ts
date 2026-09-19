@@ -233,7 +233,7 @@ describe("Escenario completo · servidor vivo", () => {
   }, 240_000);
 
   // ---------------------------------------------------------------- (d bis)
-  // FALLO L-3 (ver docs/PRUEBAS.md): `completarTexto` de lib/ia/llm.ts NO
+  // FALLO L-3: `completarTexto` de lib/ia/llm.ts NO
   // propaga `permitirEnPausa` a `llamar()` (sí lo hace `completarJson`), así
   // que la consulta del conocimiento —la única herramienta que el mando puede
   // usar con el mundo parado— devuelve 503 "Mundo en pausa". Marcada `it.fails`
@@ -256,7 +256,7 @@ describe("Escenario completo · servidor vivo", () => {
   }, 300_000);
 
   // ---------------------------------------------------------------- (d ter)
-  // FALLO L-4 (ver docs/PRUEBAS.md): con el mundo en pausa TODAVÍA se completan
+  // FALLO L-4: con el mundo en pausa TODAVÍA se completan
   // llamadas a la IA. Medido en cinco ventanas limpias de 20 s: +0, +1, +1, +2 y
   // +3. El objetivo es 0. J ya corrigió la causa principal (bug J-2) y avisó de
   // que `next dev` mantiene viva la instancia ANTERIOR de lib/ia/llm.ts dentro
@@ -351,7 +351,6 @@ describe("Escenario completo · servidor vivo", () => {
     // Medido en cuatro tandas: 14,1 s · 42,3 s · 84,7 s · > 120 s. El coordinador
     // tiene cadencia de 90 s y su modelo de razonamiento tarda 17-25 s, así que
     // el peor caso pasa de dos minutos (es el riesgo R-6 que dejó anotado J).
-    // Ver variabilidad V-3 en docs/PRUEBAS.md.
     const { valor: revision, ms: msRepl } = await esperarHasta(
       "el coordinador revisa el dispositivo tras el giro (decisión nueva o revisión sin cambios)",
       (s) => {
@@ -424,9 +423,8 @@ describe("Escenario completo · servidor vivo", () => {
     // El encargo pedía 120 s. Medido en cuatro tandas: 32,3 s · 82,7 s · 90,8 s ·
     // y una en la que el supervisor escaló las dos primeras propuestas (por buen
     // criterio: cuestionaba avisar a pueblos a 16 y 27 km) y el aviso bueno llegó
-    // pasados los 120 s. Ver variabilidad V-2 en docs/PRUEBAS.md: el presupuesto
-    // es de 4 minutos porque lo que se valida es que el aviso se INTENTA solo, no
-    // en cuánto tiempo.
+    // pasados los 120 s. Por eso el presupuesto es de 4 minutos: lo que se
+    // valida es que el aviso se INTENTA solo, no en cuánto tiempo.
     const { valor, ms } = await esperarHasta(
       "decisión de proteccion_poblacion con avisar_poblacion intentado",
       (s) => {
@@ -461,8 +459,8 @@ describe("Escenario completo · servidor vivo", () => {
   // se cumple siempre. Medido en tres tandas: 21 s, 324 s y >180 s (no llegó
   // dentro de la ventana). Lo que dispara al portavoz no es el ataque inicial
   // sino el primer `poblacion_avisada`, que depende de cuánto tarde
-  // `proteccion_poblacion`. Ver "variabilidad V-1" en docs/PRUEBAS.md. Por eso
-  // aquí el presupuesto es de 7 minutos: lo que se prueba es que el circuito
+  // `proteccion_poblacion`. Por eso aquí el presupuesto es de 7 minutos: lo que
+  // se prueba es que el circuito
   // portavoz → /api/comunicados → /publico funciona, no la latencia.
   it("(g) el portavoz publica un comunicado oficial y el portal ciudadano responde", async () => {
     const t0 = Date.now();

@@ -1,4 +1,4 @@
-// Llamadas tipadas a la API de la sala de mando (docs/ARQUITECTURA.md §8).
+// Llamadas tipadas a la API de la sala de mando (rutas en app/api).
 // DUEÑO: constructor E. Sin dependencias externas.
 //
 // Toda función lanza `ErrorApi` con un mensaje ya legible en español: el

@@ -5,8 +5,9 @@
 // del reto y verificar los webhooks que devuelven el resultado.
 // DUEÑO: constructor D. Dependencias externas: HappyRobot API v2.
 //
-// Contrato verificado (ver docs/HAPPYROBOT.md y la referencia
-// ../crisis-mando-ai/lib/server/conectores/happyrobot.ts):
+// Contrato verificado el 2026-09-19 contra /api/v2/docs/json de la instancia EU
+// (scripts/happyrobot-workflows.mjs) y contra la referencia
+// ../crisis-mando-ai/lib/server/conectores/happyrobot.ts:
 //
 //   POST {HAPPYROBOT_API_BASE}/api/v2/workflows/{slug}/runs?environment=production
 //   Authorization: Bearer sk_live_…

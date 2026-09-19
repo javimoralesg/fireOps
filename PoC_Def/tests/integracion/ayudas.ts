@@ -137,7 +137,7 @@ const medidas: { prueba: string; ms: number; detalle: string }[] = [];
  * Imprime y guarda un tiempo medido (el requisito dice: cada prueba imprime
  * tiempos). Además lo anota en `ATALAYA_MEDIDAS` (una línea por medida) si la
  * variable está puesta: el reporter por defecto de vitest se come la consola de
- * las pruebas que pasan, y las cifras de docs/PRUEBAS.md tienen que ser reales.
+ * las pruebas que pasan, y las cifras que se documenten tienen que ser reales.
  */
 export function medir(prueba: string, ms: number, detalle = ""): void {
   medidas.push({ prueba, ms, detalle });

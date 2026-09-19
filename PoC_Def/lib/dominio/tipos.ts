@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------
 // Este archivo es la fuente de verdad del modelo. Lo escribe la sesión
 // orquestadora; los agentes constructores SOLO pueden añadir campos
-// opcionales (nunca renombrar ni borrar) y deben anotarlo en
-// docs/REPARTO.md. Todo en español, sin abreviaturas crípticas.
+// opcionales (nunca renombrar ni borrar) y deben documentarlo junto al
+// campo. Todo en español, sin abreviaturas crípticas.
 // =====================================================================
 
 /** Coordenada WGS84. */

@@ -33,18 +33,34 @@ function puntoDe(v: unknown): Punto | undefined {
 
 const NIVELES: NivelPeligro[] = ["bajo", "moderado", "alto", "muy_alto", "extremo"];
 
+/** Referencia estable para "no hay zonas": así vale como dependencia de `useMemo`. */
+const VACIA: unknown[] = [];
+
+/**
+ * Lista CRUDA de zonas del snapshot, tal cual la manda el motor. Se expone
+ * aparte para poder memoizar sin depender del snapshot entero: si el motor
+ * conserva la identidad del array, esta referencia no cambia y el mapa no
+ * recalcula las zonas ni repinta la capa de viento.
+ */
+export function listaZonasCruda(snapshot?: Snapshot): unknown[] {
+  if (!snapshot) return VACIA;
+  const bruto = snapshot as unknown as Record<string, unknown>;
+  if (Array.isArray(bruto.zonasPeligro)) return bruto.zonasPeligro;
+  if (Array.isArray(bruto.rejillaViento)) return bruto.rejillaViento;
+  return VACIA;
+}
+
 /**
  * Extrae `snapshot.zonasPeligro` (o `snapshot.rejillaViento`) si existen.
  * Acepta tanto `{punto:{lat,lon}}` como `{lat, lon}` directos.
  */
 export function zonasPeligroDe(snapshot?: Snapshot): ZonaPeligroMapa[] {
-  if (!snapshot) return [];
-  const bruto = snapshot as unknown as Record<string, unknown>;
-  const lista = Array.isArray(bruto.zonasPeligro)
-    ? bruto.zonasPeligro
-    : Array.isArray(bruto.rejillaViento)
-      ? bruto.rejillaViento
-      : [];
+  return zonasPeligroDeLista(listaZonasCruda(snapshot));
+}
+
+/** Igual que `zonasPeligroDe`, pero a partir de la lista ya extraída. */
+export function zonasPeligroDeLista(lista: unknown[]): ZonaPeligroMapa[] {
+  if (lista.length === 0) return [];
   const salida: ZonaPeligroMapa[] = [];
   lista.forEach((crudo, i) => {
     if (!esObjeto(crudo)) return;

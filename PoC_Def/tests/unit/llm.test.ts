@@ -3,7 +3,7 @@
 // el endurecimiento del esquema queda cubierto de forma indirecta por las pruebas
 // de integración, que sí hacen llamadas reales con `response_format: json_schema`.
 import { afterEach, describe, expect, it } from "vitest";
-import { abortarLlamadasIA, estadisticasLLM, estadoColaLLM, modeloPara, mundoEnPausa, proveedorActivo, proveedorDisponible } from "@/lib/ia/llm";
+import { abortarLlamadasIA, conPrioridadLLM, estadisticasLLM, estadoColaLLM, modeloPara, mundoEnPausa, proveedorActivo, proveedorDisponible } from "@/lib/ia/llm";
 
 const bandera = globalThis as { __atalayaMundoPausado?: boolean };
 
@@ -50,6 +50,26 @@ describe("cola de llamadas", () => {
   it("abortar sin llamadas vivas devuelve 0 y no lanza (idempotente)", () => {
     expect(abortarLlamadasIA("prueba")).toBe(0);
     expect(() => abortarLlamadasIA()).not.toThrow();
+  });
+
+  // Carril "baja" (constructor S): las actas de auditoría tienen su propio hueco,
+  // que NO sale de los de "alta"/"normal".
+  it("el carril de prioridad baja tiene huecos propios y se informa aparte", () => {
+    const c = estadoColaLLM();
+    expect(c.maximoBaja).toBeGreaterThanOrEqual(1);
+    expect(c.enCursoBaja).toBe(0);
+    expect(c.esperandoBaja).toBe(0);
+    expect(c.esperando).toBe(c.esperandoAlta + c.esperandoNormal + c.esperandoBaja);
+  });
+
+  it("conPrioridadLLM propaga la prioridad al bloque y la devuelve tal cual", async () => {
+    const dentro = await conPrioridadLLM("baja", async () => {
+      // Dentro del bloque cualquier llamada al LLM heredaría "baja" por
+      // AsyncLocalStorage, incluso a través de un await.
+      await Promise.resolve();
+      return 42;
+    });
+    expect(dentro).toBe(42);
   });
 });
 

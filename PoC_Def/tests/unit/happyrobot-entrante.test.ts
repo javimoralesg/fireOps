@@ -480,6 +480,21 @@ describe("preprocesado de la dirección dictada · lo que el reconocimiento de v
     expect((await situarLugar({})).precision).toBe("ninguna");
   });
 
+  it("no acepta una calle homónima de otro municipio", async () => {
+    const { situarLugar } = await import("@/lib/happyrobot/entrante");
+    dobles.geocodificar.mockImplementation(async (q: string) => {
+      if (q.startsWith("Calle Núñez de Balboa 95, Madrid")) {
+        return { punto: { lat: 40.4880381, lon: -3.3627925 }, nombre: "Calle Núñez de Balboa", municipio: "Alcalá de Henares", provincia: "Madrid", url: "" };
+      }
+      if (q === "Madrid, España") return { punto: { lat: 40.4168, lon: -3.7038 }, nombre: "Madrid", municipio: "Madrid", provincia: "Madrid", url: "" };
+      return undefined;
+    });
+    const r = await situarLugar({ lugar: "Calle Núñez de Balboa 95", municipio: "Madrid" }, { conIA: false });
+    expect(r).toMatchObject({ encontrado: true, precision: "municipio", municipio: "Madrid" });
+    expect(r).not.toMatchObject({ lat: 40.4880381, lon: -3.3627925 });
+    expect(r.mensajeParaLocutor).toMatch(/necesito una referencia/i);
+  });
+
   it("registrar_aviso con lat/lon confirmados por situar_lugar no vuelve a geocodificar", async () => {
     const r = avisoDesdeCuerpo({ run_id: "run-8", municipio: "Madrid", lugar: "Avenida Complutense 30", que_ve: "llamas", lat: "40.45287", lon: "-3.72556" });
     const res = await registrarAvisoDeLlamada(r.aviso!, { esperaMs: 2000 });
@@ -654,6 +669,30 @@ describe("frases para la voz · pulidas tras la llamada de las 18:46", () => {
   it("registrar_aviso usa el consejo urbano cuando el aviso habla de un edificio", async () => {
     const r = await registrarAvisoDeLlamada({ ...AVISO, runId: "run-urbano", queVe: "un incendio en la escuela", lugar: "Avenida Complutense 30" }, { esperaMs: 2000 });
     expect(r.mensajeParaLocutor).toMatch(/Aléjese del humo y del edificio/);
+  });
+
+  it("reabre el ruido provisional si la extracción semántica confirma el incendio", async () => {
+    dobles.demoraMs = 20;
+    dobles.verificar.mockImplementation(async (id: string) => {
+      const e = estado();
+      const obs = e.observaciones.get(id);
+      if (!obs || obs.impacto) return undefined;
+      if (obs.extraccion?.esIncendio === false) {
+        e.actualizar(e.observaciones, id, { impacto: "ruido", verificacion: "El extractor determinista lo descarta" });
+        return { impacto: "ruido" };
+      }
+      const inc = { id: "inc-revisado", nombre: "Incendio de Madrid", municipio: "Madrid", estado: "detectado", confianza: 0.8, centro: obs.punto } as unknown as Incendio;
+      e.guardar(e.incendios, inc);
+      e.actualizar(e.observaciones, id, { impacto: "nuevo_foco", incendioId: inc.id, verificacion: "Foco nuevo declarado tras enriquecer" });
+      return { impacto: "nuevo_foco", incendioId: inc.id };
+    });
+
+    const aviso = { runId: "run-nunez", telefono: "+34600000000", municipio: "Madrid", lugar: "Calle Núñez de Balboa 95", queVe: "fuego muy grande", tipo: "llamas" as const, punto: { lat: 40.43, lon: -3.68 } };
+    const inicial = await registrarAvisoDeLlamada(aviso, { esperaMs: 0 });
+    expect(inicial.impacto).toBe("ruido");
+    await dormir(40);
+    expect(observacionDeLlamada(estado(), "run-nunez")).toMatchObject({ impacto: "nuevo_foco", incendioId: "inc-revisado", extraccion: { esIncendio: true } });
+    expect(dobles.verificar).toHaveBeenCalledTimes(2);
   });
 
   it("la transcripción que llega en JSON al colgar se guarda legible en la ficha", async () => {

@@ -677,7 +677,15 @@ export async function situarLugar(
   const buscar = async (consulta: string) => {
     try {
       const lugar = await geocodificar(/españa/i.test(consulta) ? consulta : `${consulta}, España`);
-      return lugar && enEspana(lugar.punto) ? lugar : undefined;
+      if (!lugar || !enEspana(lugar.punto)) return undefined;
+      // Nominatim puede ignorar el municipio de una dirección y devolver la primera
+      // calle homónima de la provincia (p. ej. Madrid → Alcalá de Henares). No se
+      // confirma por teléfono una dirección cuyo municipio contradice lo dictado.
+      const normalizar = (texto: string) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      const municipiosEsperados = (a.municipio ?? "").split(",").map(normalizar).filter(Boolean);
+      const municipioDevuelto = normalizar(lugar.municipio ?? "");
+      if (municipiosEsperados.length && municipioDevuelto && !municipiosEsperados.includes(municipioDevuelto)) return undefined;
+      return lugar;
     } catch (e) {
       console.warn("[112 entrante] situar_lugar sin geocodificar:", e instanceof Error ? e.message : e);
       return undefined;
@@ -785,8 +793,18 @@ async function rematar(estado: Estado, obsId: string, a: AvisoLlamada): Promise<
   // y el punto puede llegar un segundo después (Nominatim o la extracción de IA).
   if (!obs.punto) return obs;
   if (!obs.impacto) await verificarAhora(obsId);
-  else if (obs.impacto === "registrada" && /sin localizaci/i.test(obs.verificacion ?? "")) {
-    // Se verificó sin punto y ahora lo tiene: segunda oportunidad de declarar el foco.
+  else if (
+    (obs.impacto === "registrada" && /sin localizaci/i.test(obs.verificacion ?? "")) ||
+    // La respuesta telefónica puede cerrarse con la extracción determinista mientras
+    // la centralita semántica sigue trabajando. Si aquella descartó el aviso y esta
+    // después confirma un incendio fiable, el veredicto provisional no puede quedar
+    // congelado como ruido (caso real: Núñez de Balboa 95).
+    (obs.impacto === "ruido" &&
+      obs.extraccion?.esIncendio === true &&
+      (obs.extraccion.fiabilidad ?? 0) >= 0.6 &&
+      !obs.extraccion.resumen.includes(MARCA_DETERMINISTA))
+  ) {
+    // Ya tiene información material nueva: segunda oportunidad de declarar el foco.
     estado.actualizar(estado.observaciones, obsId, { impacto: undefined, verificacion: undefined });
     await verificarAhora(obsId);
   }

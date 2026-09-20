@@ -34,6 +34,12 @@ El resultado se puede comprobar de extremo a extremo en una sola interfaz: desde
 112 o un foco declarado en el mapa hasta el despliegue simulado de medios, los avisos a población,
 el comunicado público y el expediente de auditoría.
 
+### Vídeo de presentación
+
+[![Ver la demostración de Atalaya en YouTube](https://img.youtube.com/vi/eIwk4jo0uV8/maxresdefault.jpg)](https://youtu.be/eIwk4jo0uV8)
+
+[Ver «Atalaya Centro de control · Detección de humo en cámaras de tráfico» en YouTube](https://youtu.be/eIwk4jo0uV8).
+
 ### Qué merece la pena observar
 
 - **Detección multifuente:** satélite, cámaras, prensa y redes, llamada de voz y parte ciudadano.
@@ -43,6 +49,17 @@ el comunicado público y el expediente de auditoría.
   decisión con acciones fallidas no se presenta como éxito.
 - **Trazabilidad:** evidencias, razonamiento, fundamentos, cambios de estado, actas e informe vivo.
 - **Degradación explícita:** si un proveedor externo falla, la sala lo enseña y no inventa datos.
+
+### El sistema de un vistazo
+
+<img src="capturas/equipo-agentes-resumen.jpg" width="820" alt="Los cinco agentes de Atalaya y sus responsabilidades">
+
+Los cinco agentes visibles reparten observación, planificación, comunicación, control y memoria.
+
+<img src="capturas/flujo-incidencia-resumen.jpg" width="820" alt="Flujo de una incidencia desde la observación hasta la ejecución y el aprendizaje">
+
+Cada incidencia atraviesa propuesta y control antes de una ejecución autónoma o autorizada por
+el mando; el resultado vuelve como aprendizaje para actuaciones posteriores.
 
 ### Recorrido de demostración
 

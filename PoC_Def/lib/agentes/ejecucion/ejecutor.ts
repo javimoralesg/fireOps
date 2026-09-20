@@ -28,8 +28,9 @@ import type { ContextoAgente, EjecutorAcciones } from "../../motor/contratos";
 import { duracionLegible, horaLegible, kmLegible } from "../../dominio/tiempo-legible";
 import { nuevoId } from "../../motor/ids";
 import { enviarEmail, enviarSms, type ResultadoEnvio } from "../../happyrobot/cliente";
-import { chatDemo, enviarMensaje as enviarTelegram, enviarMensajeTrazado } from "../../telegram/cliente";
+import { chatDemo, enviarMensaje as enviarTelegram, enviarMensajeTrazado, telegramDisponible } from "../../telegram/cliente";
 import { asignar, retirar } from "./despachador";
+import { emailAccionConfigurado, smsAccionConfigurado } from "./canales-configurados";
 
 const variable = (clave: string): string | undefined => process.env[clave]?.trim() || undefined;
 // Teléfono de la demo: DESTINO_DEMO y, si está vacío, el de los SMS del 112 (TELEFONO_AVISOS_SMS):
@@ -391,7 +392,7 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
           // la demo no: llegaría un SMS por cada movimiento de cada unidad (Javi, 19-09). La orden queda igual
           // registrada en el sistema y en la ficha de la unidad.
           const telefonoReal = unidad.telefono && unidad.telefono !== destinoDemo() ? unidad.telefono : undefined;
-          if (telefonoReal) {
+          if (telefonoReal && smsAccionConfigurado({ ...accion, objetivo: { ...accion.objetivo, telefono: telefonoReal } })) {
             // Orden redactada para quien la lee en el móvil (no la descripción interna de la acción):
             // adónde, qué sector, cuánto trayecto y a qué hora llega, en hora local de España.
             const incendio = estado.incendios.get(incendioId);
@@ -402,7 +403,15 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
               extra = ` Orden enviada por SMS a la unidad (run ${envio.referencia}).`;
             } catch (e) {
               extra = ` La orden queda registrada, pero el SMS a la unidad falló: ${mensajeDe(e)}.`;
+              ctx.registrar("accion_fallida", `Fallo parcial al notificar a ${unidad.nombre}: ${mensajeDe(e)}`, {
+                incendioId,
+                nivel: "aviso",
+                datos: { decisionId: decision.id, accionId: accion.id, parcial: true, canal: "sms" },
+              });
             }
+          } else if (telefonoReal) {
+            datos.smsOmitido = "canal SMS no configurado";
+            extra = " La orden queda registrada en el sistema: el canal SMS no está configurado.";
           } else if (unidad.telefono) {
             datos.smsOmitido = "teléfono de la demo: las órdenes a unidades no se mandan al móvil de demo";
             extra = " La unidad no tiene teléfono propio (solo el de la demo): la orden queda registrada en el sistema, sin SMS.";
@@ -445,24 +454,45 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
           const partes: string[] = [];
           const datos: Record<string, unknown> = {};
           const errores: string[] = [];
-          try {
-            const { envio, destino } = await hacerEmail(accion, decision, ctx, accion.objetivo?.email, `[Atalaya] Solicitud de medios aéreos · ${incendio?.nombre ?? "incendio"}`, parte);
-            datos.email = { ...trazaEnvio(envio, destino), cuerpo: parte };
-            partes.push(`parte enviado por correo a ${enmascarar(destino)} (run ${envio.referencia})`);
-          } catch (e) {
-            errores.push(`correo: ${mensajeDe(e)}`);
+          if (emailAccionConfigurado(accion)) {
+            try {
+              const { envio, destino } = await hacerEmail(accion, decision, ctx, accion.objetivo?.email, `[Atalaya] Solicitud de medios aéreos · ${incendio?.nombre ?? "incendio"}`, parte);
+              datos.email = { ...trazaEnvio(envio, destino), cuerpo: parte };
+              partes.push(`parte enviado por correo a ${enmascarar(destino)} (run ${envio.referencia})`);
+            } catch (e) {
+              errores.push(`correo: ${mensajeDe(e)}`);
+            }
+          } else {
+            datos.emailOmitido = "canal de correo no configurado";
           }
-          try {
-            // Voz saliente desactivada: el aviso al organismo va por SMS (el parte formal, por correo).
-            const aviso = `${organismo()}: solicitamos ${tipoMedio} para el ${incendio?.nombre ?? "incendio forestal"} en ${incendio?.municipio ?? "la zona"}. ${texto(p.motivo, decision.resumen)} Parte formal enviado por correo.`;
-            const { envio, destino, texto: cuerpo } = await hacerSmsEnVezDeLlamar(accion, decision, ctx, accion.objetivo?.telefono, aviso);
-            datos.sms = { ...trazaEnvio(envio, destino), texto: cuerpo };
-            partes.push(`SMS al organismo (run ${envio.referencia})`);
-          } catch (e) {
-            errores.push(`SMS: ${mensajeDe(e)}`);
+          if (smsAccionConfigurado(accion)) {
+            try {
+              // Voz saliente desactivada: el aviso al organismo va por SMS (el parte formal, por correo).
+              const estadoCorreo = datos.email
+                ? " Parte formal enviado por correo."
+                : " Solicitud cursada solo por este SMS; no se ha enviado parte por correo.";
+              const aviso = `${organismo()}: solicitamos ${tipoMedio} para el ${incendio?.nombre ?? "incendio forestal"} en ${incendio?.municipio ?? "la zona"}. ${texto(p.motivo, decision.resumen)}${estadoCorreo}`;
+              const { envio, destino, texto: cuerpo } = await hacerSmsEnVezDeLlamar(accion, decision, ctx, accion.objetivo?.telefono, aviso);
+              datos.sms = { ...trazaEnvio(envio, destino), texto: cuerpo };
+              partes.push(`SMS al organismo (run ${envio.referencia})`);
+            } catch (e) {
+              errores.push(`SMS: ${mensajeDe(e)}`);
+            }
+          } else {
+            datos.smsOmitido = "canal SMS no configurado";
           }
 
-          if (partes.length) return exito(accion, "HappyRobot", `Medios aéreos solicitados a ${destinatario}: ${partes.join("; ")}.${errores.length ? ` Pendiente: ${errores.join("; ")}.` : ""}`, undefined, datos);
+          if (partes.length) {
+            if (errores.length) {
+              datos.erroresParciales = errores;
+              ctx.registrar("accion_fallida", `Fallo parcial al solicitar medios aéreos: ${errores.join("; ")}`, {
+                incendioId: decision.incendioId,
+                nivel: "aviso",
+                datos: { decisionId: decision.id, accionId: accion.id, parcial: true, errores },
+              });
+            }
+            return exito(accion, "HappyRobot", `Medios aéreos solicitados a ${destinatario}: ${partes.join("; ")}.${errores.length ? ` Fallo parcial: ${errores.join("; ")}.` : ""}`, undefined, datos);
+          }
           return fallo(accion, "HappyRobot", `No se ha podido solicitar medios aéreos. ${errores.join("; ")}`);
         }
 
@@ -490,12 +520,17 @@ async function ejecutarUna(accion: Accion, decision: Decision, ctx: ContextoAgen
 
           // Difusión por Telegram si hay canal configurado (el portal siempre se actualiza).
           let extra = "";
-          if (comunicado.canales.includes("telegram") && chatDemo()) {
+          if (comunicado.canales.includes("telegram") && chatDemo() && telegramDisponible()) {
             try {
               const m = await enviarTelegram(chatDemo() as string, `📣 ${comunicado.titulo}\n\n${comunicado.cuerpo}`.slice(0, 4000));
               extra = ` Difundido por Telegram (id ${m.message_id}).`;
             } catch (e) {
               extra = ` No se pudo difundir por Telegram: ${mensajeDe(e)}.`;
+              ctx.registrar("accion_fallida", `Fallo parcial al difundir el comunicado por Telegram: ${mensajeDe(e)}`, {
+                incendioId: decision.incendioId,
+                nivel: "aviso",
+                datos: { decisionId: decision.id, accionId: accion.id, parcial: true, canal: "telegram" },
+              });
             }
           }
           return exito(accion, "Atalaya", `Comunicado publicado en /publico.${extra}`, comunicado.id, { comunicadoId: comunicado.id });

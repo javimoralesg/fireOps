@@ -49,6 +49,7 @@ import { describirFueraEspana, enEspana } from "../dominio/espana";
 import { requiereSupervisorIndependiente } from "../dominio/supervision";
 import { esServicioDeterminista } from "../dominio/clase-agente";
 import { sanearFueraEspana } from "./saneamientoEspana";
+import { omitirAccionesNoConfiguradas } from "../agentes/ejecucion/canales-configurados";
 
 // ---------------------------------------------------------------------
 // Contrato público (no cambiar: lo usan B, C, D y la API)
@@ -759,6 +760,23 @@ async function procesarResultado(estado: Estado, agente: Agente, agenteVisibleId
 export async function procesarDecisionPropuesta(decision: Decision): Promise<Decision> {
   const estado = obtenerEstado();
   const ahoraReal = new Date().toISOString();
+  const accionesNormalizadas = (decision.acciones ?? []).map((a) => ({
+    ...a,
+    id: a.id || nuevoId("acc"),
+    estado: a.estado ?? "pendiente",
+    parametros: a.parametros ?? {},
+    // El ejecutor sabe resolver el remitente de una observación. Se materializa
+    // aquí para que la compuerta de entorno vea el mismo destino real.
+    objetivo: a.tipo === "solicitar_confirmacion" && !a.objetivo?.telefono
+      ? {
+          ...a.objetivo,
+          telefono: typeof a.parametros?.observacionId === "string"
+            ? estado.observaciones.get(a.parametros.observacionId)?.remitente
+            : undefined,
+        }
+      : a.objetivo,
+  }));
+  const filtradas = omitirAccionesNoConfiguradas(accionesNormalizadas);
 
   const d: Decision = {
     ...decision,
@@ -770,12 +788,10 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     prioridad: decision.prioridad ?? 3,
     riesgo: decision.riesgo ?? 0,
     competencia: decision.competencia ?? "autonoma",
-    acciones: (decision.acciones ?? []).map((a) => ({
-      ...a,
-      id: a.id || nuevoId("acc"),
-      estado: a.estado ?? "pendiente",
-      parametros: a.parametros ?? {},
-    })),
+    acciones: filtradas.acciones,
+    resumen: filtradas.omitidas.length
+      ? `${decision.resumen} · ${filtradas.omitidas.length} acción(es) externa(s) omitida(s): canal no configurado.`
+      : decision.resumen,
     evidencias: decision.evidencias ?? [],
     fundamentos: decision.fundamentos ?? [],
     // Sello de auditoría: qué ciclo de qué agente la produjo.
@@ -794,6 +810,25 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     nivel: d.prioridad <= 2 ? "aviso" : "info",
     datos: { decisionId: d.id, acciones: d.acciones.map((a) => a.tipo) },
   });
+  for (const { accion, motivo } of filtradas.omitidas) {
+    estado.registrarEvento("sistema", `Acción omitida por configuración: ${accion.descripcion}. ${motivo}.`, {
+      agenteId: d.agenteId,
+      incendioId: d.incendioId,
+      nivel: "info",
+      datos: { decisionId: d.id, accionId: accion.id, tipo: accion.tipo, motivo, omitidaPorConfiguracion: true },
+    });
+  }
+  if (!d.acciones.length && filtradas.omitidas.length) {
+    const motivo = "No hay acciones ejecutables: todos los canales externos propuestos están sin configurar.";
+    const final = cambiarEstadoDecision(estado, d.id, "caducada", "sistema", motivo) ?? d;
+    estado.registrarEvento("sistema", `Decisión no ejecutada: ${d.titulo}. ${motivo}`, {
+      agenteId: d.agenteId,
+      incendioId: d.incendioId,
+      nivel: "info",
+      datos: { decisionId: d.id, omitidaPorConfiguracion: true },
+    });
+    return final;
+  }
 
   const ctx = contextoParaSistema(d.agenteId);
 
@@ -1179,9 +1214,37 @@ async function podarMemoria(estado: Estado): Promise<void> {
 /** Aprueba y EJECUTA. `quien` = "ia" o "humano:<nombre>". */
 export async function aprobarDecision(id: string, quien: string, comentario?: string, opciones: { soloAutonomas?: boolean } = {}): Promise<Decision | undefined> {
   const estado = obtenerEstado();
-  const inicial = estado.decisiones.get(id);
+  let inicial = estado.decisiones.get(id);
   if (!inicial) return undefined;
   if (["ejecutando", "ejecutada", "denegada", "fallida", "caducada"].includes(inicial.estado)) return inicial;
+
+  // La configuración puede cambiar entre propuesta y aprobación. Se vuelve a
+  // comprobar aquí para que una clave retirada no convierta un canal opcional
+  // en una acción fallida. Solo se eliminan acciones por configuración; un
+  // proveedor ya configurado que falle sigue llegando al ejecutor como error.
+  const filtradas = omitirAccionesNoConfiguradas(inicial.acciones);
+  if (filtradas.omitidas.length) {
+    inicial = estado.actualizar(estado.decisiones, id, { acciones: filtradas.acciones }) ?? { ...inicial, acciones: filtradas.acciones };
+    for (const { accion, motivo } of filtradas.omitidas) {
+      estado.registrarEvento("sistema", `Acción omitida por configuración antes de aprobar: ${accion.descripcion}. ${motivo}.`, {
+        agenteId: inicial.agenteId,
+        incendioId: inicial.incendioId,
+        nivel: "info",
+        datos: { decisionId: id, accionId: accion.id, tipo: accion.tipo, motivo, omitidaPorConfiguracion: true },
+      });
+    }
+  }
+  if (!inicial.acciones.length && filtradas.omitidas.length) {
+    const motivo = "No hay acciones ejecutables: todos los canales externos pendientes están sin configurar.";
+    const final = cambiarEstadoDecision(estado, id, "caducada", "sistema", motivo) ?? inicial;
+    estado.registrarEvento("sistema", `Decisión no ejecutada: ${inicial.titulo}. ${motivo}`, {
+      agenteId: inicial.agenteId,
+      incendioId: inicial.incendioId,
+      nivel: "info",
+      datos: { decisionId: id, omitidaPorConfiguracion: true },
+    });
+    return final;
+  }
 
   if (!opciones.soloAutonomas) {
     const ahora = new Date().toISOString();

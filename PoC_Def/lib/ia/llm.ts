@@ -177,9 +177,9 @@ export function modeloPara(papel: PapelLLM): string {
   return MODELOS_POR_DEFECTO[proveedorDe(papel).nombre][papel];
 }
 
-/** ¿Hay clave para el proveedor por defecto? Si es false, todo fallará de forma visible. */
-export function proveedorDisponible(): boolean {
-  return Boolean(proveedorDe("razonamiento").clave);
+/** ¿Hay clave para el proveedor de un papel? El razonamiento conserva el valor por defecto. */
+export function proveedorDisponible(papel: PapelLLM = "razonamiento"): boolean {
+  return Boolean(proveedorDe(papel).clave);
 }
 
 /** Nombre del proveedor activo, para la barra de estado y los informes. */
@@ -188,8 +188,8 @@ export function proveedorActivo(): NombreProveedor {
 }
 
 /** Mensaje de error único para "falta la clave", igual en toda la aplicación. */
-export function motivoIndisponible(): string | undefined {
-  const c = proveedorDe("razonamiento");
+export function motivoIndisponible(papel: PapelLLM = "razonamiento"): string | undefined {
+  const c = proveedorDe(papel);
   if (c.clave) return undefined;
   return `Sin proveedor de IA: falta ${c.variableClave} en .env.local (LLM_PROVEEDOR=${c.nombre}). Ninguna respuesta se inventa.`;
 }

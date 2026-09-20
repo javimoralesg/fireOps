@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { compararDecisiones, normalizarDecision } from "@/lib/agentes/migracion/comparador";
+import type { IdAgenteLegacy } from "@/lib/agentes/identidad";
 import { seleccionarRegistroAgentes } from "@/lib/agentes/registro";
 import type { CategoriaAgente, Decision, TipoEvento } from "@/lib/dominio/tipos";
 import { accion, decision } from "./ayudas/dominio";
@@ -13,7 +14,7 @@ interface CadenciaVariable {
 }
 
 interface CapacidadLegacyEsperada {
-  id: string;
+  id: IdAgenteLegacy;
   agenteCanonicoId: string;
   categoria: CategoriaAgente;
   cadenciaSeg: number | CadenciaVariable;
@@ -21,10 +22,18 @@ interface CapacidadLegacyEsperada {
   cicloSha256: string;
 }
 
-const contratoLegacy = contratoLegacyJson as {
+const contratoLegacy = contratoLegacyJson as unknown as {
   version: number;
   origen: { commit: string; descripcion: string };
   capacidades: CapacidadLegacyEsperada[];
+};
+
+/** Cambios deliberados respecto al pre-corte; el contrato original se conserva intacto. */
+const HUELLAS_APROBADAS: Partial<Record<IdAgenteLegacy, string>> = {
+  // Ausencia del proveedor de visión pasa a ser capacidad omitida, no avería.
+  vigia_camaras: "3659c968c4d981e96dbc91140e6ca8ddd42037a0135080e972dc6cec8a2a5f5e",
+  // Ausencia de FIRMS pasa a ser capacidad omitida; un fallo configurado se propaga al padre.
+  satelite: "6306eec6e72860d3533f1de6996b2dbf983ade8990db6cf7a673e853fa69282f",
 };
 
 function cadenciaEsperada(valor: number | CadenciaVariable): number {
@@ -102,7 +111,7 @@ describe("diferencial determinista legacy ↔ five", () => {
 
       // La huella evita que ambos lados puedan cambiar juntos y hacer pasar una
       // comparación tautológica: se contrasta con el cuerpo capturado pre-corte.
-      expect(huellaCiclo(despues!.capacidad.ciclo), `${esperado.id}: cuerpo de ciclo`).toBe(esperado.cicloSha256);
+      expect(huellaCiclo(despues!.capacidad.ciclo), `${esperado.id}: cuerpo de ciclo`).toBe(HUELLAS_APROBADAS[esperado.id] ?? esperado.cicloSha256);
       expect(despues!.capacidad.categoria, `${esperado.id}: categoría`).toBe(esperado.categoria);
       expect(despues!.capacidad.cadenciaSeg, `${esperado.id}: cadencia`).toBe(cadenciaEsperada(esperado.cadenciaSeg));
       expect(despues!.capacidad.despiertaCon ?? [], `${esperado.id}: disparadores`).toEqual(esperado.despiertaCon);

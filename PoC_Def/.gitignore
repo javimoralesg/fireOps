@@ -1,2 +1,0 @@
-# El .gitignore de la raíz ignora .env.*; esta plantilla sí se versiona.
-!.env.example

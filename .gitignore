@@ -2,12 +2,13 @@ node_modules
 .env
 .env.local
 .env.*
+!.env.example
 .next
-PoC_Def/data/aprendizaje/
-PoC_Def/data/url-publica.txt
-PoC_Def/data/happyrobot-workflows.json
-PoC_Def/data/happyrobot-llamadas-atendidas.json
-PoC_Def/tsconfig.tsbuildinfo
+data/aprendizaje/
+data/url-publica.txt
+data/happyrobot-workflows.json
+data/happyrobot-llamadas-atendidas.json
+tsconfig.tsbuildinfo
 
 # Salida de cada pasada del test de presupuesto (la referencia commiteada es tests/linea-base.json).
-PoC_Def/tests/presupuesto-ultimo.json
+tests/presupuesto-ultimo.json

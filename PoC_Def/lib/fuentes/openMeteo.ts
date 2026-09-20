@@ -1,6 +1,6 @@
 // =====================================================================
 // Open-Meteo · meteorología real sin clave. DUEÑO: constructor B.
-// Endpoints verificados en docs/investigacion-fuentes-datos.md §3.1:
+// Endpoints verificados con curl:
 //   https://api.open-meteo.com/v1/forecast   (actual, horaria y multipunto)
 //   https://api.open-meteo.com/v1/elevation  (hasta 100 coordenadas)
 // Límite no comercial: ~600 llamadas/min, 5.000/h, 10.000/día. Latencia

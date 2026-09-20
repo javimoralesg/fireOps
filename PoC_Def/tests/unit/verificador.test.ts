@@ -1,7 +1,7 @@
 // Pruebas de lib/agentes/analisis/verificador.ts. DUEÑO: constructor L.
 // El agente en sí necesita un ContextoAgente completo (estado, eventos, IA real):
 // se prueba de extremo a extremo en tests/integracion/ingesta.test.ts.
-// Aquí solo lo que es puro… y ahí está el problema (ver fallo L-1 en docs/PRUEBAS.md).
+// Aquí solo lo que es puro… y ahí está el problema (fallo L-1, más abajo).
 import { describe, expect, it } from "vitest";
 import { familiaCanal, verificador } from "@/lib/agentes/analisis/verificador";
 
@@ -27,8 +27,8 @@ describe("contrato del agente verificador", () => {
 // otra noticia": prensa y rrss son la misma familia, cámara/satélite/sensor
 // otra, manual otra, y el resto (llamada/sms/email/telegram/web) es
 // "ciudadano"— es de las más importantes del sistema y hoy no se puede
-// probar de forma aislada. Petición abierta al constructor D en
-// docs/REPARTO.md. Hasta que se exporte, la regla queda cubierta solo por la
+// probar de forma aislada. Petición abierta al constructor D. Hasta que se
+// exporte, la regla queda cubierta solo por la
 // prueba de integración de ingesta (que sí crea observaciones reales).
 // -------------------------------------------------------------------------
 // FALLO L-1 CERRADO (fase F0 de la migración): `familiaCanal` ya se exporta, así

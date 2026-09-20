@@ -3,8 +3,8 @@
 // Con Playwright si está instalado (`npx playwright install chromium`):
 // navegador real, consola vigilada, mapa Leaflet montado y flujo de
 // "Declarar foco". Si no lo está, se degrada a comprobar el HTML servido
-// por el servidor (las páginas de Next llevan contenido en el SSR) y se
-// deja constancia en docs/PRUEBAS.md de que el nivel es menor.
+// por el servidor (las páginas de Next llevan contenido en el SSR) y la
+// medida deja constancia de que el nivel es menor.
 // =====================================================================
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BASE, api, dormir, medir } from "../integracion/ayudas";
@@ -188,7 +188,7 @@ describe("Sala de mando", () => {
   it('"Declarar foco" + clic en el mapa + confirmar muestra el toast "Foco declarado"', async () => {
     const t0 = Date.now();
     if (!conPlaywright) {
-      medir("UI declarar foco", Date.now() - t0, "sin navegador: no se puede hacer clic (ver docs/PRUEBAS.md)");
+      medir("UI declarar foco", Date.now() - t0, "sin navegador: no se puede hacer clic");
       return;
     }
     const pagina = await navegador!.newPage();

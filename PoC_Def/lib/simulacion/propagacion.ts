@@ -225,7 +225,7 @@ const mayorRiesgo = (a: RiesgoPoblacion, b: RiesgoPoblacion): RiesgoPoblacion =>
 const subirUnEscalon = (r: RiesgoPoblacion): RiesgoPoblacion => ESCALA_RIESGO[Math.min(ESCALA_RIESGO.length - 1, nivelDe(r) + 1)];
 
 /**
- * AÑADIDO (constructor K, 2026-09-19, a petición medida de J en docs/REPARTO.md):
+ * AÑADIDO (constructor K, 2026-09-19, a petición medida de J):
  * riesgo por PROXIMIDAD, independiente del tiempo de llegada.
  *
  * El caso que vio Javi en el mapa: Tuéjar, 1.221 habitantes con camping, colegio

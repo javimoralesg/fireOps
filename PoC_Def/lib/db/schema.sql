@@ -2,7 +2,7 @@
 -- ATALAYA INCENDIOS · Esquema de Supabase (Postgres + pgvector)
 -- ---------------------------------------------------------------------
 -- DUEÑO: constructor A. Se aplica UNA vez con el conector de Supabase
--- (o a mano en el SQL editor del proyecto: ver docs/DESPLIEGUE.md).
+-- (o a mano en el SQL editor del proyecto: ver README, «La base de datos»).
 --
 -- Diseño: el estado vivo está en memoria en el proceso Node; aquí se
 -- persiste de forma asíncrona. Por eso casi todas las tablas son

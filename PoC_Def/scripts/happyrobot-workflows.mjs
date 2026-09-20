@@ -23,11 +23,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { elegirNumero, montarEntrante, NOMBRE_ENTRANTE, publicarEntrante } from "./happyrobot-entrante.mjs";
 import { montarSms, NOMBRE_SMS, probarSms, publicarSms } from "./happyrobot-sms.mjs";
+import { PROMPT_ENTRANTE, PROMPT_SALIENTE } from "./prompts-happyrobot.mjs";
 
 const RAIZ = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const ENV_PATH = path.join(RAIZ, ".env.local");
 const ESTADO_PATH = path.join(RAIZ, "data", "happyrobot-workflows.json");
-const DOC = fs.readFileSync(path.join(RAIZ, "docs", "HAPPYROBOT.md"), "utf8");
 
 // ---- .env.local --------------------------------------------------------
 function leerEnv() {
@@ -94,17 +94,7 @@ const WORKFLOWS = {
   entrante:{ nombre: "Atalaya · 112 entrante",     plantilla: null /* se monta de cero: trigger telefónico */, agente: "Atalaya · Centralita 112", icono: "phone", variable: "HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE" },
 };
 
-// ---- Prompts (salen de docs/HAPPYROBOT.md, no se duplican aquí) --------
-function bloqueTras(marcador) {
-  const i = DOC.indexOf(marcador);
-  if (i < 0) throw new Error(`No encuentro "${marcador}" en docs/HAPPYROBOT.md`);
-  const ini = DOC.indexOf("```", i);
-  const finLinea = DOC.indexOf("\n", ini);
-  const fin = DOC.indexOf("```", finLinea);
-  return DOC.slice(finLinea + 1, fin).trim();
-}
-const PROMPT_SALIENTE = bloqueTras("Prompt del agente (cópialo tal cual)");
-const PROMPT_ENTRANTE = bloqueTras("**Nodo 2 · Inbound Voice Agent**");
+// ---- Prompts (viven en scripts/prompts-happyrobot.mjs, no se duplican aquí) --------
 
 // ---- Formato de variables de la plataforma ------------------------------
 // En campos "paragraph" (Plate): objeto variable. En cuerpos raw y prompts: {{$var:grupo.variable}}.

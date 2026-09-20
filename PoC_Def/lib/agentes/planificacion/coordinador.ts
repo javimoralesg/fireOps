@@ -9,13 +9,12 @@
 // Dependencias: lib/ia/llm (razonamiento), lib/fuentes/osrm (tiempos de
 // viaje REALES por carretera), lib/simulacion/geometria.
 // =====================================================================
-import { z } from "zod";
-import type { Decision, Evidencia, Incendio, Punto, Unidad } from "../../dominio/tipos";
+import type { Decision, Evidencia, Incendio, Unidad } from "../../dominio/tipos";
 import type { Agente, ContextoAgente, ResultadoCiclo } from "../../motor/contratos";
 import { gradosATexto, haversine, rumbo } from "../../fuentes/geo";
 import { completarJson, modeloPara, proveedorDisponible } from "../../ia/llm";
-import { alcanceEnRumbo, destino, normalizarGrados, radiosPorRumbo } from "../../simulacion/geometria";
-import { RADIO_INICIAL_M, VERTICES } from "../../simulacion/propagacion";
+import { normalizarGrados } from "../../simulacion/geometria";
+import { accionesDelPlan, ESQUEMA_PLAN, RUMBO_SECTOR, type Plan } from "./mapeo-plan";
 import {
   bloqueDecisionesPrevias,
   bloqueLecciones,
@@ -24,7 +23,6 @@ import {
   DOCTRINA_ESPANA,
   ESTADOS_VIVOS,
   fichaIncendio,
-  type AccionPropuesta,
 } from "./comun";
 
 /** Candidatas a las que se les pide ruta real a OSRM (una petición por unidad). */
@@ -34,29 +32,10 @@ const MAX_DECISIONES = 2;
 /** Focos que se planifican por ciclo (cada uno cuesta 1-2 llamadas de razonamiento). */
 const FOCOS_POR_CICLO = 2;
 
-const ESQUEMA = z.object({
-  titulo: z.string(),
-  resumen: z.string(),
-  razonamiento: z.string(),
-  prioridad: z.number().int().min(1).max(5),
-  riesgo: z.number().min(0).max(100),
-  sectores: z.array(z.object({ nombre: z.string(), rumbo: z.enum(["cabeza", "flanco_derecho", "flanco_izquierdo", "cola"]), descripcion: z.string() })),
-  despliegues: z.array(z.object({ unidadId: z.string(), sector: z.string(), motivo: z.string() })),
-  reasignaciones: z.array(z.object({ unidadId: z.string(), sector: z.string(), motivo: z.string() })),
-  retiradas: z.array(z.object({ unidadId: z.string(), motivo: z.string() })),
-  mediosAereos: z.object({ solicitar: z.boolean(), tipo: z.string(), motivo: z.string() }),
-  nivelPropuesto: z.number().int().min(0).max(3),
-  motivoNivel: z.string(),
-});
-
-type Plan = z.infer<typeof ESQUEMA>;
-
-const RUMBO_SECTOR: Record<Plan["sectores"][number]["rumbo"], number> = {
-  cabeza: 0,
-  flanco_derecho: 90,
-  flanco_izquierdo: -90,
-  cola: 180,
-};
+// El esquema del plan, el tipo `Plan` y la conversión a acciones viven en
+// ./mapeo-plan.ts: es la frontera entre lo que escribe el modelo y lo que
+// hace el sistema, y así se puede probar sin proveedor de IA.
+const ESQUEMA = ESQUEMA_PLAN;
 
 export const coordinador: Agente = {
   id: "coordinador",
@@ -166,14 +145,6 @@ function planAtaqueInicial(incendio: Incendio, candidatas: Candidata[]): Plan {
     nivelPropuesto: incendio.nivelGravedad,
     motivoNivel: "",
   };
-}
-
-/** Punto de trabajo de un sector: sobre el perímetro actual, en el rumbo del sector. */
-function puntoDeSector(incendio: Incendio, rumboSector: number): Punto {
-  const radios = radiosPorRumbo(incendio.centro, incendio.perimetro, VERTICES, RADIO_INICIAL_M);
-  const alcance = alcanceEnRumbo(radios, rumboSector);
-  // 150 m por fuera del perímetro: se trabaja desde el borde, no dentro del fuego.
-  return destino(incendio.centro, rumboSector, (alcance + 150) / 1000);
 }
 
 interface Candidata {
@@ -376,65 +347,35 @@ async function planificarFoco(incendio: Incendio, todos: Incendio[], ctx: Contex
     }
   }
 
+  // Conversión Plan → acciones: determinista y pura, en ./mapeo-plan.ts (frontera zod).
+  // Todo lo que el modelo puede haber nombrado y ya no es cierto (una unidad que dejó
+  // de estar disponible) lo descarta allí en silencio.
+  const acciones = accionesDelPlan(plan, {
+    incendio,
+    unidades: estado.unidades,
+    candidatas: listaCandidatas.map((c) => ({ unidadId: c.unidad.id, minutosCarretera: c.minutosCarretera })),
+    unidadesComprometidas: new Set(
+      vivas.flatMap((v) => v.acciones.map((a) => a.objetivo?.unidadId).filter((id): id is string => !!id)),
+    ),
+    hayMediosAereosVivos: vivas.some((v) => v.acciones.some((a) => a.tipo === "solicitar_medios_aereos")),
+    hayElevarNivelVivo: vivas.some((v) => v.acciones.some((a) => a.tipo === "elevar_nivel")),
+    ataqueInicial,
+  });
+
   // Sectores: se guardan en el incendio para que los pinte la sala de mando.
-  if (plan.sectores.length) {
+  if (acciones.sectores.length) {
     estado.actualizar(estado.incendios, incendio.id, {
-      sectores: plan.sectores.map((s) => ({
-        nombre: s.nombre,
-        rumboGrados: +normalizarGrados(rumboFrente + RUMBO_SECTOR[s.rumbo]).toFixed(0),
+      sectores: acciones.sectores.map((s) => ({
+        ...s,
         unidades: asignadas.filter((u) => u.sector === s.nombre).map((u) => u.id),
       })),
     });
   }
 
-  const rumboDeSector = (nombre: string): number => {
-    const s = plan.sectores.find((x) => x.nombre === nombre);
-    return normalizarGrados(rumboFrente + RUMBO_SECTOR[s?.rumbo ?? "cabeza"]);
-  };
-
   const evidencias = evidenciasDe(incendio, listaCandidatas, poblaciones.length ? poblaciones[0] : undefined, ctx.ahoraMundo);
   const decisiones: Decision[] = [];
 
-  // ---- Decisión 1: despliegue (+ medios aéreos) ----
-  const accionesDespliegue: AccionPropuesta[] = [];
-  for (const d of plan.despliegues) {
-    const unidad = estado.unidades.get(d.unidadId);
-    if (!unidad || unidad.estado !== "disponible") continue;
-    if (vivas.some((v) => v.acciones.some((a) => a.objetivo?.unidadId === d.unidadId))) continue;
-    const rumboSector = rumboDeSector(d.sector);
-    const candidata = listaCandidatas.find((c) => c.unidad.id === d.unidadId);
-    accionesDespliegue.push({
-      tipo: "desplegar_unidad",
-      descripcion: `Enviar ${unidad.nombre} al sector ${d.sector} de ${incendio.nombre}${candidata?.minutosCarretera !== undefined ? ` (${candidata.minutosCarretera} min por carretera)` : ""}`,
-      objetivo: { unidadId: unidad.id },
-      parametros: {
-        sector: d.sector,
-        destino: puntoDeSector(incendio, rumboSector),
-        incendioId: incendio.id,
-        motivo: d.motivo,
-        minutosCarretera: candidata?.minutosCarretera,
-        ataqueInicial,
-      },
-    });
-  }
-  for (const r of plan.reasignaciones) {
-    const unidad = estado.unidades.get(r.unidadId);
-    if (!unidad || unidad.incendioId === incendio.id) continue;
-    accionesDespliegue.push({
-      tipo: "reasignar_unidad",
-      descripcion: `Reasignar ${unidad.nombre} al sector ${r.sector} de ${incendio.nombre}`,
-      objetivo: { unidadId: unidad.id },
-      parametros: { sector: r.sector, destino: puntoDeSector(incendio, rumboDeSector(r.sector)), incendioId: incendio.id, motivo: r.motivo, desdeIncendioId: unidad.incendioId },
-    });
-  }
-  if (plan.mediosAereos.solicitar && !vivas.some((v) => v.acciones.some((a) => a.tipo === "solicitar_medios_aereos"))) {
-    accionesDespliegue.push({
-      tipo: "solicitar_medios_aereos",
-      descripcion: `Solicitar medios aéreos (${plan.mediosAereos.tipo}) para ${incendio.nombre}`,
-      parametros: { tipo: plan.mediosAereos.tipo, motivo: plan.mediosAereos.motivo, incendioId: incendio.id, organismo: `Operativo de incendios de ${incendio.comunidad || "la comunidad autónoma"}` },
-    });
-  }
-
+  const accionesDespliegue = acciones.despliegue;
   if (accionesDespliegue.length) {
     decisiones.push(
       decisionBase(ctx, {
@@ -456,25 +397,7 @@ async function planificarFoco(incendio: Incendio, todos: Incendio[], ctx: Contex
   }
 
   // ---- Decisión 2: nivel de gravedad, o retiradas por seguridad ----
-  const accionesMando: AccionPropuesta[] = [];
-  if (plan.nivelPropuesto > incendio.nivelGravedad && !vivas.some((v) => v.acciones.some((a) => a.tipo === "elevar_nivel"))) {
-    accionesMando.push({
-      tipo: "elevar_nivel",
-      descripcion: `Proponer al director del plan elevar ${incendio.nombre} a nivel ${plan.nivelPropuesto}`,
-      parametros: { nivel: plan.nivelPropuesto, motivo: plan.motivoNivel, incendioId: incendio.id },
-    });
-  }
-  for (const r of plan.retiradas) {
-    const unidad = estado.unidades.get(r.unidadId);
-    if (!unidad || unidad.incendioId !== incendio.id) continue;
-    accionesMando.push({
-      tipo: "retirar_unidad",
-      descripcion: `Retirar ${unidad.nombre} a zona segura`,
-      objetivo: { unidadId: unidad.id },
-      parametros: { motivo: r.motivo, incendioId: incendio.id },
-    });
-  }
-
+  const accionesMando = acciones.mando;
   if (accionesMando.length && decisiones.length < MAX_DECISIONES) {
     const hayRetiradas = accionesMando.some((a) => a.tipo === "retirar_unidad");
     decisiones.push(

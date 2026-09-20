@@ -30,7 +30,10 @@ import type {
   Punto,
   TipoEvento,
 } from "../dominio/tipos";
-import type { Agente, ContextoAgente, ResultadoCiclo } from "./contratos";
+import type { Agente, ContextoAgente, FichaAgente, ResultadoCiclo } from "./contratos";
+import type { TareaEjecutableAgente } from "../agentes/logicos";
+import type { TopologiaAgentes } from "../agentes/migracion/topologia";
+import { CAPACIDADES_POR_AGENTE, esIdAgenteCanonico, resolverIdAgenteCompatible } from "../agentes/identidad";
 import { listaFuentes, normalizarFuentes } from "../dominio/fuentes-deteccion";
 import { agenteDesactivadoPorEscenario, quitarPoblacionesDe, sincronizarAgentesConEscenario } from "./escenario";
 import { establecerEstado, obtenerEstado, Estado } from "./estado";
@@ -43,7 +46,10 @@ import { evaluarCompetencia } from "../dominio/politica";
 import { anotarTraza, ejecutarConTraza, resumir, sinTraza, trazaActual } from "./traza";
 import { generarActaAccion, generarActaDecision } from "./actas";
 import { describirFueraEspana, enEspana } from "../dominio/espana";
+import { requiereSupervisorIndependiente } from "../dominio/supervision";
+import { esServicioDeterminista } from "../dominio/clase-agente";
 import { sanearFueraEspana } from "./saneamientoEspana";
+import { omitirAccionesNoConfiguradas } from "../agentes/ejecucion/canales-configurados";
 
 // ---------------------------------------------------------------------
 // Contrato público (no cambiar: lo usan B, C, D y la API)
@@ -73,8 +79,12 @@ export interface DeclaracionFoco {
 
 interface Nucleo {
   intervalo?: ReturnType<typeof setInterval>;
-  agentes: Agente[];
-  /** Agentes con un ciclo en marcha (exclusión mutua: nunca se solapan). */
+  /** Fichas visibles: 16 en legacy/shadow y cinco tras el corte. */
+  agentes: FichaAgente[];
+  /** Las 16 capacidades conservan ciclo, cadencia y disparadores propios. */
+  tareas: TareaEjecutableAgente[];
+  topologia: TopologiaAgentes;
+  /** Capacidades con un ciclo en marcha (exclusión mutua por capacidad). */
   ocupados: Set<string>;
   /** Cola de despertar: agentes que deben ejecutarse en el próximo tick. */
   cola: Set<string>;
@@ -89,7 +99,6 @@ interface Nucleo {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaNucleo: Nucleo | undefined;
 }
 
@@ -97,6 +106,8 @@ function nucleo(): Nucleo {
   if (!globalThis.__atalayaNucleo) {
     globalThis.__atalayaNucleo = {
       agentes: [],
+      tareas: [],
+      topologia: "legacy",
       ocupados: new Set(),
       cola: new Set(),
       motivoDespertar: new Map(),
@@ -106,6 +117,9 @@ function nucleo(): Nucleo {
       tickEnCurso: false,
     };
   }
+  // Compatibilidad con el singleton creado por una versión anterior durante HMR.
+  globalThis.__atalayaNucleo.tareas ??= [];
+  globalThis.__atalayaNucleo.topologia ??= "legacy";
   return globalThis.__atalayaNucleo;
 }
 
@@ -131,6 +145,28 @@ function esAborto(e: unknown): boolean {
   return false;
 }
 
+/**
+ * ¿Este fallo lo provocó el propio mando al pulsar "Parar"?
+ *
+ * F1.5 de la migración (fallos L-5 y L-6 de docs/PRUEBAS.md). Antes esto se
+ * decidía mirando SOLO `estado.reloj.pausado` en el momento del `catch`, y ahí
+ * hay una carrera: el aborto se dispara al pausar, pero el `catch` puede correr
+ * después de que alguien haya reanudado el mundo. Entonces el aborto se
+ * contabilizaba como avería del agente y, a los 5, el supervisor lo pausaba para
+ * siempre — medido: pausar tres veces dejaba sin vigía de cámaras y sin asesor
+ * legal. La misma carrera dejaba escaladas a un humano, de forma permanente,
+ * decisiones que la política marcaba como autónomas.
+ *
+ * Ahora se pregunta al error, que sí lleva la causa. OJO: "Tiempo máximo agotado"
+ * NO entra aquí aunque sea un AbortError — un agente que se pasa de su tiempo sí
+ * es un problema del agente y tiene que seguir contando.
+ */
+export function esPorPausa(e: unknown, estado: Estado): boolean {
+  if (estado.reloj.pausado) return true;
+  const texto = e instanceof Error ? `${e.name} ${e.message}` : String(e);
+  return /pausa/i.test(texto);
+}
+
 function esRazonamiento(agente: Agente): boolean {
   const m = (agente.modelo ?? "").toLowerCase();
   if (!m || m === "determinista") return false;
@@ -146,7 +182,10 @@ function esRazonamiento(agente: Agente): boolean {
  * cada 5 s, satélite, propagación y meteorólogo cada 30-60 s.
  */
 function esDeterminista(agente: Agente): boolean {
-  return (agente.modelo ?? "").trim().toLowerCase() === "determinista";
+  // Una sola fuente de verdad con la pantalla (lib/dominio/clase-agente.ts): lo
+  // que aquí decide no pedir lecciones es lo mismo que allí se enseña como
+  // "entrada determinista".
+  return esServicioDeterminista(agente.modelo);
 }
 
 /**
@@ -164,14 +203,17 @@ function limiteMsDe(agente: Agente): number {
 }
 
 function tocarFicha(estado: Estado, agenteId: string, cambios: Partial<EstadoAgenteApp>): void {
-  if (!estado.agentes.has(agenteId)) return;
-  estado.actualizar(estado.agentes, agenteId, cambios);
+  const idFicha = resolverIdAgenteCompatible(estado.agentes, agenteId);
+  if (!idFicha) return;
+  estado.actualizar(estado.agentes, idFicha, cambios);
 }
 
 function sumarContador(estado: Estado, agenteId: string, clave: keyof EstadoAgenteApp["contadores"], delta = 1): void {
-  const ficha = estado.agentes.get(agenteId);
+  const idFicha = resolverIdAgenteCompatible(estado.agentes, agenteId);
+  if (!idFicha) return;
+  const ficha = estado.agentes.get(idFicha);
   if (!ficha) return;
-  estado.actualizar(estado.agentes, agenteId, { contadores: { ...ficha.contadores, [clave]: (ficha.contadores[clave] ?? 0) + delta } });
+  estado.actualizar(estado.agentes, idFicha, { contadores: { ...ficha.contadores, [clave]: (ficha.contadores[clave] ?? 0) + delta } });
 }
 
 /**
@@ -276,8 +318,7 @@ export function arrancarOrquestador(): void {
   // Registro de agentes + persistencia: en segundo plano para no bloquear el arranque del servidor.
   void (async () => {
     try {
-      const { registrarAgentes } = await import("../agentes/registro");
-      nucleo().agentes = registrarAgentes(obtenerEstado());
+      await recargarRegistro(obtenerEstado());
       obtenerEstado().registrarEvento("sistema", `${nucleo().agentes.length} agentes registrados`, { nivel: "info" });
     } catch (e) {
       obtenerEstado().registrarEvento("sistema", `No se pudieron registrar los agentes: ${mensajeDe(e)}`, { nivel: "critico" });
@@ -306,16 +347,40 @@ export function pararOrquestador(): void {
 
 /** Vuelve a leer los índices de agentes (tras crear una ejecución nueva). */
 export async function recargarAgentes(): Promise<number> {
-  const { registrarAgentes } = await import("../agentes/registro");
-  nucleo().agentes = registrarAgentes(obtenerEstado());
-  return nucleo().agentes.length;
+  return recargarRegistro(obtenerEstado());
+}
+
+async function recargarRegistro(estado: Estado): Promise<number> {
+  const { registrarAgentes, seleccionarRegistroAgentes } = await import("../agentes/registro");
+  const seleccion = seleccionarRegistroAgentes();
+  registrarAgentes(estado, seleccion.topologia);
+  const n = nucleo();
+  n.agentes = [...seleccion.fichas];
+  n.tareas = [...seleccion.tareas];
+  n.topologia = seleccion.topologia;
+  return n.agentes.length;
+}
+
+function encolarCapacidad(capacidadId: string, motivo: string): void {
+  const n = nucleo();
+  n.cola.add(capacidadId);
+  if (!n.motivoDespertar.has(capacidadId)) n.motivoDespertar.set(capacidadId, motivo);
 }
 
 /** Fuerza un ciclo del agente en el próximo tick. `motivo` viaja a la traza. */
 export function despertar(agenteId: string, motivo = "manual"): void {
   const n = nucleo();
-  n.cola.add(agenteId);
-  if (!n.motivoDespertar.has(agenteId)) n.motivoDespertar.set(agenteId, motivo);
+  const tarea = n.tareas.find((candidata) => candidata.capacidadId === agenteId);
+  if (tarea) {
+    encolarCapacidad(tarea.capacidadId, motivo);
+    return;
+  }
+  if (esIdAgenteCanonico(agenteId)) {
+    for (const capacidadId of CAPACIDADES_POR_AGENTE[agenteId]) encolarCapacidad(capacidadId, motivo);
+    return;
+  }
+  // Antes de que termine el registro asíncrono aún pueden llegar despertares.
+  encolarCapacidad(agenteId, motivo);
 }
 
 /** Registra un evento y despierta a quien lo esté esperando. */
@@ -327,11 +392,11 @@ export function emitir(tipo: TipoEvento, mensaje: string, extra: Partial<Pick<Ev
 
 function despertarPorEvento(evento: Evento): void {
   const n = nucleo();
-  for (const agente of n.agentes) {
-    if (!agente.despiertaCon?.includes(evento.tipo)) continue;
-    if (evento.agenteId && evento.agenteId === agente.id) continue; // no se despierta a sí mismo
-    n.cola.add(agente.id);
-    if (!n.motivoDespertar.has(agente.id)) n.motivoDespertar.set(agente.id, evento.tipo);
+  for (const tarea of n.tareas) {
+    const capacidad = tarea.capacidad;
+    if (!capacidad.despiertaCon?.includes(evento.tipo)) continue;
+    if (evento.agenteId && evento.agenteId === tarea.capacidadId) continue; // no se despierta a sí misma
+    encolarCapacidad(tarea.capacidadId, evento.tipo);
   }
 }
 
@@ -440,27 +505,30 @@ async function tick(): Promise<void> {
     void sanearFueraEspana(estado);
 
     const ahoraReal = Date.now();
-    for (const agente of n.agentes) {
-      const ficha = estado.agentes.get(agente.id);
+    for (const tarea of n.tareas) {
+      const agente = tarea.capacidad;
+      const capacidadId = tarea.capacidadId;
+      const agenteVisibleId = n.topologia === "five" ? tarea.agenteId : capacidadId;
+      const ficha = estado.agentes.get(agenteVisibleId);
       if (!ficha || ficha.pausado) continue;
-      if (agenteDesactivadoPorEscenario(estado.ejecucion, agente.id)) {
+      if (agenteDesactivadoPorEscenario(estado.ejecucion, capacidadId)) {
         // Sin vaciar la cola, /api/salud lo enseñaría "en cola" para siempre.
-        n.cola.delete(agente.id);
-        n.motivoDespertar.delete(agente.id);
+        n.cola.delete(capacidadId);
+        n.motivoDespertar.delete(capacidadId);
         continue;
       }
-      if (n.ocupados.has(agente.id)) continue; // exclusión mutua
-      const despertado = n.cola.has(agente.id);
-      const ultimo = n.ultimoCicloReal.get(agente.id) ?? 0;
+      if (n.ocupados.has(capacidadId)) continue; // exclusión mutua por capacidad
+      const despertado = n.cola.has(capacidadId);
+      const ultimo = n.ultimoCicloReal.get(capacidadId) ?? 0;
       const vencido = ahoraReal - ultimo >= Math.max(1, agente.cadenciaSeg) * 1000;
       if (!despertado && !vencido) continue;
       // Despertado por evento demasiado pronto: NO se descarta, se deja en la
       // cola y entrará en un tick posterior, cuando haya pasado el hueco mínimo.
       if (despertado && !vencido && ahoraReal - ultimo < huecoMinimoMs(agente)) continue;
-      const motivo = despertado ? n.motivoDespertar.get(agente.id) ?? "evento" : "cadencia";
-      n.cola.delete(agente.id);
-      n.motivoDespertar.delete(agente.id);
-      void ejecutarCiclo(estado, agente, despertado, motivo);
+      const motivo = despertado ? n.motivoDespertar.get(capacidadId) ?? "evento" : "cadencia";
+      n.cola.delete(capacidadId);
+      n.motivoDespertar.delete(capacidadId);
+      void ejecutarCiclo(estado, tarea, agenteVisibleId, despertado, motivo);
     }
   } catch (e) {
     console.error("[orquestador] fallo en el tick", e);
@@ -498,15 +566,23 @@ function calcularEntradas(estado: Estado): string {
   return `${activos.length} incendios activos, ${libres} unidades libres, ${pendientes} decisiones pendientes, ${enPeligro} poblaciones en riesgo, ${viento}`;
 }
 
-async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean, motivo: string): Promise<void> {
+async function ejecutarCiclo(
+  estado: Estado,
+  tarea: TareaEjecutableAgente,
+  agenteVisibleId: string,
+  despertado: boolean,
+  motivo: string,
+): Promise<void> {
   const n = nucleo();
-  n.ocupados.add(agente.id);
-  n.ultimoCicloReal.set(agente.id, Date.now());
+  const agente = tarea.capacidad;
+  const capacidadId = tarea.capacidadId;
+  n.ocupados.add(capacidadId);
+  n.ultimoCicloReal.set(capacidadId, Date.now());
 
   const controlador = new AbortController();
-  controladoresEnCurso.set(agente.id, controlador);
+  controladoresEnCurso.set(capacidadId, controlador);
   const limite = limiteMsDe(agente);
-  const desde = n.ultimoCicloMundo.get(agente.id) ?? estado.reloj.ahoraMundo;
+  const desde = n.ultimoCicloMundo.get(capacidadId) ?? estado.reloj.ahoraMundo;
   let temporizador: ReturnType<typeof setTimeout> | undefined;
   /**
    * La promesa REAL del ciclo (no la del `Promise.race`). Si el agente ignora
@@ -517,7 +593,7 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
    */
   let promesaCiclo: Promise<unknown> | undefined;
 
-  tocarFicha(estado, agente.id, {
+  tocarFicha(estado, agenteVisibleId, {
     estado: esRazonamiento(agente) ? "razonando" : "observando",
     ultimaActividad: new Date().toISOString(),
     ultimoError: undefined,
@@ -527,7 +603,8 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
   try {
     // La traza envuelve TODO el ciclo, incluido el Promise.race: si salta el
     // tiempo máximo, se cierra como "cancelado" y se ve en el visor del agente.
-    await ejecutarConTraza(estado, agente.id, motivo, async () => {
+    const motivoTraza = agenteVisibleId === capacidadId ? motivo : `capacidad:${capacidadId} · ${motivo}`;
+    await ejecutarConTraza(estado, agenteVisibleId, motivoTraza, async () => {
       anotarTraza({ entradas: resumir(entradasDe(estado)) });
 
       // Los deterministas no tienen prompt: pedir lecciones solo gastaba un
@@ -540,7 +617,7 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
         ahoraMundo: estado.reloj.ahoraMundo,
         minutosMundoDesdeUltimoCiclo: minutosMundoEntre(desde, estado.reloj.ahoraMundo),
         registrar: (tipo, mensaje, extra) => { estado.registrarEvento(tipo, mensaje, { ...extra, agenteId: agente.id }); },
-        informarTarea: (tarea, incendioId) => tocarFicha(estado, agente.id, { tareaActual: tarea, incendioId }),
+        informarTarea: (descripcion, incendioId) => tocarFicha(estado, agenteVisibleId, { tareaActual: descripcion, incendioId }),
         lecciones,
         abortSignal: controlador.signal,
       };
@@ -562,8 +639,8 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
         }),
       ])) as ResultadoCiclo | void;
 
-      sumarContador(estado, agente.id, "ciclos");
-      const producido = await procesarResultado(estado, agente, (resultado ?? undefined) as ResultadoCiclo | undefined);
+      sumarContador(estado, agenteVisibleId, "ciclos");
+      const producido = await procesarResultado(estado, agente, agenteVisibleId, (resultado ?? undefined) as ResultadoCiclo | undefined);
       anotarTraza({
         resumen: (resultado as ResultadoCiclo | undefined)?.resumen,
         decisiones: producido.decisiones,
@@ -571,34 +648,34 @@ async function ejecutarCiclo(estado: Estado, agente: Agente, despertado: boolean
         eventos: producido.eventos,
       });
 
-      tocarFicha(estado, agente.id, {
-        estado: estado.agentes.get(agente.id)?.pausado ? "pausado" : "observando",
+      tocarFicha(estado, agenteVisibleId, {
+        estado: estado.agentes.get(agenteVisibleId)?.pausado ? "pausado" : "observando",
         tareaActual: (resultado as ResultadoCiclo | undefined)?.resumen,
         ultimaActividad: new Date().toISOString(),
       });
     });
   } catch (e) {
     controlador.abort();
-    if (estado.reloj.pausado) {
-      // Cancelado por la pausa global: no es un error del agente.
-      tocarFicha(estado, agente.id, { estado: "pausado", tareaActual: "Mundo en pausa: ciclo cancelado", ultimaActividad: new Date().toISOString() });
+    if (esPorPausa(e, estado)) {
+      // Cancelado por la pausa global: no es un error del agente (fallo L-6).
+      tocarFicha(estado, agenteVisibleId, { estado: "pausado", tareaActual: "Mundo en pausa: ciclo cancelado", ultimaActividad: new Date().toISOString() });
     } else {
-      sumarContador(estado, agente.id, "errores");
+      sumarContador(estado, agenteVisibleId, "errores");
       const mensaje = mensajeDe(e);
-      tocarFicha(estado, agente.id, { estado: "error", ultimoError: mensaje, ultimaActividad: new Date().toISOString() });
+      tocarFicha(estado, agenteVisibleId, { estado: "error", ultimoError: mensaje, ultimaActividad: new Date().toISOString() });
       estado.registrarEvento("agente", `${agente.nombre}: ${mensaje}`, { agenteId: agente.id, nivel: "aviso" });
     }
   } finally {
     if (temporizador) clearTimeout(temporizador);
-    controladoresEnCurso.delete(agente.id);
-    n.ultimoCicloMundo.set(agente.id, estado.reloj.ahoraMundo);
+    controladoresEnCurso.delete(capacidadId);
+    n.ultimoCicloMundo.set(capacidadId, estado.reloj.ahoraMundo);
 
     // Exclusión mutua de verdad: se libera cuando termina el ciclo REAL, no
     // cuando vence el Promise.race. Si el agente ignoró el abort y sigue vivo,
     // el orquestador se salta sus turnos hasta que acabe (y lo deja escrito).
     // Nota: `ultimoCicloReal` se dejó sellado al ARRANCAR el ciclo, para no
     // alargar la cadencia con la duración del propio ciclo.
-    const liberar = () => n.ocupados.delete(agente.id);
+    const liberar = () => n.ocupados.delete(capacidadId);
     if (promesaCiclo) {
       const tardio = Date.now();
       void promesaCiclo.then(
@@ -621,7 +698,7 @@ function avisarSiTardio(agente: Agente, desde: number): void {
 
 interface ProducidoPorCiclo { decisiones: string[]; observaciones: string[]; eventos: number }
 
-async function procesarResultado(estado: Estado, agente: Agente, resultado?: ResultadoCiclo): Promise<ProducidoPorCiclo> {
+async function procesarResultado(estado: Estado, agente: Agente, agenteVisibleId: string, resultado?: ResultadoCiclo): Promise<ProducidoPorCiclo> {
   const producido: ProducidoPorCiclo = { decisiones: [], observaciones: [], eventos: 0 };
   if (!resultado) return producido;
 
@@ -656,12 +733,12 @@ async function procesarResultado(estado: Estado, agente: Agente, resultado?: Res
   // Decisiones (lo más caro: secuencial y tolerante)
   const decisiones = resultado.decisiones ?? [];
   if (decisiones.length) {
-    tocarFicha(estado, agente.id, { estado: "actuando", tareaActual: `Proponiendo ${decisiones.length} decisión(es)` });
+    tocarFicha(estado, agenteVisibleId, { estado: "actuando", tareaActual: `Proponiendo ${decisiones.length} decisión(es)` });
     for (const d of decisiones) {
       try {
         const procesada = await procesarDecisionPropuesta({ ...d, agenteId: d.agenteId || agente.id });
         producido.decisiones.push(procesada.id);
-        sumarContador(estado, agente.id, "decisiones");
+        sumarContador(estado, agenteVisibleId, "decisiones");
       } catch (e) {
         estado.registrarEvento("agente", `No se pudo procesar una decisión de ${agente.nombre}: ${mensajeDe(e)}`, { agenteId: agente.id, nivel: "aviso" });
       }
@@ -682,6 +759,23 @@ async function procesarResultado(estado: Estado, agente: Agente, resultado?: Res
 export async function procesarDecisionPropuesta(decision: Decision): Promise<Decision> {
   const estado = obtenerEstado();
   const ahoraReal = new Date().toISOString();
+  const accionesNormalizadas = (decision.acciones ?? []).map((a) => ({
+    ...a,
+    id: a.id || nuevoId("acc"),
+    estado: a.estado ?? "pendiente",
+    parametros: a.parametros ?? {},
+    // El ejecutor sabe resolver el remitente de una observación. Se materializa
+    // aquí para que la compuerta de entorno vea el mismo destino real.
+    objetivo: a.tipo === "solicitar_confirmacion" && !a.objetivo?.telefono
+      ? {
+          ...a.objetivo,
+          telefono: typeof a.parametros?.observacionId === "string"
+            ? estado.observaciones.get(a.parametros.observacionId)?.remitente
+            : undefined,
+        }
+      : a.objetivo,
+  }));
+  const filtradas = omitirAccionesNoConfiguradas(accionesNormalizadas);
 
   const d: Decision = {
     ...decision,
@@ -693,12 +787,10 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     prioridad: decision.prioridad ?? 3,
     riesgo: decision.riesgo ?? 0,
     competencia: decision.competencia ?? "autonoma",
-    acciones: (decision.acciones ?? []).map((a) => ({
-      ...a,
-      id: a.id || nuevoId("acc"),
-      estado: a.estado ?? "pendiente",
-      parametros: a.parametros ?? {},
-    })),
+    acciones: filtradas.acciones,
+    resumen: filtradas.omitidas.length
+      ? `${decision.resumen} · ${filtradas.omitidas.length} acción(es) externa(s) omitida(s): canal no configurado.`
+      : decision.resumen,
     evidencias: decision.evidencias ?? [],
     fundamentos: decision.fundamentos ?? [],
     // Sello de auditoría: qué ciclo de qué agente la produjo.
@@ -717,6 +809,25 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     nivel: d.prioridad <= 2 ? "aviso" : "info",
     datos: { decisionId: d.id, acciones: d.acciones.map((a) => a.tipo) },
   });
+  for (const { accion, motivo } of filtradas.omitidas) {
+    estado.registrarEvento("sistema", `Acción omitida por configuración: ${accion.descripcion}. ${motivo}.`, {
+      agenteId: d.agenteId,
+      incendioId: d.incendioId,
+      nivel: "info",
+      datos: { decisionId: d.id, accionId: accion.id, tipo: accion.tipo, motivo, omitidaPorConfiguracion: true },
+    });
+  }
+  if (!d.acciones.length && filtradas.omitidas.length) {
+    const motivo = "No hay acciones ejecutables: todos los canales externos propuestos están sin configurar.";
+    const final = cambiarEstadoDecision(estado, d.id, "caducada", "sistema", motivo) ?? d;
+    estado.registrarEvento("sistema", `Decisión no ejecutada: ${d.titulo}. ${motivo}`, {
+      agenteId: d.agenteId,
+      incendioId: d.incendioId,
+      nivel: "info",
+      datos: { decisionId: d.id, omitidaPorConfiguracion: true },
+    });
+    return final;
+  }
 
   const ctx = contextoParaSistema(d.agenteId);
 
@@ -734,6 +845,70 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     estado.marcarServicio("Conocimiento (RAG)", false, mensajeDe(e));
   }
 
+  // (a bis) Revisión legal EN LÍNEA (F1c de la migración, 2026-09-19) ------
+  // Antes la hacía el agente `asesor_legal` en un tick POSTERIOR, y el enrutado
+  // de más abajo ya había decidido con su copia local de `competencia`: una
+  // decisión con alerta legal podía ejecutarse sola y el veto llegaba tarde.
+  // `revisarLegalidad` ya estaba exportada para esto y reutiliza los fundamentos
+  // que acaba de recuperar (a), así que no gasta una segunda búsqueda.
+  //
+  // EXCEPCIÓN, misma doctrina que el supervisor: un despliegue de ataque inicial
+  // no espera. Mandar medios a apagar un fuego no tiene problema de competencia
+  // —la tienen la evacuación, el confinamiento, el corte de carretera o elevar
+  // el nivel—, y bloquear la primera salida ~20 s por una revisión que casi
+  // siempre sale conforme cuesta minutos de fuego. Se revisa a posteriori.
+  const soloDespliegueInicial =
+    d.acciones.length > 0 && d.acciones.every((a) => a.tipo === "desplegar_unidad" && a.parametros?.ataqueInicial === true);
+
+  const aplicarRevision = (revision: { conforme: boolean; alertas: string[]; sinRevisar?: string }): void => {
+    if (revision.sinRevisar) {
+      estado.registrarEvento("agente", `Revisión legal de «${d.titulo}» no realizada: ${revision.sinRevisar}`, {
+        agenteId: "asesor_legal",
+        incendioId: d.incendioId,
+        nivel: "aviso",
+        datos: { decisionId: d.id },
+      });
+      return;
+    }
+    // Se escribe SIEMPRE, aunque la lista vaya vacía: así el agente asesor_legal
+    // (que filtra por `alertasLegales === undefined`) no la vuelve a revisar.
+    estado.actualizar(estado.decisiones, d.id, { alertasLegales: revision.alertas });
+    d.alertasLegales = revision.alertas;
+    if (!revision.conforme && revision.alertas.length) {
+      estado.registrarEvento("decision_escalada", `Alerta legal en «${d.titulo}»: ${revision.alertas[0]} Pasa a decisión humana.`, {
+        agenteId: "asesor_legal",
+        incendioId: d.incendioId,
+        nivel: "aviso",
+        datos: { decisionId: d.id, alertas: revision.alertas },
+      });
+    }
+  };
+
+  try {
+    const { revisarLegalidad } = await import("../agentes/planificacion/asesor-legal");
+    if (soloDespliegueInicial) {
+      // A posteriori y en su propia traza, para que su latencia se mida donde toca.
+      void sinTraza(() => ejecutarConTraza(estado, "asesor_legal", "revision_a_posteriori", () => revisarLegalidad(d)))
+        .then(aplicarRevision)
+        .catch((e) => {
+          if (!esAborto(e)) estado.marcarServicio("Asesor legal", false, mensajeDe(e));
+        });
+    } else {
+      aplicarRevision(await ejecutarConTraza(estado, "asesor_legal", "revision_en_linea", () => revisarLegalidad(d)));
+      estado.marcarServicio("Asesor legal", true, `${d.alertasLegales?.length ?? 0} alerta(s)`);
+    }
+  } catch (e) {
+    // Sin revisión legal no se bloquea la decisión: la política y el supervisor
+    // siguen mandando. Pero queda dicho, nunca se da por conforme en silencio.
+    if (!esAborto(e)) estado.marcarServicio("Asesor legal", false, mensajeDe(e));
+    estado.registrarEvento("agente", `No se pudo revisar la legalidad de «${d.titulo}»: ${mensajeDe(e)}`, {
+      agenteId: "asesor_legal",
+      incendioId: d.incendioId,
+      nivel: "aviso",
+      datos: { decisionId: d.id },
+    });
+  }
+
   // (b) Política de autonomía --------------------------------------------
   const incendio = d.incendioId ? estado.incendios.get(d.incendioId) : undefined;
   let competencia = d.competencia;
@@ -744,15 +919,18 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     competencia = evaluada.competencia;
     riesgo = evaluada.riesgo;
     motivoCompetencia = evaluada.motivo;
+    d.acciones = evaluada.acciones;
   } catch (e) {
     competencia = "humano";
     riesgo = Math.max(riesgo, 90);
     motivoCompetencia = `No se pudo evaluar la política (${mensajeDe(e)}): decide un humano`;
   }
   // Un humano ha asumido el control de este agente: nada suyo es autónomo.
-  const ficha = estado.agentes.get(d.agenteId);
+  const idFichaDecision = resolverIdAgenteCompatible(estado.agentes, d.agenteId);
+  const ficha = idFichaDecision ? estado.agentes.get(idFichaDecision) : undefined;
   if (ficha?.controlHumano && competencia === "autonoma") {
     competencia = "supervisada";
+    d.acciones = d.acciones.map((a) => a.competencia === "autonoma" ? { ...a, competencia: "supervisada" } : a);
     motivoCompetencia = `${motivoCompetencia}; un humano ha asumido el control de ${ficha.nombre}`;
   }
   // Ataque inicial (doctrina): la primera salida se despacha sola, como en un 112 real, y el
@@ -767,19 +945,38 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   if (esAtaqueInicial) {
     competencia = "autonoma";
     riesgo = Math.min(riesgo, 25);
+    d.acciones = d.acciones.map((a) => ({ ...a, competencia: "autonoma", riesgo: Math.min(a.riesgo ?? riesgo, 25) }));
     motivoCompetencia = "Ataque inicial: la primera salida se despacha de forma autónoma (doctrina) y el supervisor la revisa a posteriori";
   }
-  estado.actualizar(estado.decisiones, d.id, { competencia, riesgo });
+  estado.actualizar(estado.decisiones, d.id, { competencia, riesgo, acciones: d.acciones });
   d.competencia = competencia;
   d.riesgo = riesgo;
 
-  // (c) Supervisor de calidad --------------------------------------------
+  // (c) Supervisor de calidad · POR MUESTREO (F5) -------------------------
+  // El supervisor ya no evalúa TODAS las decisiones antes de enrutarlas: su
+  // llamada de razonamiento va en el camino crítico (~25 s medidos) y para un
+  // aviso preventivo de riesgo 20 que la política declara autónomo no compra
+  // nada. La regla vive en lib/dominio/supervision.ts y la lee de la POLÍTICA,
+  // así que sigue al mando si edita los umbrales en /politica.
+  // Lo irreversible —evacuar, confinar, cortar una carretera, elevar el nivel—
+  // y todo lo que vaya a manos de una persona SIEMPRE se evalúa antes.
+  // El ataque inicial ya iba por esta vía desde antes: ahora es un caso más.
+  const falloSupervision = requiereSupervisorIndependiente(d, estado.politica);
+  const revisaDespues = esAtaqueInicial || !falloSupervision.procede;
+
   let evaluacion: EvaluacionSupervisor | undefined;
   let supervisorCaido = false;
   let motivoSupervisorCaido = "";
   try {
     const { evaluarDecision } = await import("../agentes/supervision/supervisor");
-    if (esAtaqueInicial) {
+    if (revisaDespues) {
+      // Por qué no ha esperado, en el registro: nunca se salta en silencio.
+      estado.registrarEvento("agente", `Supervisión a posteriori de «${d.titulo}»: ${esAtaqueInicial ? "ataque inicial (doctrina)" : falloSupervision.motivo}`, {
+        agenteId: "supervisor",
+        incendioId: d.incendioId,
+        nivel: "info",
+        datos: { decisionId: d.id, muestreo: !esAtaqueInicial, motivo: falloSupervision.motivo },
+      });
       // No bloquea: la evaluación llega después y queda en la decisión y en el acta.
       // Va en su PROPIA traza de supervisor (fuera de la del agente proponente) para
       // que su latencia se mida donde corresponde y se vea en /agentes/supervisor.
@@ -788,7 +985,7 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
           estado.actualizar(estado.decisiones, d.id, { evaluacion: ev });
           estado.marcarServicio("Supervisor", true, `${ev.puntuacion}/100`);
           if (!ev.aprueba) {
-            estado.registrarEvento("decision_escalada", `El supervisor revisa a posteriori el ataque inicial (${ev.puntuacion}/100): ${ev.motivoEscalado ?? "revisar el dispositivo"}`, {
+            estado.registrarEvento("decision_escalada", `El supervisor revisa a posteriori «${d.titulo}» (${ev.puntuacion}/100): ${ev.motivoEscalado ?? "conviene revisarla"}`, {
               agenteId: d.agenteId,
               incendioId: d.incendioId,
               nivel: "aviso",
@@ -808,9 +1005,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
       estado.marcarServicio("Supervisor", true, `${evaluacion.puntuacion}/100`);
     }
   } catch (e) {
-    if (esAborto(e) && estado.reloj.pausado) {
-      // Cancelado por "Parar": no es una avería. La decisión se queda en "propuesta" y el
-      // orquestador vuelve a pasarla por el pipeline al reanudar el mundo.
+    if (esPorPausa(e, estado)) {
+      // Cancelado por "Parar": no es una avería (fallo L-5). La decisión se queda en
+      // "propuesta" y el orquestador vuelve a pasarla por el pipeline al reanudar.
       pendientesDeReevaluar.add(d.id);
       estado.registrarEvento("sistema", `Evaluación de «${d.titulo}» aplazada por la pausa del mundo; se retomará al reanudar`, {
         agenteId: d.agenteId,
@@ -831,7 +1028,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
     });
   }
 
-  const aprueba = esAtaqueInicial || (!supervisorCaido && !!evaluacion?.aprueba);
+  // Las que se revisan a posteriori se enrutan con la política, que es
+  // determinista y ya ha dicho que son autónomas de bajo riesgo.
+  const aprueba = revisaDespues || (!supervisorCaido && !!evaluacion?.aprueba);
 
   // (d) Enrutado ----------------------------------------------------------
   if (aprueba && competencia === "autonoma") {
@@ -844,6 +1043,9 @@ export async function procesarDecisionPropuesta(decision: Decision): Promise<Dec
   }
 
   if (aprueba) {
+    // Una acción humana no bloquea a sus hermanas autónomas independientes. Las
+    // dependientes de una humana permanecen pendientes hasta su aprobación.
+    await aprobarDecision(d.id, "ia", undefined, { soloAutonomas: true });
     // supervisada o humano: espera a una persona, con la recomendación del supervisor
     const actualizada = cambiarEstadoDecision(estado, d.id, "pendiente_humano", "sistema", `Competencia ${competencia}: ${motivoCompetencia}`) ?? d;
     estado.registrarEvento("decision_propuesta", `Requiere tu decisión: ${d.titulo} (${competencia}, riesgo ${riesgo})`, {
@@ -892,7 +1094,8 @@ function caducarPendientes(estado: Estado): void {
     }
     const esperando = (ahora - Date.parse(desde)) / 60_000;
     if (!Number.isFinite(esperando) || esperando <= limite) continue;
-    cambiarEstadoDecision(estado, d.id, "caducada", "sistema", `Sin respuesta humana tras ${Math.round(esperando)} min reales (límite ${limite})`);
+    const acciones = d.acciones.map((a) => a.estado === "pendiente" ? { ...a, estado: "cancelada" as const } : a);
+    cambiarEstadoDecision(estado, d.id, "caducada", "sistema", `Sin respuesta humana tras ${Math.round(esperando)} min reales (límite ${limite})`, { acciones });
     estado.registrarEvento("decision_denegada", `Caducada sin respuesta (${Math.round(esperando)} min reales): ${d.titulo}`, {
       agenteId: d.agenteId,
       incendioId: d.incendioId,
@@ -1008,23 +1211,52 @@ async function podarMemoria(estado: Estado): Promise<void> {
 }
 
 /** Aprueba y EJECUTA. `quien` = "ia" o "humano:<nombre>". */
-export async function aprobarDecision(id: string, quien: string, comentario?: string): Promise<Decision | undefined> {
+export async function aprobarDecision(id: string, quien: string, comentario?: string, opciones: { soloAutonomas?: boolean } = {}): Promise<Decision | undefined> {
   const estado = obtenerEstado();
-  const inicial = estado.decisiones.get(id);
+  let inicial = estado.decisiones.get(id);
   if (!inicial) return undefined;
-  if (["ejecutando", "ejecutada", "denegada", "fallida"].includes(inicial.estado)) return inicial;
+  if (["ejecutando", "ejecutada", "denegada", "fallida", "caducada"].includes(inicial.estado)) return inicial;
 
-  const ahora = new Date().toISOString();
-  cambiarEstadoDecision(estado, id, "aprobada", quien, comentario, { decididaEn: ahora, decididaPor: quien, comentarioHumano: comentario ?? inicial.comentarioHumano });
-  sumarMetrica(estado, "decisionesAprobadas");
-  estado.registrarEvento("decision_aprobada", `Aprobada por ${quien}: ${inicial.titulo}`, {
-    agenteId: inicial.agenteId,
-    incendioId: inicial.incendioId,
-    nivel: "info",
-    datos: { decisionId: id, quien, comentario },
-  });
+  // La configuración puede cambiar entre propuesta y aprobación. Se vuelve a
+  // comprobar aquí para que una clave retirada no convierta un canal opcional
+  // en una acción fallida. Solo se eliminan acciones por configuración; un
+  // proveedor ya configurado que falle sigue llegando al ejecutor como error.
+  const filtradas = omitirAccionesNoConfiguradas(inicial.acciones);
+  if (filtradas.omitidas.length) {
+    inicial = estado.actualizar(estado.decisiones, id, { acciones: filtradas.acciones }) ?? { ...inicial, acciones: filtradas.acciones };
+    for (const { accion, motivo } of filtradas.omitidas) {
+      estado.registrarEvento("sistema", `Acción omitida por configuración antes de aprobar: ${accion.descripcion}. ${motivo}.`, {
+        agenteId: inicial.agenteId,
+        incendioId: inicial.incendioId,
+        nivel: "info",
+        datos: { decisionId: id, accionId: accion.id, tipo: accion.tipo, motivo, omitidaPorConfiguracion: true },
+      });
+    }
+  }
+  if (!inicial.acciones.length && filtradas.omitidas.length) {
+    const motivo = "No hay acciones ejecutables: todos los canales externos pendientes están sin configurar.";
+    const final = cambiarEstadoDecision(estado, id, "caducada", "sistema", motivo) ?? inicial;
+    estado.registrarEvento("sistema", `Decisión no ejecutada: ${inicial.titulo}. ${motivo}`, {
+      agenteId: inicial.agenteId,
+      incendioId: inicial.incendioId,
+      nivel: "info",
+      datos: { decisionId: id, omitidaPorConfiguracion: true },
+    });
+    return final;
+  }
 
-  cambiarEstadoDecision(estado, id, "ejecutando", quien, `${inicial.acciones.length} acción(es) por ejecutar`);
+  if (!opciones.soloAutonomas) {
+    const ahora = new Date().toISOString();
+    cambiarEstadoDecision(estado, id, "aprobada", quien, comentario, { decididaEn: ahora, decididaPor: quien, comentarioHumano: comentario ?? inicial.comentarioHumano });
+    sumarMetrica(estado, "decisionesAprobadas");
+    estado.registrarEvento("decision_aprobada", `Aprobada por ${quien}: ${inicial.titulo}`, {
+      agenteId: inicial.agenteId,
+      incendioId: inicial.incendioId,
+      nivel: "info",
+      datos: { decisionId: id, quien, comentario },
+    });
+    cambiarEstadoDecision(estado, id, "ejecutando", quien, `${inicial.acciones.length} acción(es) por ejecutar`);
+  }
   const ctx = contextoParaSistema(inicial.agenteId);
 
   // Ejecutor real (constructor D). Si no está, cada acción falla con motivo claro.
@@ -1035,12 +1267,27 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     estado.marcarServicio("Ejecutor de acciones", false, mensajeDe(e));
   }
 
-  const idsAcciones = (estado.decisiones.get(id)?.acciones ?? []).map((a) => a.id);
-  let algunaBien = false;
+  const moduloEjecutor = ejecutor ? await import("../agentes/ejecucion/ejecutor") : undefined;
+  const accionesOrdenadas = moduloEjecutor?.ordenarPorDependencias(estado.decisiones.get(id)?.acciones ?? []) ?? (estado.decisiones.get(id)?.acciones ?? []);
+  const idsAcciones = accionesOrdenadas
+    .filter((a) => a.estado === "pendiente" && (!opciones.soloAutonomas || a.competencia === "autonoma"))
+    .map((a) => a.id);
+  let algunaBien = (estado.decisiones.get(id)?.acciones ?? []).some((a) => a.estado === "ejecutada");
   for (const accionId of idsAcciones) {
-    // Sello de auditoría de la acción: quién la autorizó y cuándo se ordenó.
-    const ordenadaEn = new Date().toISOString();
-    let accion = mutarAccion(estado, id, accionId, { autorizadaPor: quien, ordenadaEn });
+    let accion = estado.decisiones.get(id)?.acciones.find((a) => a.id === accionId);
+    if (!accion) continue;
+    const dependencias = moduloEjecutor?.comprobarDependencias(accion, estado.decisiones.get(id) ?? inicial);
+    if (dependencias && !dependencias.lista) {
+      const grafoInvalido = !(moduloEjecutor?.validarDependencias(estado.decisiones.get(id)?.acciones ?? []).valida ?? true);
+      const dependenciasTerminales = (accion.dependeDe ?? []).some((depId) => {
+        const dep = estado.decisiones.get(id)?.acciones.find((a) => a.id === depId);
+        return dep?.estado === "fallida" || dep?.estado === "cancelada";
+      });
+      if (!opciones.soloAutonomas && (grafoInvalido || dependenciasTerminales)) mutarAccion(estado, id, accionId, { estado: "cancelada" });
+      continue;
+    }
+    // Solo se autoriza cuando sus dependencias permiten ordenarla realmente.
+    accion = mutarAccion(estado, id, accionId, { autorizadaPor: quien, ordenadaEn: new Date().toISOString() });
     if (!accion) continue;
     let resultado: Accion = accion;
     if (!ejecutor || !ejecutor.soporta(accion.tipo)) {
@@ -1091,6 +1338,8 @@ export async function aprobarDecision(id: string, quien: string, comentario?: st
     }
   }
 
+  if (opciones.soloAutonomas) return estado.decisiones.get(id) ?? inicial;
+
   const acciones = estado.decisiones.get(id)?.acciones ?? [];
   const estadoFinal: Decision["estado"] = acciones.length === 0 ? "ejecutada" : algunaBien ? "ejecutada" : "fallida";
   const final = cambiarEstadoDecision(estado, id, estadoFinal, quien, `${acciones.filter((a) => a.estado === "ejecutada").length} de ${acciones.length} acciones con éxito`) ?? inicial;
@@ -1117,10 +1366,12 @@ export async function denegarDecision(id: string, quien: string, comentario: str
   if (!d) return undefined;
   const motivo = (comentario ?? "").trim();
   if (!motivo) throw new Error("Al denegar hay que explicar por qué: el comentario es obligatorio");
+  const { cancelarAccionesPendientes } = await import("../agentes/ejecucion/ejecutor");
   const final = cambiarEstadoDecision(estado, id, "denegada", quien, motivo, {
     decididaEn: new Date().toISOString(),
     decididaPor: quien,
     comentarioHumano: motivo,
+    acciones: cancelarAccionesPendientes(d.acciones),
   });
   sumarMetrica(estado, "decisionesDenegadas");
   estado.registrarEvento("decision_denegada", `Denegada por ${quien}: ${d.titulo} · ${motivo}`, {

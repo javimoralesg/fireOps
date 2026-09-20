@@ -505,6 +505,12 @@ export interface Accion {
   /** Parámetros libres (guion de llamada, texto SMS, sector, etc.). */
   parametros: Record<string, unknown>;
   estado: EstadoAccion;
+  /** Competencia mínima de esta acción. Ausente en datos históricos: se deriva de la política. */
+  competencia?: ModoCompetencia;
+  /** Riesgo propio 0..100. La política puede elevarlo, nunca reducirlo. */
+  riesgo?: number;
+  /** IDs de acciones de esta misma decisión que deben terminar con éxito antes de ejecutarla. */
+  dependeDe?: string[];
   /** Resultado de la ejecución real (id de run HappyRobot, transcripción, error…). */
   resultado?: { en: string; proveedor: string; referencia?: string; resumen: string; exito: boolean; datos?: Record<string, unknown> };
   ejecutadaEn?: string;

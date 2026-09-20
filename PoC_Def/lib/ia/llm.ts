@@ -177,9 +177,9 @@ export function modeloPara(papel: PapelLLM): string {
   return MODELOS_POR_DEFECTO[proveedorDe(papel).nombre][papel];
 }
 
-/** ¿Hay clave para el proveedor por defecto? Si es false, todo fallará de forma visible. */
-export function proveedorDisponible(): boolean {
-  return Boolean(proveedorDe("razonamiento").clave);
+/** ¿Hay clave para el proveedor de un papel? El razonamiento conserva el valor por defecto. */
+export function proveedorDisponible(papel: PapelLLM = "razonamiento"): boolean {
+  return Boolean(proveedorDe(papel).clave);
 }
 
 /** Nombre del proveedor activo, para la barra de estado y los informes. */
@@ -188,8 +188,8 @@ export function proveedorActivo(): NombreProveedor {
 }
 
 /** Mensaje de error único para "falta la clave", igual en toda la aplicación. */
-export function motivoIndisponible(): string | undefined {
-  const c = proveedorDe("razonamiento");
+export function motivoIndisponible(papel: PapelLLM = "razonamiento"): string | undefined {
+  const c = proveedorDe(papel);
   if (c.clave) return undefined;
   return `Sin proveedor de IA: falta ${c.variableClave} en .env.local (LLM_PROVEEDOR=${c.nombre}). Ninguna respuesta se inventa.`;
 }
@@ -306,7 +306,7 @@ const CLAVES_NO_SOPORTADAS = [
  * `additionalProperties: false` y lista TODAS sus propiedades en `required`
  * (lo exige `strict: true`), y se quitan las palabras clave no soportadas.
  */
-function endurecer(nodo: unknown): unknown {
+export function endurecer(nodo: unknown): unknown {
   if (Array.isArray(nodo)) return nodo.map(endurecer);
   if (!nodo || typeof nodo !== "object") return nodo;
   const obj = { ...(nodo as Record<string, unknown>) };
@@ -334,7 +334,14 @@ function endurecer(nodo: unknown): unknown {
   return obj;
 }
 
-function esquemaJson<T>(esquema: ZodType<T>): Record<string, unknown> {
+/**
+ * EXPORTADA junto con `endurecer` (fase F0 de la migración, fallo L-2 de
+ * docs/PRUEBAS.md): el endurecimiento del JSON Schema solo se validaba de rebote,
+ * cuando una llamada real con `strict: true` fallaba. La fase F3 toca el esquema
+ * más grande del sistema, así que necesita unitarias deterministas. Cambio
+ * aditivo: no altera el comportamiento.
+ */
+export function esquemaJson<T>(esquema: ZodType<T>): Record<string, unknown> {
   // zod v4 trae `z.toJSONSchema`. `io: "output"` describe lo que el modelo debe
   // producir; `unrepresentable: "any"` evita que tipos exóticos rompan la
   // conversión (se quedan como esquema libre).
@@ -805,6 +812,7 @@ export async function completarJson<T>(p: PeticionJson<T>): Promise<RespuestaLLM
     maxTokens,
     temperatura: 0.1,
     signal: p.signal,
+    permitirEnPausa: p.permitirEnPausa,
     prioridad: p.prioridad,
     sinRazonar: p.sinRazonar,
     formato: { type: "json_object" },

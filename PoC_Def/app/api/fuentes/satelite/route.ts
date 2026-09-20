@@ -1,6 +1,7 @@
 // GET /api/fuentes/satelite[?dias=1&canarias=1] · DUEÑO: constructor B.
 // Focos activos reales de NASA FIRMS (VIIRS SNPP + NOAA-20), agrupados a 2 km.
-// Sin FIRMS_MAP_KEY responde 503 con el mensaje exacto de cómo conseguirla.
+// Sin FIRMS_MAP_KEY informa una capacidad opcional desactivada, sin fingir una
+// caída del servicio. Un FIRMS configurado que falle sigue respondiendo 502.
 import { agruparFocos, firmsDisponible, focosEspana } from "@/lib/fuentes/firms";
 
 export const dynamic = "force-dynamic";
@@ -17,14 +18,14 @@ export async function GET(peticion: Request) {
   const dias = num(url, "dias", 1);
   const canarias = url.searchParams.get("canarias") === "1";
   if (!firmsDisponible()) {
-    return Response.json(
-      {
-        error:
-          "FIRMS_MAP_KEY no configurada: no hay detección satelital real. Pídela en https://firms.modaps.eosdis.nasa.gov/api/map_key/ (llega por email en minutos).",
-        disponible: false,
-      },
-      { status: 503 },
-    );
+    return Response.json({
+      disponible: false,
+      opcional: true,
+      detalle: "FIRMS_MAP_KEY no configurada: detección satelital opcional desactivada.",
+      total: 0,
+      grupos: [],
+      focos: [],
+    });
   }
   const t0 = Date.now();
   try {

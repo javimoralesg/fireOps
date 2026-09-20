@@ -57,7 +57,11 @@ export interface ContextoAgente {
   abortSignal: AbortSignal;
 }
 
-export interface Agente {
+/**
+ * Metadatos de una ficha visible en la sala. Una ficha puede representar una
+ * capacidad ejecutable o un agente lógico compuesto por varias capacidades.
+ */
+export interface FichaAgente {
   id: string;
   nombre: string;
   categoria: CategoriaAgente;
@@ -73,6 +77,10 @@ export interface Agente {
   despiertaCon?: TipoEvento[];
   /** Tiempo máximo de un ciclo en segundos (por defecto 90 s los de razonamiento, 30 s el resto). */
   tiempoMaximoSeg?: number;
+}
+
+/** Capacidad que el motor puede ejecutar. */
+export interface Agente extends FichaAgente {
   /** Un ciclo de trabajo. Debe ser idempotente y tolerar fallos externos. */
   ciclo(ctx: ContextoAgente): Promise<ResultadoCiclo | void>;
 }

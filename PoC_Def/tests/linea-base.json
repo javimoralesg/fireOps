@@ -1,0 +1,201 @@
+{
+  "_comentario": [
+    "LÍNEA BASE de la migración de 16 a 5 agentes. Es el 'antes' contra el que se mide cada fase.",
+    "Capturada A MANO contra la instancia de desarrollo del :3000, NO con tests/integracion/90-presupuesto.test.ts:",
+    "ese test empieza por `ejecucionNueva`, que habría borrado el escenario que Javi tenía en marcha.",
+    "Cuando exista una instancia propia para la migración, ejecutar el test y sustituir este fichero por su salida.",
+    "Método: se declaró un foco manual (nace confirmado) en la ejecución en curso y se midió el coste que provocó."
+  ],
+  "medidoEn": "2026-09-19T15:52:00.000Z",
+  "fase": "F0",
+  "capturadaPor": "manual/curl",
+  "proveedor": "helmcode",
+  "modelos": {
+    "razonamiento": "glm5.3-flash",
+    "rapido": "qwen3.6",
+    "vision": "qwen3.6"
+  },
+  "escenario": {
+    "descripcion": "Foco manual confirmado en Navalacruz (40.44, -4.99), ejecución con otro foco de prensa ya presente",
+    "decision": "Ataque inicial — 2 acciones desplegar_unidad, competencia autónoma, ejecutada con éxito",
+    "notaImportante": "Es la vía del ATAQUE INICIAL: el plan lo construye planAtaqueInicial() sin LLM. Una decisión planificada por el modelo cuesta 1-2 llamadas de razonamiento MÁS que esta."
+  },
+  "porDecision": {
+    "acciones": 2,
+    "llamadasTrazaOrigen": 2,
+    "razonamientoTrazaOrigen": 0,
+    "embeddingsTrazaOrigen": 2,
+    "actasTotal": 6,
+    "actasDecision": 4,
+    "actasAccion": 2,
+    "actasConNarrativaIA": 3,
+    "historial": [
+      "propuesta",
+      "aprobada",
+      "ejecutando",
+      "ejecutada"
+    ],
+    "fundamentos": 8
+  },
+  "razonamientoPorAgente": {
+    "_nota": "Desde las trazas de cada agente. La suma (11) cuadra con el contador global de /api/salud.",
+    "coordinador": {
+      "llamadas": 2,
+      "tokensSalida": 1519
+    },
+    "proteccion_poblacion": {
+      "llamadas": 2,
+      "tokensSalida": 7410
+    },
+    "portavoz": {
+      "llamadas": 2,
+      "tokensSalida": 7499
+    },
+    "memoria": {
+      "llamadas": 3,
+      "tokensSalida": 7605
+    },
+    "supervisor": {
+      "llamadas": 1,
+      "tokensSalida": 0
+    },
+    "redactor": {
+      "llamadas": 1,
+      "tokensSalida": 1103
+    }
+  },
+  "delta": {
+    "_nota": "Del proceso entero. razonamiento estaba a CERO justo antes de declarar el foco: el delta es limpio.",
+    "razonamiento": {
+      "llamadas": 11,
+      "tokensEntrada": 21346,
+      "tokensSalida": 24072,
+      "latenciaMediaMs": 24278
+    },
+    "rapido": {
+      "llamadas": 2,
+      "tokensEntrada": 591,
+      "tokensSalida": 6994,
+      "latenciaMediaMs": 22306
+    },
+    "vision": {
+      "llamadas": 17,
+      "tokensEntrada": 12895,
+      "tokensSalida": 12204,
+      "latenciaMediaMs": 7028
+    }
+  },
+  "objetivosPorFase": {
+    "_nota": "Topes que cada puerta debe cumplir. Se aprietan a mano al cerrar cada fase, con el diff a la vista.",
+    "F1": {
+      "actasConNarrativaIA": 1,
+      "razonamientoMemoria": 0,
+      "comentario": "Actas de acción deterministas; memoria solo aprende de denegaciones y fallos"
+    },
+    "F3": {
+      "razonamientoCoordinador": 1,
+      "comentario": "Coordinador, protección y patrones en una sola llamada"
+    },
+    "F5": {
+      "comentario": "Supervisor por muestreo: 0 llamadas en decisiones no irreversibles"
+    }
+  },
+  "avisoDeMetodo": [
+    "COMPROBADO EN VIVO: tocar .env.local REINICIA el proceso de `next dev`. Los contadores de /api/salud se ponen a cero,",
+    "pero la ejecución sobrevive porque se rehidrata desde Supabase con el MISMO id. Es decir: el id de ejecución NO sirve",
+    "para saber si el proceso se reinició; hay que mirar `proceso.tiempoEnPieS` en /api/salud.",
+    "Consecuencia para la migración: una medición de presupuesto NO puede cruzar un reinicio. Leer tiempoEnPieS antes y",
+    "después, y descartar la medida si ha bajado.",
+    "Esta línea base se tomó en una ventana limpia y anterior al reinicio: sigue siendo válida."
+  ],
+  "pendienteDeAclarar": [
+    "Las 3 actas con narrativa de IA deberían sumar llamadas de razonamiento al contador global, pero la suma por trazas (11) ya cuadra con el global (11). O las actas no están registrando su llamada, o quedan atribuidas a la traza de un agente. Hay que pinarlo en F1: si las actas no se contabilizan, el ahorro de F1 se vería en la factura pero no en el contador."
+  ],
+  "verificacionF1": {
+    "_nota": "Medido el 2026-09-19 en una instancia AISLADA (worktree en el commit f50d753, puerto 3100, sin Supabase), con un foco manual confirmado. Mismo escenario de ataque inicial que la línea base.",
+    "actasConNarrativaIA": {
+      "antes": 3,
+      "despues": 1,
+      "objetivoF1": 1,
+      "cumplido": true
+    },
+    "actasDeAccionConIA": {
+      "antes": 2,
+      "despues": 0
+    },
+    "razonamientoDeMemoria": {
+      "antes": 3,
+      "despues": 0,
+      "tokensSalidaAntes": 7605,
+      "tokensSalidaDespues": 0
+    },
+    "revisionLegal": {
+      "alertasLegalesEscritas": true,
+      "motivoTraza": "revision_a_posteriori",
+      "duracionMs": 44343,
+      "comentario": "Confirma la excepción de F1c: 44 s es lo que habría esperado el primer camión si la revisión fuese en línea para el ataque inicial. El agente asesor_legal ya no la repite (sus ciclos tardan 2 ms y no llaman al modelo)."
+    },
+    "supervisor": {
+      "puntuacion": 72,
+      "momento": "a posteriori",
+      "comentario": "Vía rápida del ataque inicial, sin cambios."
+    }
+  },
+  "comparativaFinal": {
+    "_nota": "Medido tras F0-F5 sobre el MISMO escenario de la línea base: ataque inicial de 2 acciones. Solo se comparan cifras ATRIBUIDAS a la decisión, que es lo único riguroso.",
+    "medidoEn": "2026-09-19T19:36:03Z",
+    "porDecision": {
+      "actasConNarrativaIA": {
+        "antes": 3,
+        "ahora": 0,
+        "medidoPor": "tests/integracion/90-presupuesto.test.ts"
+      },
+      "actasTotal": {
+        "antes": 6,
+        "ahora": 5
+      },
+      "razonamientoEnElCaminoCritico": {
+        "antes": 11,
+        "ahora": 1,
+        "nota": "llamadas consumidas desde la ejecución nueva hasta que la decisión queda ejecutada"
+      },
+      "tokensSalidaEnElCaminoCritico": {
+        "antes": 24072,
+        "ahora": 535
+      }
+    },
+    "porAgente": {
+      "memoria": {
+        "antes": "3 llamadas / 7.605 tokens",
+        "ahora": "0",
+        "verificadoEn": "F1"
+      },
+      "proteccion_poblacion": {
+        "antes": "2 llamadas / 7.410 tokens por 2 pueblos",
+        "ahora": "1 llamada / 2.423 tokens por 4 pueblos",
+        "verificadoEn": "F3"
+      },
+      "supervisor": {
+        "antes": "bloqueante en todas",
+        "ahora": "bloqueante solo si va a una persona, es irreversible, hay alerta legal o riesgo >= umbral",
+        "verificadoEn": "F5"
+      },
+      "coordinador": {
+        "antes": "2 llamadas",
+        "ahora": "2 llamadas",
+        "nota": "sin cambios: su fusión con protección depende de la competencia por acción"
+      },
+      "portavoz": {
+        "nota": "sin cambios"
+      },
+      "redactor": {
+        "nota": "sin cambios"
+      }
+    },
+    "loQueNoSePuedeAfirmar": [
+      "El delta del contador GLOBAL de /api/salud no es comparable entre ventanas: en un sistema vivo el satélite y la prensa siguen descubriendo focos y el gasto sigue subiendo aunque la decisión medida ya haya terminado. Medido: 42 -> 83 llamadas de razonamiento en 9 minutos con varios focos en marcha.",
+      "Por eso la cifra que vale es la ATRIBUIDA por decisión (cadena de auditoría y trazas por agente), no el delta global. El test lo registra, pero como contexto.",
+      "La comparación de `vision` no vale: la medición se hizo con las cámaras apagadas por el simulacro y la línea base con ellas encendidas."
+    ]
+  }
+}

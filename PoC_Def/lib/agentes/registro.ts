@@ -1,15 +1,13 @@
 // =====================================================================
 // ATALAYA INCENDIOS · Registro de agentes
 // ---------------------------------------------------------------------
-// Propósito: reunir los ocho índices de agentes (que rellenan los demás
-// constructores) en una sola lista y crear su EstadoAgenteApp para la
-// pantalla. DUEÑO: constructor A. Sin dependencias externas.
-// Los índices existen siempre (arrays vacíos al principio), así que este
-// import estático nunca tumba el servidor de desarrollo.
+// El inventario visible tiene cinco agentes lógicos. Las 16 conductas
+// históricas siguen siendo capacidades ejecutables y se seleccionan aparte:
+// una ficha no finge tener un `ciclo` ni reúne capacidades en un mega-prompt.
 // =====================================================================
 
 import type { EstadoAgenteApp } from "../dominio/tipos";
-import type { Agente } from "../motor/contratos";
+import type { Agente, FichaAgente } from "../motor/contratos";
 import type { Estado } from "../motor/estado";
 
 import { agentesAnalisis } from "./analisis";
@@ -17,12 +15,13 @@ import { agentesAprendizaje } from "./aprendizaje";
 import { agentesComunicacion } from "./comunicacion";
 import { agentesEjecucion } from "./ejecucion";
 import { agentesInformes } from "./informes";
+import { AGENTES_LOGICOS, obtenerTareasEjecutables, type AgenteLogico, type TareaEjecutableAgente } from "./logicos";
 import { agentesPercepcion } from "./percepcion";
 import { agentesPlanificacion } from "./planificacion";
 import { agentesSupervision } from "./supervision";
+import { leerTopologiaAgentes, seleccionarTopologia, type TopologiaAgentes } from "./migracion/topologia";
 
-/** Todos los agentes de la aplicación, sin duplicados por id. */
-export function todosLosAgentes(): Agente[] {
+function capacidadesLegacy(): Agente[] {
   const bruto: Agente[] = [
     ...agentesPercepcion,
     ...agentesAnalisis,
@@ -41,8 +40,43 @@ export function todosLosAgentes(): Agente[] {
   return [...porId.values()];
 }
 
+/** Los cinco agentes canónicos que se muestran tras el corte de registro. */
+export function todosLosAgentes(): AgenteLogico[] {
+  return [...AGENTES_LOGICOS];
+}
+
+/** Las 16 conductas preexistentes; no son 16 fichas en la topología five. */
+export function todasLasCapacidades(): Agente[] {
+  return capacidadesLegacy();
+}
+
+export interface RegistroSeleccionado {
+  topologia: TopologiaAgentes;
+  autoridad: "legacy" | "five";
+  ejecutarSombra: boolean;
+  /** Fichas que deben existir en Estado.agentes. */
+  fichas: readonly FichaAgente[];
+  /** Trabajo real, conservando conjuntamente padre y capacidad. */
+  tareas: readonly TareaEjecutableAgente[];
+}
+
+/**
+ * Plan único para conectar registro y orquestador sin inferir identidades.
+ * `legacy` y `shadow` conservan 16 fichas mientras la autoridad sea legacy;
+ * `five` publica cinco. En los tres modos las 16 tareas siguen disponibles.
+ */
+export function seleccionarRegistroAgentes(topologia: TopologiaAgentes = leerTopologiaAgentes()): RegistroSeleccionado {
+  const seleccion = seleccionarTopologia(topologia);
+  return Object.freeze({
+    topologia,
+    ...seleccion,
+    fichas: Object.freeze(seleccion.autoridad === "five" ? todosLosAgentes() : todasLasCapacidades()),
+    tareas: obtenerTareasEjecutables(),
+  });
+}
+
 /** Ficha inicial del agente para la sala de mando. */
-export function fichaDe(agente: Agente): EstadoAgenteApp {
+export function fichaDe(agente: FichaAgente): EstadoAgenteApp {
   return {
     id: agente.id,
     nombre: agente.nombre,
@@ -63,13 +97,26 @@ export function fichaDe(agente: Agente): EstadoAgenteApp {
  * Conserva pausado/controlHumano/contadores si el agente ya estaba (recarga
  * en caliente o reanudación de una ejecución).
  */
-export function registrarAgentes(estado: Estado): Agente[] {
-  const agentes = todosLosAgentes();
-  for (const agente of agentes) {
+export function registrarAgentes(estado: Estado, topologia: TopologiaAgentes = leerTopologiaAgentes()): Agente[] {
+  const seleccion = seleccionarRegistroAgentes(topologia);
+  const idsSeleccionados = new Set(seleccion.fichas.map((ficha) => ficha.id));
+  const idsGestionados = new Set([
+    ...todosLosAgentes().map((agente) => agente.id),
+    ...todasLasCapacidades().map((capacidad) => capacidad.id),
+  ]);
+
+  // Un cambio de topología en caliente no puede dejar 5 + 16 fichas mezcladas.
+  for (const id of idsGestionados) {
+    if (!idsSeleccionados.has(id)) estado.eliminar(estado.agentes, id);
+  }
+
+  for (const agente of seleccion.fichas) {
     const previo = estado.agentes.get(agente.id);
     const ficha = fichaDe(agente);
     estado.agentes.set(agente.id, previo ? { ...ficha, pausado: previo.pausado, controlHumano: previo.controlHumano, contadores: previo.contadores, ultimaActividad: previo.ultimaActividad, estado: previo.pausado ? "pausado" : ficha.estado } : ficha);
   }
   estado.tocar();
-  return agentes;
+  // Adaptador temporal para el orquestador actual. El integrador consumirá las
+  // tareas completas para atribuir cada ciclo al padre en modo five.
+  return seleccion.tareas.map((tarea) => tarea.capacidad);
 }

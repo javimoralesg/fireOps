@@ -87,13 +87,19 @@ export default function VigilanciaMovil() {
 
   // --- identidad del dispositivo -------------------------------------
   useEffect(() => {
-    const id = idDispositivo();
-    setDispositivoId(id);
-    try {
-      setNombre(localStorage.getItem(CLAVE_NOMBRE) || "");
-    } catch {
-      /* sin localStorage: el nombre se pide cada vez */
-    }
+    let activo = true;
+    queueMicrotask(() => {
+      if (!activo) return;
+      setDispositivoId(idDispositivo());
+      try {
+        setNombre(localStorage.getItem(CLAVE_NOMBRE) || "");
+      } catch {
+        /* sin localStorage: el nombre se pide cada vez */
+      }
+    });
+    return () => {
+      activo = false;
+    };
   }, []);
 
   const guardarNombre = (v: string) => {
@@ -108,12 +114,15 @@ export default function VigilanciaMovil() {
   // --- ubicación ------------------------------------------------------
   useEffect(() => {
     if (typeof window !== "undefined" && !window.isSecureContext) {
-      setErrorGps("Esta página se ha abierto por HTTP: el navegador bloquea el GPS y la cámara. Abre el enlace HTTPS del QR de la sala (túnel o Railway).");
-      return;
+      const temporizador = setTimeout(
+        () => setErrorGps("Esta página se ha abierto por HTTP: el navegador bloquea el GPS y la cámara. Abre el enlace HTTPS del QR de la sala (túnel o Railway)."),
+        0,
+      );
+      return () => clearTimeout(temporizador);
     }
     if (!("geolocation" in navigator)) {
-      setErrorGps("Este navegador no da la ubicación.");
-      return;
+      const temporizador = setTimeout(() => setErrorGps("Este navegador no da la ubicación."), 0);
+      return () => clearTimeout(temporizador);
     }
     const id = navigator.geolocation.watchPosition(
       (p) => {

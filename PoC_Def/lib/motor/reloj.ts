@@ -31,7 +31,6 @@ interface AnclaReloj {
  * relojes distintos y los saltos de "+1 h" se perderían.
  */
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaAnclasReloj: WeakMap<Estado, AnclaReloj> | undefined;
 }
 

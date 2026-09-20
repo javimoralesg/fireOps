@@ -27,6 +27,7 @@ export async function GET(peticion: NextRequest): Promise<Response> {
   let latido: ReturnType<typeof setInterval> | undefined;
   let pendiente: ReturnType<typeof setTimeout> | undefined;
   let ultimaVersion = -1;
+  let ultimaEjecucionId = "";
   let ultimoEnvio = 0;
   let suscritoA: Estado | undefined;
 
@@ -53,13 +54,15 @@ export async function GET(peticion: NextRequest): Promise<Response> {
       const enviarEstado = () => {
         const estado = obtenerEstado();
         ultimaVersion = estado.version;
+        ultimaEjecucionId = estado.ejecucion.id;
         ultimoEnvio = Date.now();
         enviarTexto("estado", estado.snapshotTexto());
       };
 
       /** Envía ya si ha pasado la ventana; si no, programa el envío de la última versión. */
       const programarEnvio = () => {
-        if (cerrado || obtenerEstado().version === ultimaVersion) return;
+        const actual = obtenerEstado();
+        if (cerrado || (actual.ejecucion.id === ultimaEjecucionId && actual.version === ultimaVersion)) return;
         const resto = ESPERA_MS - (Date.now() - ultimoEnvio);
         if (resto <= 0) {
           if (pendiente) { clearTimeout(pendiente); pendiente = undefined; }
@@ -69,7 +72,8 @@ export async function GET(peticion: NextRequest): Promise<Response> {
         if (pendiente) return; // ya hay una ventana abierta: saldrá la versión final
         pendiente = setTimeout(() => {
           pendiente = undefined;
-          if (!cerrado && obtenerEstado().version !== ultimaVersion) enviarEstado();
+          const actual = obtenerEstado();
+          if (!cerrado && (actual.ejecucion.id !== ultimaEjecucionId || actual.version !== ultimaVersion)) enviarEstado();
         }, resto);
       };
 

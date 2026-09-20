@@ -27,8 +27,14 @@ import { describirFueraEspana, enEspana } from "../../dominio/espana";
 /** Radio (km) dentro del cual dos avisos del mismo canal se consideran el mismo. */
 const KM_DUPLICADA = 2;
 
-/** Familia de una fuente: dos fuentes de la misma familia no se confirman entre sí. */
-function familiaCanal(canal: string): string {
+/**
+ * Familia de una fuente: dos fuentes de la misma familia no se confirman entre sí.
+ * EXPORTADA (fase F0 de la migración, fallo L-1 de docs/PRUEBAS.md): implementa una
+ * de las reglas de negocio centrales —"una noticia no confirma otra noticia"— y sin
+ * `export` no se podía probar de forma aislada. La prueba vive en
+ * tests/unit/verificador.test.ts. Cambio aditivo: no altera el comportamiento.
+ */
+export function familiaCanal(canal: string): string {
   if (canal === "prensa" || canal === "rrss") return "prensa";
   if (canal === "camara" || canal === "satelite" || canal === "sensor") return "observacion";
   if (canal === "manual") return "humano";
@@ -279,15 +285,22 @@ async function verificarUna(
   const suficiente = extraccionFiable || canalFiable || corroboran.length >= 1;
 
   if (!suficiente) {
+    // Un extractor que descarta explícitamente el incendio no debe ser
+    // contradicho por una segunda inferencia ni abrir un foco durante esa
+    // carrera. El aviso permanece auditable como ruido y puede corroborarse
+    // después mediante una nueva observación independiente.
+    if (obs.extraccion?.esIncendio === false) {
+      return {
+        impacto: "ruido",
+        verificacion: `El extractor descarta que sea un incendio (${obs.extraccion.resumen ?? "sin resumen"}).`,
+      };
+    }
     // 4. Duda: se pregunta al modelo rápido con el vecindario como contexto.
     const juicio = await consultarModelo(obs, corroboran, activos, ctx.abortSignal);
     if (!juicio) {
       return {
-        impacto: obs.extraccion?.esIncendio === false ? "ruido" : "registrada",
-        verificacion:
-          obs.extraccion?.esIncendio === false
-            ? `El extractor descarta que sea un incendio (${obs.extraccion?.resumen ?? "sin resumen"}).`
-            : `Señal débil por ${obs.canal} (fiabilidad ${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)}) y sin corroboración: queda registrada a la espera de más fuentes.`,
+        impacto: "registrada",
+        verificacion: `Señal débil por ${obs.canal} (fiabilidad ${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)}) y sin corroboración: queda registrada a la espera de más fuentes.`,
       };
     }
     if (juicio.impacto !== "nuevo_foco") {

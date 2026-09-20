@@ -10,9 +10,13 @@ respuesta: mandar medios por carreteras reales, avisar a los pueblos por SMS, pu
 comunicados, pedir medios aéreos. Manda una persona: una política define qué puede hacer la
 máquina sola y qué tiene que aprobar un humano, y todo lo que ocurre queda escrito.
 
-Nada está simulado. Los focos, la meteorología, las carreteras, los parques de bomberos, los
-mensajes y las llamadas son reales. Cuando un servicio falla, se ve el fallo en pantalla en lugar
-de un resultado inventado.
+Las fuentes y los servicios externos son reales cuando están configurados: FIRMS, Open-Meteo,
+OpenStreetMap, OSRM, cámaras, prensa y los canales de HappyRobot. Atalaya no convierte el fallo de
+un proveedor en un éxito inventado; lo muestra en la sala y lo deja en la auditoría. Para probar el
+circuito completo de forma segura también admite un **escenario ficticio de demostración**: foco
+declarado a mano, reloj acelerado o viento forzado y destinos controlados. En las pruebas aisladas
+los efectos externos se interceptan expresamente para que ningún aviso salga a un destinatario
+real.
 
 Al final de este documento hay [capturas de todo lo que se cuenta aquí](#capturas).
 
@@ -61,26 +65,36 @@ El reloj va acelerado: doce minutos de mundo por cada minuto real, y se puede pa
 Como la meteorología se lee de la previsión horaria real según esa hora, al acelerar el viento gira
 de verdad, y ese giro obliga a recalcular el fuego y a replantear el despliegue.
 
-Son dieciséis agentes:
+La sala presenta **cinco agentes lógicos**, sin perder la especialización interna. Sus **dieciséis
+capacidades ejecutables** conservan cadencia, eventos, timeout y concurrencia propios; no se han
+fundido en cinco prompts enormes.
 
-| Agente | Qué hace |
+| Agente lógico | Capacidades que coordina |
 |---|---|
-| Vigilancia satelital | Focos térmicos de la NASA, agrupados y limpios de fuentes fijas |
-| Vigía de cámaras | Mira cámaras de la DGT, de Madrid y de móviles buscando humo o llamas |
-| Prensa y redes | Noticias y publicaciones: extrae el incendio y lo sitúa |
-| Centralita | Recoge los avisos de personas: llamada, Telegram, formulario |
-| Meteorólogo | Viento, temperatura y humedad por foco, índice de peligro y avisos oficiales |
-| Verificador | Cruza fuentes, descarta duplicados y decide si se declara un foco |
-| Analista de propagación | Avance del fuego, predicción, llegada a cada pueblo y cierre de perímetro |
-| Analista de patrones | Varios focos cerca: mismo incendio, serie sospechosa o convergencia |
-| Coordinador de medios | Plan de medios con tiempos de carretera reales; replanifica cuando cambia algo |
-| Protección de población | Pueblo a pueblo: avisar, confinar o evacuar, con el mensaje redactado |
-| Asesor legal | Fundamentos y alertas legales; una alerta obliga a decisión humana |
-| Despachador | Mueve cada unidad por su ruta, hasta el fuego y de vuelta |
-| Portavoz | Comunicados oficiales y sus traducciones |
-| Supervisor de calidad | Puntúa cada decisión antes de ejecutarla y escala lo que no convence |
-| Memoria y aprendizaje | Convierte las correcciones humanas en lecciones |
-| Redactor de informes | Actas y partes de situación |
+| Observador | Vigía de cámaras, satélite, prensa y redes, centralita, meteorólogo y verificador |
+| Planificador operativo | Propagación, patrones, coordinación de medios, protección de población y despacho |
+| Comunicador | Portavoz y comunicaciones públicas |
+| Guardián | Asesoría legal y supervisión de calidad |
+| Cronista | Memoria y aprendizaje, actas e informes |
+
+De las dieciséis capacidades, **doce razonan con modelos** —incluidos los papeles rápido, visión y
+RAG— y **cuatro son deterministas**: satélite, meteorología, propagación y despacho. Estas últimas
+leen una fuente o aplican una fórmula y no consumen tokens. Los identificadores históricos siguen
+funcionando como alias, de modo que las URL, las trazas y la auditoría anteriores al cambio no se
+rompen.
+
+### Topologías de agentes
+
+`AGENT_TOPOLOGY` permite verificar el corte y volver atrás sin cambiar código:
+
+| Valor | Fichas visibles y autoridad | Uso |
+|---|---|---|
+| `legacy` | Las 16 fichas históricas | Rollback y comparación de referencia |
+| `shadow` | Autoridad de `legacy`; el plan de cinco se ejecuta sobre una copia aislada, sin efectos | Comparación diferencial segura |
+| `five` | Las 5 fichas lógicas, con las 16 capacidades por debajo | Modo activo y valor por defecto |
+
+La pausa, el control humano y los contadores se aplican al agente lógico; cada ciclo continúa
+registrando qué capacidad concreta trabajó y con qué modelo.
 
 ## Estructura
 
@@ -103,7 +117,7 @@ Son dieciséis agentes:
 ├── lib/
 │   ├── dominio/          tipos compartidos, política y contorno de España
 │   ├── motor/            orquestador, estado, reloj, trazas, actas, enriquecimiento
-│   ├── agentes/          los dieciséis agentes, por cometido
+│   ├── agentes/          cinco fichas lógicas y dieciséis capacidades ejecutables
 │   ├── fuentes/          servicios reales: meteorología, mapas, rutas, satélite, cámaras, prensa
 │   ├── simulacion/       propagación, contención, fusión de focos, geometría
 │   ├── ia/               llamadas al modelo y embeddings
@@ -154,7 +168,8 @@ añade capacidades, y lo que falte aparece apagado en vez de romper nada.
 | IA | `LLM_PROVEEDOR`, `HELMCODE_API_KEY`, `LLM_MODELO_RAZONAMIENTO`, `LLM_MODELO_RAPIDO`, `LLM_MODELO_VISION` | no razona nadie |
 | Embeddings | `EMBEDDINGS_PROVEEDOR`, `EMBEDDINGS_MODELO`, `EMBEDDINGS_DIMENSIONES` | no hay buscador de normativa ni lecciones |
 | Base de datos | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PERSISTIR` | todo vive en memoria y se pierde al reiniciar |
-| SMS y 112 | `HAPPYROBOT_API_KEY`, `HAPPYROBOT_API_BASE`, `HAPPYROBOT_ENVIRONMENT`, `HAPPYROBOT_WEBHOOK_SECRET`, `HAPPYROBOT_WORKFLOW_SLUG_SMS`, `HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE`, `HAPPYROBOT_NUMERO_ENTRANTE`, `TELEFONO_AVISOS_SMS` | no hay avisos a los pueblos ni teléfono de emergencias |
+| SMS, voz, email y 112 | `HAPPYROBOT_API_KEY`, `HAPPYROBOT_API_BASE`, `HAPPYROBOT_ENVIRONMENT`, `HAPPYROBOT_WEBHOOK_SECRET`, `HAPPYROBOT_WORKFLOW_SLUG_VOZ`, `HAPPYROBOT_WORKFLOW_SLUG_SMS`, `HAPPYROBOT_WORKFLOW_SLUG_EMAIL`, `HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE`, `HAPPYROBOT_NUMERO_ENTRANTE`, `HAPPYROBOT_WEB_CALL_URL`, `TELEFONO_AVISOS_SMS` | no hay comunicaciones externas ni teléfono de emergencias |
+| Topología y demo segura | `AGENT_TOPOLOGY`, `DESTINO_DEMO`, `EMAIL_DEMO`, `ATALAYA_EFECTOS_INTERCEPTADOS` | se usa `five`; no hay destinos controlados y la puerta aislada se niega a arrancar |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_CHAT_ID_DEMO` | no hay canal de mensajería |
 | Detección | `FIRMS_MAP_KEY`, `AEMET_API_KEY`, `EXA_API_KEY` | no hay satélite, avisos oficiales ni buscador de noticias |
 | Mundo | `ACELERACION_TIEMPO`, `TICK_MS`, `CAMARAS_INTERVALO_SEG` | valores por defecto: ×12, 5 s y 20 s |
@@ -186,14 +201,17 @@ resultado, y que el QR de la sala funcione.
 Hace falta una organización en `https://platform.eu.happyrobot.ai` con una clave de API
 (**Settings → API keys**; empieza por `sk_live_`) y un número de teléfono comprado en
 **Phone numbers**: es el que atiende las llamadas y desde el que salen los SMS. En `.env.local`
-van `HAPPYROBOT_API_KEY`, un `HAPPYROBOT_WEBHOOK_SECRET` inventado (`openssl rand -hex 24`) y
-`TELEFONO_AVISOS_SMS`, el móvil en formato `+34…` que recibirá los SMS del agente. Los slugs de los
-workflows y el número no se rellenan a mano: los escribe el script que los monta y publica.
+van `HAPPYROBOT_API_KEY`, un `HAPPYROBOT_WEBHOOK_SECRET` inventado (`openssl rand -hex 24`),
+`DESTINO_DEMO`/`TELEFONO_AVISOS_SMS` en formato `+34…` y `EMAIL_DEMO`. Son destinos controlados:
+no deben contener el teléfono o el correo de un ayuntamiento real. Los slugs y el número entrante
+no se rellenan a mano: los escribe el script que monta y publica los workflows.
 
 ```bash
 node scripts/happyrobot-workflows.mjs sms        # monta y publica «Atalaya · SMS saliente» → HAPPYROBOT_WORKFLOW_SLUG_SMS
 npm run dev:movil                                # con la clave puesta, al abrir el túnel crea y sincroniza «Atalaya · 112 entrante»
 node scripts/happyrobot-workflows.mjs entrante   # lo mismo a mano, con el túnel abierto → HAPPYROBOT_WORKFLOW_SLUG_ENTRANTE y HAPPYROBOT_NUMERO_ENTRANTE
+node scripts/happyrobot-workflows.mjs configurar # configura voz y email, además de los canales anteriores
+node scripts/happyrobot-workflows.mjs publicar   # publica voz/email y guarda sus slugs
 node scripts/happyrobot-workflows.mjs estado     # qué workflows hay en la plataforma y cuáles están publicados
 node scripts/happyrobot-workflows.mjs sms-prueba +34600000000 "Prueba"   # manda un SMS de verdad y enseña el run
 ```
@@ -214,7 +232,40 @@ npm test                   # las tres baterías
 npm run test:unit          # deterministas, sin red, rápidas
 npm run test:integracion   # necesita un servidor vivo y claves reales
 npm run test:ui            # recorre las pantallas con un navegador
+npm run test:tipos         # comprueba los tipos de tests y configuración de Vitest
 ```
+
+#### Puertas de convergencia 16 → 5
+
+La migración se valida en procesos limpios y en este orden:
+
+```bash
+AGENT_TOPOLOGY=legacy npm run test:unit
+AGENT_TOPOLOGY=five npm run test:unit
+AGENT_TOPOLOGY=five npm run test:tipos
+AGENT_TOPOLOGY=five npm run build
+```
+
+Las unitarias cubren el inventario 5/16, los alias, la pausa por padre, el aislamiento de
+`shadow` y el replay diferencial semántico. El corte no se considera completo solo porque ambos
+comandos terminen: el comparador debe conservar decisiones, acciones y atribución lógica.
+
+La puerta operativa se ejecuta contra un servidor **dedicado**, con fuentes automáticas apagadas,
+credenciales de salida ausentes y efectos interceptados:
+
+```bash
+# Terminal 1: entorno aislado; no reutilizar un servidor operativo
+AGENT_TOPOLOGY=five ATALAYA_EFECTOS_INTERCEPTADOS=1 npm run dev -- -p 3100
+
+# Terminal 2
+ATALAYA_URL=http://localhost:3100 AGENT_TOPOLOGY=five \
+  ATALAYA_EFECTOS_INTERCEPTADOS=1 npm run test:integracion -- \
+  tests/integracion/05-topologia-five-aislada.test.ts
+```
+
+Esta prueba exige `ATALAYA_EFECTOS_INTERCEPTADOS=1`, crea un foco ficticio y recorre
+enriquecimiento, decisión, acción y auditoría. La variable es una **compuerta de seguridad**, no
+un simulador de respuestas: el servidor dedicado debe arrancar además sin credenciales operativas.
 
 ### Despliegue
 
@@ -225,9 +276,10 @@ Al cambiar de dominio hay que fijar `PUBLIC_BASE_URL` y volver a apuntar los web
 
 ## Conviene saber
 
-- **Los envíos son de verdad.** El teléfono y el correo de cada ayuntamiento salen de
-  OpenStreetMap, así que un aviso puede acabar en el ayuntamiento real. Antes de una demostración,
-  conviene mirar los destinos.
+- **Los envíos son de verdad cuando el canal está configurado.** Para una demostración usa
+  `DESTINO_DEMO` y `EMAIL_DEMO` controlados; para la puerta integral, un servidor dedicado sin
+  credenciales operativas y `ATALAYA_EFECTOS_INTERCEPTADOS=1`. Nunca pruebes sobre los datos de
+  contacto reales obtenidos de OpenStreetMap.
 - **Un solo proceso.** Al reiniciar se abre una ejecución nueva, salvo que la persistencia esté
   activada, y no se pueden levantar dos servidores de desarrollo sobre la misma carpeta.
 - **La voz saliente está desactivada** porque el número contratado no puede llamar a España: los
@@ -341,10 +393,6 @@ El portal público, con los incendios activos y las dos formas de dar aviso.
 <img src="capturas/grafo-agentes.jpg" width="820" alt="Flujo de agentes">
 
 Por dónde va cada incidencia y qué agente le da el relevo a cuál.
-
-<img src="capturas/agentes.jpg" width="820" alt="Equipo de agentes">
-
-El equipo al completo: cada agente se puede inspeccionar, pausar o asumir.
 
 <img src="capturas/grafo-conocimiento.jpg" width="820" alt="Grafo de conocimiento">
 

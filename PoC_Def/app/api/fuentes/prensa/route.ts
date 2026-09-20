@@ -22,7 +22,7 @@ export async function GET(peticion: Request) {
   const [rss, posts, exa] = await Promise.allSettled([
     noticiasGoogle(q, max),
     buscarPosts(q, { limite: max }),
-    exaDisponible() ? buscarNoticias(q, { horas: 48, max }) : Promise.reject(new Error("EXA_API_KEY no configurada")),
+    exaDisponible() ? buscarNoticias(q, { horas: 48, max }) : Promise.resolve(undefined),
   ]);
 
   const desplegar = <T,>(r: PromiseSettledResult<T[]>) =>
@@ -32,6 +32,9 @@ export async function GET(peticion: Request) {
     consulta: q,
     googleNews: desplegar(rss),
     bluesky: desplegar(posts),
-    exa: desplegar(exa),
+    exa:
+      exaDisponible()
+        ? desplegar(exa as PromiseSettledResult<Awaited<ReturnType<typeof buscarNoticias>>>)
+        : { ok: true, disponible: false, opcional: true, detalle: "EXA_API_KEY no configurada: se usa Google News RSS", items: [] },
   });
 }

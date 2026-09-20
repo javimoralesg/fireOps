@@ -26,7 +26,7 @@ import type { Decision, Snapshot } from "@/lib/dominio/tipos";
 import { useEstado } from "@/lib/cliente/useEstado";
 import { fechaHora, hora, recortar } from "@/lib/cliente/formato";
 import { Boton } from "@/components/ui/Boton";
-import { Insignia, TEXTO_ESTADO_DECISION, tonoEstadoDecision } from "@/components/ui/Insignia";
+import { Insignia, TEXTO_ESTADO_DECISION } from "@/components/ui/Insignia";
 import { Vacio } from "@/components/ui/Vacio";
 import { Marca } from "@/components/marca/Logo";
 import { SelectorTema } from "@/components/marca/SelectorTema";

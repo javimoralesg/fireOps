@@ -186,6 +186,7 @@ describe("textoDeAviso / extraccionDeterminista · sin modelo, solo lo dictado",
     // Sin municipio ni lugar la fiabilidad baja; si no habla de fuego, casi nula.
     expect(extraccionDeterminista({ queVe: "humo", tipo: "humo" }).fiabilidad).toBe(0.4);
     expect(extraccionDeterminista({ queVe: "un coche mal aparcado", tipo: "otro" })).toMatchObject({ esIncendio: false, fiabilidad: 0.2 });
+    expect(extraccionDeterminista({ queVe: "humo, creo que es un coche", tipo: "humo", lugar: "calle Núñez de Balboa", municipio: "Alcalá de Henares" })).toMatchObject({ esIncendio: false, fiabilidad: 0.2 });
   });
 });
 
@@ -201,10 +202,11 @@ describe("mensajeParaLocutor · lo que el agente le dice a la persona", () => {
     expect(mensajeParaLocutor({ geolocalizada: true, enAnalisis: true })).toMatch(/analizando ahora mismo/);
     for (const impacto of ["nuevo_foco", "registrada", undefined] as const) expect(mensajeParaLocutor({ impacto, geolocalizada: true })).toMatch(/Aléjese del humo/);
   });
-  it("sin localización pide el pueblo o la carretera; con personas en peligro, que los medios ya salen", () => {
+  it("sin localización pide el pueblo o la carretera; con personas en peligro, prioriza sin inventar un despacho", () => {
     expect(mensajeParaLocutor({ geolocalizada: false })).toMatch(/No he podido situar el lugar/);
     expect(mensajeParaLocutor({ geolocalizada: true })).not.toMatch(/No he podido situar/);
-    expect(mensajeParaLocutor({ geolocalizada: true, personasEnRiesgo: true })).toMatch(/^Los medios ya salen/);
+    expect(mensajeParaLocutor({ geolocalizada: true, personasEnRiesgo: true })).toMatch(/^He marcado el aviso como prioritario/);
+    expect(mensajeParaLocutor({ impacto: "nuevo_foco", geolocalizada: true })).not.toMatch(/medios|en camino/);
   });
 });
 
@@ -478,6 +480,21 @@ describe("preprocesado de la dirección dictada · lo que el reconocimiento de v
     expect((await situarLugar({})).precision).toBe("ninguna");
   });
 
+  it("no acepta una calle homónima de otro municipio", async () => {
+    const { situarLugar } = await import("@/lib/happyrobot/entrante");
+    dobles.geocodificar.mockImplementation(async (q: string) => {
+      if (q.startsWith("Calle Núñez de Balboa 95, Madrid")) {
+        return { punto: { lat: 40.4880381, lon: -3.3627925 }, nombre: "Calle Núñez de Balboa", municipio: "Alcalá de Henares", provincia: "Madrid", url: "" };
+      }
+      if (q === "Madrid, España") return { punto: { lat: 40.4168, lon: -3.7038 }, nombre: "Madrid", municipio: "Madrid", provincia: "Madrid", url: "" };
+      return undefined;
+    });
+    const r = await situarLugar({ lugar: "Calle Núñez de Balboa 95", municipio: "Madrid" }, { conIA: false });
+    expect(r).toMatchObject({ encontrado: true, precision: "municipio", municipio: "Madrid" });
+    expect(r).not.toMatchObject({ lat: 40.4880381, lon: -3.3627925 });
+    expect(r.mensajeParaLocutor).toMatch(/necesito una referencia/i);
+  });
+
   it("registrar_aviso con lat/lon confirmados por situar_lugar no vuelve a geocodificar", async () => {
     const r = avisoDesdeCuerpo({ run_id: "run-8", municipio: "Madrid", lugar: "Avenida Complutense 30", que_ve: "llamas", lat: "40.45287", lon: "-3.72556" });
     const res = await registrarAvisoDeLlamada(r.aviso!, { esperaMs: 2000 });
@@ -641,7 +658,7 @@ describe("frases para la voz · pulidas tras la llamada de las 18:46", () => {
     expect(esAvisoUrbano({ queVe: "hay gente encerrada en la facultad", lugar: "Avenida Complutense 30" })).toBe(true);
     expect(esAvisoUrbano({ queVe: "columna de humo en el pinar", lugar: "N-403 km 62" })).toBe(false);
     const urbano = mensajeParaLocutor({ impacto: "nuevo_foco", foco: { nombre: "Incendio de Madrid", municipio: "Madrid" }, geolocalizada: true, urbano: true });
-    expect(urbano).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Madrid y está enviando medios. Aléjese del humo y del edificio, y no vuelva a entrar.");
+    expect(urbano).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Madrid y lo está verificando. Aléjese del humo y del edificio, y no vuelva a entrar.");
     expect(urbano).not.toMatch(/ladera|barranco/);
     const monte = mensajeParaLocutor({ impacto: "nuevo_foco", foco: { nombre: "Incendio de Navalacruz", municipio: "Navalacruz" }, geolocalizada: true });
     expect(monte).toMatch(/nunca ladera arriba/);
@@ -652,6 +669,30 @@ describe("frases para la voz · pulidas tras la llamada de las 18:46", () => {
   it("registrar_aviso usa el consejo urbano cuando el aviso habla de un edificio", async () => {
     const r = await registrarAvisoDeLlamada({ ...AVISO, runId: "run-urbano", queVe: "un incendio en la escuela", lugar: "Avenida Complutense 30" }, { esperaMs: 2000 });
     expect(r.mensajeParaLocutor).toMatch(/Aléjese del humo y del edificio/);
+  });
+
+  it("reabre el ruido provisional si la extracción semántica confirma el incendio", async () => {
+    dobles.demoraMs = 20;
+    dobles.verificar.mockImplementation(async (id: string) => {
+      const e = estado();
+      const obs = e.observaciones.get(id);
+      if (!obs || obs.impacto) return undefined;
+      if (obs.extraccion?.esIncendio === false) {
+        e.actualizar(e.observaciones, id, { impacto: "ruido", verificacion: "El extractor determinista lo descarta" });
+        return { impacto: "ruido" };
+      }
+      const inc = { id: "inc-revisado", nombre: "Incendio de Madrid", municipio: "Madrid", estado: "detectado", confianza: 0.8, centro: obs.punto } as unknown as Incendio;
+      e.guardar(e.incendios, inc);
+      e.actualizar(e.observaciones, id, { impacto: "nuevo_foco", incendioId: inc.id, verificacion: "Foco nuevo declarado tras enriquecer" });
+      return { impacto: "nuevo_foco", incendioId: inc.id };
+    });
+
+    const aviso = { runId: "run-nunez", telefono: "+34600000000", municipio: "Madrid", lugar: "Calle Núñez de Balboa 95", queVe: "fuego muy grande", tipo: "llamas" as const, punto: { lat: 40.43, lon: -3.68 } };
+    const inicial = await registrarAvisoDeLlamada(aviso, { esperaMs: 0 });
+    expect(inicial.impacto).toBe("ruido");
+    await dormir(40);
+    expect(observacionDeLlamada(estado(), "run-nunez")).toMatchObject({ impacto: "nuevo_foco", incendioId: "inc-revisado", extraccion: { esIncendio: true } });
+    expect(dobles.verificar).toHaveBeenCalledTimes(2);
   });
 
   it("la transcripción que llega en JSON al colgar se guarda legible en la ficha", async () => {
@@ -703,6 +744,6 @@ describe("comportamiento revisado con las seis llamadas de 19:13-19:51", () => {
       return { impacto: "nuevo_foco" };
     });
     const r = await registrarAvisoDeLlamada({ runId: "run-1913", municipio: "Villanueva de la Cañada", lugar: "calle Real 1", queVe: "incendio", punto: { lat: 40.4509, lon: -4.0066 } }, { esperaMs: 2000 });
-    expect(r.mensajeParaLocutor).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Villanueva de la Cañada y está enviando medios. Aléjese del humo y del edificio, y no vuelva a entrar.");
+    expect(r.mensajeParaLocutor).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Villanueva de la Cañada y lo está verificando. Aléjese del humo y del edificio, y no vuelva a entrar.");
   });
 });

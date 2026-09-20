@@ -8,6 +8,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LlamadaIA, TrazaCiclo } from "../dominio/tipos";
+import { buscarAgenteCompatibleEnMapa, resolverIdAgenteCompatible } from "../agentes/identidad";
 import type { Estado } from "./estado";
 import { nuevoId } from "./ids";
 
@@ -36,11 +37,12 @@ export function trazaActual(): TrazaCiclo | undefined {
 }
 
 function publicar(ctx: ContextoTraza): void {
-  const agente = ctx.estado.agentes.get(ctx.agenteId);
-  if (!agente) return;
+  const idOperativo = resolverIdAgenteCompatible(ctx.estado.agentes, ctx.agenteId);
+  const agente = buscarAgenteCompatibleEnMapa(ctx.estado.agentes, ctx.agenteId);
+  if (!agente || !idOperativo) return;
   const otras = (agente.trazas ?? []).filter((t) => t.id !== ctx.traza.id);
   const trazas = [...otras, { ...ctx.traza, llamadasIA: [...ctx.traza.llamadasIA] }].slice(-MAX_TRAZAS);
-  ctx.estado.actualizar(ctx.estado.agentes, ctx.agenteId, { trazas });
+  ctx.estado.actualizar(ctx.estado.agentes, idOperativo, { trazas });
 }
 
 /**

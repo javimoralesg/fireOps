@@ -18,7 +18,15 @@ import { ejecutorAcciones, VOZ_DESACTIVADA } from "@/lib/agentes/ejecucion/ejecu
 import { asignar } from "@/lib/agentes/ejecucion/despachador";
 import type { Incendio, Unidad } from "@/lib/dominio/tipos";
 
-const CLAVES = ["DESTINO_DEMO", "TELEFONO_AVISOS_SMS"] as const;
+const CLAVES = [
+  "DESTINO_DEMO",
+  "TELEFONO_AVISOS_SMS",
+  "EMAIL_DEMO",
+  "HAPPYROBOT_API_KEY",
+  "HAPPYROBOT_WORKFLOW_SLUG_SMS",
+  "HAPPYROBOT_WORKFLOW_SLUG_EMAIL",
+  "ATALAYA_EFECTOS_INTERCEPTADOS",
+] as const;
 const previo: Record<string, string | undefined> = {};
 let estado: Estado;
 
@@ -60,6 +68,12 @@ beforeEach(() => {
     previo[k] = process.env[k];
     delete process.env[k];
   }
+  // Estas pruebas sustituyen los envíos por dobles, pero atraviesan las mismas
+  // compuertas que producción. Configuramos expresamente los canales para que
+  // el resultado no dependa del .env.local de quien ejecute la suite.
+  process.env.HAPPYROBOT_API_KEY = "unit-test";
+  process.env.HAPPYROBOT_WORKFLOW_SLUG_SMS = "unit-test-sms";
+  process.env.HAPPYROBOT_WORKFLOW_SLUG_EMAIL = "unit-test-email";
   dobles.enviarSms.mockReset().mockResolvedValue(envio("run-sms-1"));
   dobles.llamar.mockReset().mockRejectedValue(new Error("la voz saliente no debe usarse"));
   dobles.enviarEmail.mockReset().mockResolvedValue(envio("run-email-1"));

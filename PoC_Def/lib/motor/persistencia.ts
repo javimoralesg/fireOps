@@ -91,7 +91,6 @@ interface EstadoPersistencia {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaPersistencia: EstadoPersistencia | undefined;
 }
 
@@ -405,10 +404,10 @@ export async function arrancarPersistencia(): Promise<void> {
     // clave que en realidad no hace falta.
     estado.marcarServicio(
       "Supabase",
-      false,
+      true,
       obtenerClienteSupabase()
-        ? "Esta instancia no guarda la ejecución (SUPABASE_PERSISTIR sin activar): vive solo en memoria"
-        : "Sin SUPABASE_URL o sin SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY: la ejecución vive solo en memoria",
+        ? "Persistencia opcional desactivada (SUPABASE_PERSISTIR sin activar): esta instancia vive solo en memoria"
+        : "Supabase opcional no configurado: la ejecución vive solo en memoria",
     );
     p.rehidratada = true;
     return;

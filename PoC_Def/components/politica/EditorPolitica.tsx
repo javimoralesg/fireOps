@@ -53,7 +53,8 @@ export default function EditorPolitica() {
   }, []);
 
   useEffect(() => {
-    void cargar();
+    const temporizador = setTimeout(() => void cargar(), 0);
+    return () => clearTimeout(temporizador);
   }, [cargar]);
 
   const cambios = useMemo(() => {

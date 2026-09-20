@@ -8,3 +8,6 @@ PoC_Def/data/url-publica.txt
 PoC_Def/data/happyrobot-workflows.json
 PoC_Def/data/happyrobot-llamadas-atendidas.json
 PoC_Def/tsconfig.tsbuildinfo
+
+# Salida de cada pasada del test de presupuesto (la referencia commiteada es tests/linea-base.json).
+PoC_Def/tests/presupuesto-ultimo.json

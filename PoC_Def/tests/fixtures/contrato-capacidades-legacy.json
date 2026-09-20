@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "origen": {
+    "commit": "4649a5f",
+    "descripcion": "Contrato capturado despues de integrar main y antes del corte del registro a cinco agentes"
+  },
+  "capacidades": [
+    {
+      "id": "vigia_camaras",
+      "agenteCanonicoId": "observador",
+      "categoria": "percepcion",
+      "cadenciaSeg": { "variable": "CAMARAS_INTERVALO_SEG", "valorPorDefecto": 20, "minimo": 5 },
+      "despiertaCon": ["incendio_nuevo"],
+      "cicloSha256": "fd5a05c46d4d47b43ca56bb3bf12473b11038efacc7724975f48890b7322f0f3"
+    },
+    {
+      "id": "satelite",
+      "agenteCanonicoId": "observador",
+      "categoria": "percepcion",
+      "cadenciaSeg": 600,
+      "despiertaCon": [],
+      "cicloSha256": "e58cb1839ba566b64034f15957234bc3b5db3ef27a4247a783f6b3398ce7ef88"
+    },
+    {
+      "id": "prensa_redes",
+      "agenteCanonicoId": "observador",
+      "categoria": "percepcion",
+      "cadenciaSeg": 180,
+      "despiertaCon": ["incendio_nuevo"],
+      "cicloSha256": "ed0f2c980431a69edb34f70d100fe5bebd837af2a055cfbbf5ff35c0ea1db5a4"
+    },
+    {
+      "id": "centralita",
+      "agenteCanonicoId": "observador",
+      "categoria": "percepcion",
+      "cadenciaSeg": 30,
+      "despiertaCon": [],
+      "cicloSha256": "d65da9f42dfa8516ac5cacb28dd320d3aecdc286ee1007a1ec083c7e60165c69"
+    },
+    {
+      "id": "meteorologo",
+      "agenteCanonicoId": "observador",
+      "categoria": "percepcion",
+      "cadenciaSeg": 60,
+      "despiertaCon": ["incendio_nuevo"],
+      "cicloSha256": "ba8f5d5ea0b5baf68a734e47c8c9b927272786d7d86426dab9f3c4c7a82208db"
+    },
+    {
+      "id": "verificador",
+      "agenteCanonicoId": "observador",
+      "categoria": "analisis",
+      "cadenciaSeg": 45,
+      "despiertaCon": ["observacion", "satelite", "camara_positiva"],
+      "cicloSha256": "ec983ab8ef6816cc146403f284a59ef9be468eb946b5fc8ab3ea5e33a220bde9"
+    },
+    {
+      "id": "propagacion",
+      "agenteCanonicoId": "planificador_operativo",
+      "categoria": "analisis",
+      "cadenciaSeg": 30,
+      "despiertaCon": ["viento_gira", "incendio_actualizado", "unidad_llega"],
+      "cicloSha256": "104831e52455f7834ae10e6bd11971415af03473d6e2b4d4f1e15612e8adce8c"
+    },
+    {
+      "id": "patrones",
+      "agenteCanonicoId": "planificador_operativo",
+      "categoria": "analisis",
+      "cadenciaSeg": 120,
+      "despiertaCon": ["incendio_nuevo"],
+      "cicloSha256": "451c52b11388c0f5b511e9c83b551604fc7d7ce6760cbf521fb76316de99493d"
+    },
+    {
+      "id": "coordinador",
+      "agenteCanonicoId": "planificador_operativo",
+      "categoria": "planificacion",
+      "cadenciaSeg": 90,
+      "despiertaCon": ["incendio_nuevo", "incendio_actualizado", "viento_gira", "peligro_sube", "unidad_llega", "decision_denegada"],
+      "cicloSha256": "f54c7662ea9ced838e4f4f4e541be0ea11ee06f0e843badfbed7f30062888be9"
+    },
+    {
+      "id": "proteccion_poblacion",
+      "agenteCanonicoId": "planificador_operativo",
+      "categoria": "planificacion",
+      "cadenciaSeg": 60,
+      "despiertaCon": ["peligro_sube", "viento_gira", "incendio_nuevo", "incendio_actualizado"],
+      "cicloSha256": "46ce2865efee5c2d25e1ad2a8c1357e3f13d3598474881988c573213eadd5a2e"
+    },
+    {
+      "id": "asesor_legal",
+      "agenteCanonicoId": "guardian",
+      "categoria": "planificacion",
+      "cadenciaSeg": 120,
+      "despiertaCon": ["decision_propuesta"],
+      "cicloSha256": "b7a9c38841dbc9a80efb68e7b7f768f0515716d37ab601b9a4c1ef1b6a329768"
+    },
+    {
+      "id": "despachador",
+      "agenteCanonicoId": "planificador_operativo",
+      "categoria": "ejecucion",
+      "cadenciaSeg": 5,
+      "despiertaCon": ["decision_aprobada"],
+      "cicloSha256": "4dcc92ffe65ad43799338dd8dc7c0a622daa717b1a099317db96f65048f5c774"
+    },
+    {
+      "id": "portavoz",
+      "agenteCanonicoId": "comunicador",
+      "categoria": "comunicacion",
+      "cadenciaSeg": 300,
+      "despiertaCon": ["poblacion_avisada", "incendio_actualizado", "decision_ejecutada", "decision_escalada"],
+      "cicloSha256": "0c942f8f17e65ad913ef85118a46c8b858ec745aa9ac353170ff2f278704566d"
+    },
+    {
+      "id": "supervisor",
+      "agenteCanonicoId": "guardian",
+      "categoria": "supervision",
+      "cadenciaSeg": 120,
+      "despiertaCon": ["decision_propuesta", "agente"],
+      "cicloSha256": "034672732d51d7029ae5d708453ad58f87e9a6efabebe6543e4ad422d04fb09f"
+    },
+    {
+      "id": "memoria",
+      "agenteCanonicoId": "cronista",
+      "categoria": "aprendizaje",
+      "cadenciaSeg": 300,
+      "despiertaCon": ["decision_denegada", "decision_aprobada", "accion_fallida", "decision_escalada"],
+      "cicloSha256": "1d29ba11c26719256c7166b1682094cbeeb0b72d8c199f496f18ad196c3fc489"
+    },
+    {
+      "id": "redactor",
+      "agenteCanonicoId": "cronista",
+      "categoria": "comunicacion",
+      "cadenciaSeg": 600,
+      "despiertaCon": ["decision_ejecutada", "decision_denegada", "decision_escalada"],
+      "cicloSha256": "691bbdbc6550c5c88722d765d35c305bd012efb13966e2bd06ac6321c2bfb61a"
+    }
+  ]
+}

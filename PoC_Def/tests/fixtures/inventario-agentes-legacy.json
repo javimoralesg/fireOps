@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "topologia": "legacy",
+  "cantidad": 16,
+  "agentes": [
+    "asesor_legal",
+    "centralita",
+    "coordinador",
+    "despachador",
+    "memoria",
+    "meteorologo",
+    "patrones",
+    "portavoz",
+    "prensa_redes",
+    "propagacion",
+    "proteccion_poblacion",
+    "redactor",
+    "satelite",
+    "supervisor",
+    "verificador",
+    "vigia_camaras"
+  ]
+}

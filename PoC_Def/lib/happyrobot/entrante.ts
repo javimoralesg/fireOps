@@ -311,7 +311,11 @@ export function textoDeAviso(a: AvisoLlamada): string {
  */
 export function extraccionDeterminista(a: AvisoLlamada): ExtraccionObservacion {
   const tipo = a.tipo ?? normalizarTipo(a.queVe) ?? "otro";
-  const esIncendio = tipo !== "otro" || /humo|fuego|llama|incendio|quema|arde/i.test(a.queVe);
+  // Atalaya coordina incendios forestales. Humo asociado a un coche, edificio
+  // o dirección inequívocamente urbana se registra, pero no abre por sí solo
+  // un foco forestal mientras llega la extracción semántica.
+  const urbano = esAvisoUrbano(a);
+  const esIncendio = !urbano && (tipo !== "otro" || /humo|fuego|llama|incendio|quema|arde/i.test(a.queVe));
   const gravedad: ExtraccionObservacion["gravedad"] = a.personasEnRiesgo ? "critica" : a.viviendasCerca ? "grave" : tipo === "llamas" || tipo === "ambos" ? "moderada" : "leve";
   const fiabilidad = !esIncendio ? 0.2 : a.municipio && a.lugar ? 0.7 : a.municipio || a.lugar ? 0.6 : 0.4;
   const donde = [a.lugar, a.municipio].filter(Boolean).join(", ");
@@ -355,15 +359,15 @@ export function esAvisoUrbano(a: Pick<AvisoLlamada, "queVe" | "lugar">): boolean
 /** Frases cortas, en español, que el agente de voz lee tal cual. Solo hechos del estado. */
 export function mensajeParaLocutor(v: VeredictoLocutor): string {
   const partes: string[] = [];
-  if (v.personasEnRiesgo) partes.push("Los medios ya salen.");
+  if (v.personasEnRiesgo) partes.push("He marcado el aviso como prioritario por posibles personas en riesgo.");
   const lugar = v.foco?.municipio ? ` en ${v.foco.municipio}` : "";
   switch (v.impacto) {
     case "nuevo_foco":
-      partes.push(`Aviso registrado. La sala ha abierto un foco nuevo${lugar} y está enviando medios.`);
+      partes.push(`Aviso registrado. La sala ha abierto un foco nuevo${lugar} y lo está verificando.`);
       break;
     case "confirma":
     case "agrava":
-      partes.push(`Aviso registrado: ese incendio ya lo tenemos localizado${v.foco?.nombre ? ` (${v.foco.nombre})` : ""} y hay medios en camino; su aviso lo confirma.`);
+      partes.push(`Aviso registrado: ese incendio ya lo tenemos localizado${v.foco?.nombre ? ` (${v.foco.nombre})` : ""}; su aviso lo confirma y la sala revisará los medios necesarios.`);
       break;
     case "duplicada":
       partes.push("Aviso registrado: coincide con otro aviso reciente de la misma zona, que la sala ya está atendiendo.");
@@ -673,7 +677,15 @@ export async function situarLugar(
   const buscar = async (consulta: string) => {
     try {
       const lugar = await geocodificar(/españa/i.test(consulta) ? consulta : `${consulta}, España`);
-      return lugar && enEspana(lugar.punto) ? lugar : undefined;
+      if (!lugar || !enEspana(lugar.punto)) return undefined;
+      // Nominatim puede ignorar el municipio de una dirección y devolver la primera
+      // calle homónima de la provincia (p. ej. Madrid → Alcalá de Henares). No se
+      // confirma por teléfono una dirección cuyo municipio contradice lo dictado.
+      const normalizar = (texto: string) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      const municipiosEsperados = (a.municipio ?? "").split(",").map(normalizar).filter(Boolean);
+      const municipioDevuelto = normalizar(lugar.municipio ?? "");
+      if (municipiosEsperados.length && municipioDevuelto && !municipiosEsperados.includes(municipioDevuelto)) return undefined;
+      return lugar;
     } catch (e) {
       console.warn("[112 entrante] situar_lugar sin geocodificar:", e instanceof Error ? e.message : e);
       return undefined;
@@ -781,8 +793,18 @@ async function rematar(estado: Estado, obsId: string, a: AvisoLlamada): Promise<
   // y el punto puede llegar un segundo después (Nominatim o la extracción de IA).
   if (!obs.punto) return obs;
   if (!obs.impacto) await verificarAhora(obsId);
-  else if (obs.impacto === "registrada" && /sin localizaci/i.test(obs.verificacion ?? "")) {
-    // Se verificó sin punto y ahora lo tiene: segunda oportunidad de declarar el foco.
+  else if (
+    (obs.impacto === "registrada" && /sin localizaci/i.test(obs.verificacion ?? "")) ||
+    // La respuesta telefónica puede cerrarse con la extracción determinista mientras
+    // la centralita semántica sigue trabajando. Si aquella descartó el aviso y esta
+    // después confirma un incendio fiable, el veredicto provisional no puede quedar
+    // congelado como ruido (caso real: Núñez de Balboa 95).
+    (obs.impacto === "ruido" &&
+      obs.extraccion?.esIncendio === true &&
+      (obs.extraccion.fiabilidad ?? 0) >= 0.6 &&
+      !obs.extraccion.resumen.includes(MARCA_DETERMINISTA))
+  ) {
+    // Ya tiene información material nueva: segunda oportunidad de declarar el foco.
     estado.actualizar(estado.observaciones, obsId, { impacto: undefined, verificacion: undefined });
     await verificarAhora(obsId);
   }

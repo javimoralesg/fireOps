@@ -193,7 +193,7 @@ async function crear() {
 }
 
 async function mostrarNodos(est) {
-  for (const [clave, w] of Object.entries(est)) {
+  for (const [, w] of Object.entries(est)) {
     if (!w?.versionId) continue;
     const nodos = lista(await api("GET", `/versions/${w.versionId}/nodes`));
     console.log(`\n${w.nombre} (${w.slug}) · ${nodos.length} nodos:`);

@@ -91,7 +91,6 @@ interface EstadoPersistencia {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaPersistencia: EstadoPersistencia | undefined;
 }
 

@@ -547,7 +547,6 @@ export class Estado {
 // ---------------- singleton de proceso ----------------
 
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaEstado: Estado | undefined;
 }
 

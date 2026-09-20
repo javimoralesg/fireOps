@@ -99,7 +99,6 @@ interface Nucleo {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __atalayaNucleo: Nucleo | undefined;
 }
 

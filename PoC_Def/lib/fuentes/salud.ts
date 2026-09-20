@@ -23,6 +23,12 @@ export interface SaludFuente {
   ok: boolean;
   detalle: string;
   ms: number;
+  /**
+   * La capacidad es deliberadamente opcional y no tiene credenciales en esta
+   * instancia. `ok` se mantiene a true para que no se cuente como una caída;
+   * el cliente puede distinguirla de una comprobación activa con este campo.
+   */
+  opcional?: boolean;
 }
 
 /** Punto de referencia de las comprobaciones: Ávila capital. */
@@ -77,6 +83,11 @@ async function medir(nombre: string, fn: () => Promise<string>): Promise<SaludFu
     // Sin esto quedaban trece temporizadores de 5 s vivos en cada refresco.
     if (temporizador) clearTimeout(temporizador);
   }
+}
+
+/** Una integración opcional sin clave no está caída ni debe pintar la sala en rojo. */
+function noConfigurada(nombre: string, detalle: string): SaludFuente {
+  return { nombre, ok: true, detalle, ms: 0, opcional: true };
 }
 
 /**
@@ -134,33 +145,34 @@ export async function comprobarFuentes(): Promise<SaludFuente[]> {
     medir("Meteoalarm", async () => `${(await avisosMeteoalarmEspana()).length} avisos vigentes en España`),
     medir("Google News", async () => `${(await noticiasGoogle("incendio forestal", 5)).length} titulares`),
     medir("Bluesky", async () => `${(await buscarPosts("incendio forestal", { limite: 5 })).length} publicaciones`),
-    medir("NASA FIRMS", async () => {
-      if (!firmsDisponible()) throw new Error("FIRMS_MAP_KEY no configurada (sin detección satelital real)");
-      return `${(await focosEspana()).length} focos activos en España (último día)`;
-    }),
+    firmsDisponible()
+      ? medir("NASA FIRMS", async () => `${(await focosEspana()).length} focos activos en España (último día)`)
+      : Promise.resolve(noConfigurada("NASA FIRMS", "FIRMS_MAP_KEY no configurada: detección satelital opcional desactivada")),
   ];
 
   const resultados = await Promise.all(comprobaciones);
 
   // Servicios que no son peticiones HTTP: solo se informa de si hay clave.
-  resultados.push({
-    nombre: "Exa",
-    ok: exaDisponible(),
-    detalle: exaDisponible() ? "EXA_API_KEY configurada" : "EXA_API_KEY no configurada (se usa Google News RSS)",
-    ms: 0,
-  });
-  resultados.push({
-    nombre: "AEMET",
-    ok: aemetDisponible(),
-    detalle: aemetDisponible() ? "AEMET_API_KEY configurada" : "AEMET_API_KEY no configurada (se usan los avisos de Meteoalarm)",
-    ms: 0,
-  });
-  const iaOk = proveedorDisponible();
+  resultados.push(
+    exaDisponible()
+      ? { nombre: "Exa", ok: true, detalle: "EXA_API_KEY configurada", ms: 0 }
+      : noConfigurada("Exa", "EXA_API_KEY no configurada: búsqueda semántica opcional desactivada (se usa Google News RSS)"),
+  );
+  resultados.push(
+    aemetDisponible()
+      ? { nombre: "AEMET", ok: true, detalle: "AEMET_API_KEY configurada", ms: 0 }
+      : noConfigurada("AEMET", "AEMET_API_KEY no configurada: fuente opcional desactivada (se usan los avisos de Meteoalarm)"),
+  );
+  const iaOk = proveedorDisponible("vision");
   resultados.push({
     nombre: "Visión",
-    ok: iaOk,
-    detalle: iaOk ? `Modelo de visión: ${modeloPara("vision")}` : (motivoIndisponible() ?? "Sin proveedor de IA"),
+    // Sin credencial la capacidad está apagada por decisión de despliegue,
+    // no caída. Los fallos de una llamada de visión configurada se marcan en
+    // el Vigía con `ok:false`.
+    ok: true,
+    detalle: iaOk ? `Modelo de visión: ${modeloPara("vision")}` : `Visión opcional desactivada: ${motivoIndisponible("vision") ?? "sin proveedor configurado"}`,
     ms: 0,
+    ...(!iaOk ? { opcional: true } : {}),
   });
 
   return resultados;

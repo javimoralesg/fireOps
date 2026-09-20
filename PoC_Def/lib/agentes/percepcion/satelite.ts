@@ -7,8 +7,8 @@
 //     "satelite" (es el verificador, de D, quien decide crear el foco);
 //   · grupo junto a un incendio existente → sube su `confianza` y evento
 //     "satelite" (dos fuentes independientes confirmando lo mismo).
-// Sin FIRMS_MAP_KEY: estado "error" con el motivo y servicio en rojo. Nunca
-// se inventa un foco.
+// Sin FIRMS_MAP_KEY: capacidad opcional desactivada. Nunca se inventa un foco;
+// un FIRMS configurado que falle sí se refleja como error real.
 // AÑADIDO (sesión riesgo-fundado, 2026-09-19): un grupo visto en ≥ 3 de los
 // últimos 5 días es una FUENTE ESTÁTICA (refinería, acería, antorcha) y un
 // grupo cuyos píxeles son todos de confianza baja es ruido: ninguno crea aviso
@@ -41,10 +41,9 @@ export const agenteSatelite: Agente = {
   async ciclo(ctx: ContextoAgente) {
     if (!firmsDisponible()) {
       const detalle =
-        "FIRMS_MAP_KEY no configurada: sin ella no hay detección satelital real. Pídela en https://firms.modaps.eosdis.nasa.gov/api/map_key/ (llega por email en minutos).";
-      ctx.estado.marcarServicio("NASA FIRMS", false, detalle);
-      ctx.estado.actualizar(ctx.estado.agentes, "satelite", { estado: "error", ultimoError: detalle });
-      ctx.informarTarea("Sin clave de NASA FIRMS: no puedo mirar los focos por satélite");
+        "FIRMS_MAP_KEY no configurada: detección satelital opcional desactivada.";
+      ctx.estado.marcarServicio("NASA FIRMS", true, detalle);
+      ctx.informarTarea("Detección satelital opcional no configurada");
       return { resumen: detalle };
     }
 

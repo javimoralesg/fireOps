@@ -31,9 +31,9 @@ const contratoLegacy = contratoLegacyJson as unknown as {
 /** Cambios deliberados respecto al pre-corte; el contrato original se conserva intacto. */
 const HUELLAS_APROBADAS: Partial<Record<IdAgenteLegacy, string>> = {
   // Ausencia del proveedor de visión pasa a ser capacidad omitida, no avería.
-  vigia_camaras: "3659c968c4d981e96dbc91140e6ca8ddd42037a0135080e972dc6cec8a2a5f5e",
+  vigia_camaras: "363fa2abf0dc4fac10d0d1f2d6c3d7ceeae46c4889ee4a116ae0d1dc619bd893",
   // Ausencia de FIRMS pasa a ser capacidad omitida; un fallo configurado se propaga al padre.
-  satelite: "6306eec6e72860d3533f1de6996b2dbf983ade8990db6cf7a673e853fa69282f",
+  satelite: "648597b0f59abdb02b91c7518b6248510a857c944e551172956971af1522df20",
 };
 
 function cadenciaEsperada(valor: number | CadenciaVariable): number {

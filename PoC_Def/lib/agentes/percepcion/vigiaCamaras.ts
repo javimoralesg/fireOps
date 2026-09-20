@@ -19,8 +19,9 @@
 // (por defecto 12; 3 si el proveedor de visión es Groq, que da 8.000 TPM
 // gratis y cada imagen cuesta ~2.048 tokens).
 //
-// Sin proveedor de visión: estado "error" con el motivo, servicio "Visión" en
-// rojo y NINGÚN resultado inventado.
+// Sin proveedor de visión: capacidad opcional desactivada, sin resultado
+// inventado ni falso error de agente. Si está configurado y falla, sí queda en
+// rojo con el motivo real.
 // Dependencias: lib/fuentes/{dgtCamaras,camarasMovil,geo}, lib/ia/llm, sharp
 // (opcional: si no está instalado se envía la imagen tal cual).
 // =====================================================================
@@ -213,6 +214,10 @@ export interface ResultadoAnalisisCamara {
   observacion?: Observacion;
 }
 
+function detalleVisionNoConfigurada(): string {
+  return `Visión opcional desactivada: ${motivoIndisponible("vision") ?? "sin proveedor configurado"}`;
+}
+
 /**
  * Descarga la imagen de la cámara, la reduce, la pasa al modelo de visión,
  * guarda el análisis en el estado y registra los positivos (aviso al primero,
@@ -221,6 +226,12 @@ export interface ResultadoAnalisisCamara {
  * "Visión" en rojo.
  */
 export async function analizarCamaraAhora(ctx: ContextoAgente, camara: Camara, opciones: { prioridad?: PrioridadLLM } = {}): Promise<ResultadoAnalisisCamara | undefined> {
+  // También protege el análisis inmediato de móviles, que entra aquí sin pasar
+  // por el ciclo del Vigía.
+  if (!proveedorDisponible("vision")) {
+    ctx.estado.marcarServicio("Visión", true, detalleVisionNoConfigurada());
+    return undefined;
+  }
   const m = memoria();
   ctx.informarTarea(`Analizando la cámara ${camara.nombre}`, camara.incendioId);
   const t0 = Date.now();
@@ -365,11 +376,10 @@ export const agenteVigiaCamaras: Agente = {
   despiertaCon: ["incendio_nuevo"],
 
   async ciclo(ctx: ContextoAgente) {
-    if (!proveedorDisponible()) {
-      const detalle = motivoIndisponible() ?? "Sin proveedor de visión configurado";
-      ctx.estado.marcarServicio("Visión", false, detalle);
-      ctx.estado.actualizar(ctx.estado.agentes, "vigia_camaras", { estado: "error", ultimoError: detalle });
-      ctx.informarTarea("Sin modelo de visión: no puedo analizar las cámaras");
+    if (!proveedorDisponible("vision")) {
+      const detalle = detalleVisionNoConfigurada();
+      ctx.estado.marcarServicio("Visión", true, detalle);
+      ctx.informarTarea("Visión opcional no configurada: no se analizan cámaras");
       return { resumen: detalle };
     }
 

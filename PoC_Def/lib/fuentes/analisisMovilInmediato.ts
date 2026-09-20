@@ -34,7 +34,7 @@ const enCurso = () => (g.__atalayaAnalisisMovil ??= new Map());
 export function analizarMovilAlLlegar(camaraId: string): Promise<AnalisisCamara | undefined> {
   const f = fotogramaDe(camaraId);
   const camara = obtenerEstado().camaras.get(camaraId);
-  if (!f || !camara || !proveedorDisponible()) return Promise.resolve(undefined);
+  if (!f || !camara || !proveedorDisponible("vision")) return Promise.resolve(undefined);
   const clave = camaraId;
   const pendiente = enCurso().get(clave);
   if (pendiente) return pendiente;

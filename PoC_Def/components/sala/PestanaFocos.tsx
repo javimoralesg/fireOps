@@ -103,7 +103,7 @@ function PestanaFocosBase({
 }: {
   snapshot?: Snapshot;
   onCentrar?: (id: string) => void;
-  onTrasCambio?: () => void;
+  onTrasCambio?: () => void | Promise<void>;
   seleccionado?: string;
   /** Panel ampliado a pantalla completa: las fichas se reparten en columnas. */
   amplio?: boolean;
@@ -294,6 +294,9 @@ function FichaFocoBase({
       setConfirmar(null);
       onTrasCambio?.();
     } catch (e) {
+      // Un reinicio puede dejar una tarjeta obsoleta unos instantes. Fuerza el
+      // snapshot actual antes de informar: no reintentamos sobre otro foco.
+      await onTrasCambio?.();
       toast.error("No se ha podido cambiar el estado", mensajeDeError(e));
     } finally {
       setOcupado(false);

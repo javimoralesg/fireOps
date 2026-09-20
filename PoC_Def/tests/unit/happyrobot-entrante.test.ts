@@ -186,6 +186,7 @@ describe("textoDeAviso / extraccionDeterminista · sin modelo, solo lo dictado",
     // Sin municipio ni lugar la fiabilidad baja; si no habla de fuego, casi nula.
     expect(extraccionDeterminista({ queVe: "humo", tipo: "humo" }).fiabilidad).toBe(0.4);
     expect(extraccionDeterminista({ queVe: "un coche mal aparcado", tipo: "otro" })).toMatchObject({ esIncendio: false, fiabilidad: 0.2 });
+    expect(extraccionDeterminista({ queVe: "humo, creo que es un coche", tipo: "humo", lugar: "calle Núñez de Balboa", municipio: "Alcalá de Henares" })).toMatchObject({ esIncendio: false, fiabilidad: 0.2 });
   });
 });
 
@@ -201,10 +202,11 @@ describe("mensajeParaLocutor · lo que el agente le dice a la persona", () => {
     expect(mensajeParaLocutor({ geolocalizada: true, enAnalisis: true })).toMatch(/analizando ahora mismo/);
     for (const impacto of ["nuevo_foco", "registrada", undefined] as const) expect(mensajeParaLocutor({ impacto, geolocalizada: true })).toMatch(/Aléjese del humo/);
   });
-  it("sin localización pide el pueblo o la carretera; con personas en peligro, que los medios ya salen", () => {
+  it("sin localización pide el pueblo o la carretera; con personas en peligro, prioriza sin inventar un despacho", () => {
     expect(mensajeParaLocutor({ geolocalizada: false })).toMatch(/No he podido situar el lugar/);
     expect(mensajeParaLocutor({ geolocalizada: true })).not.toMatch(/No he podido situar/);
-    expect(mensajeParaLocutor({ geolocalizada: true, personasEnRiesgo: true })).toMatch(/^Los medios ya salen/);
+    expect(mensajeParaLocutor({ geolocalizada: true, personasEnRiesgo: true })).toMatch(/^He marcado el aviso como prioritario/);
+    expect(mensajeParaLocutor({ impacto: "nuevo_foco", geolocalizada: true })).not.toMatch(/medios|en camino/);
   });
 });
 
@@ -641,7 +643,7 @@ describe("frases para la voz · pulidas tras la llamada de las 18:46", () => {
     expect(esAvisoUrbano({ queVe: "hay gente encerrada en la facultad", lugar: "Avenida Complutense 30" })).toBe(true);
     expect(esAvisoUrbano({ queVe: "columna de humo en el pinar", lugar: "N-403 km 62" })).toBe(false);
     const urbano = mensajeParaLocutor({ impacto: "nuevo_foco", foco: { nombre: "Incendio de Madrid", municipio: "Madrid" }, geolocalizada: true, urbano: true });
-    expect(urbano).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Madrid y está enviando medios. Aléjese del humo y del edificio, y no vuelva a entrar.");
+    expect(urbano).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Madrid y lo está verificando. Aléjese del humo y del edificio, y no vuelva a entrar.");
     expect(urbano).not.toMatch(/ladera|barranco/);
     const monte = mensajeParaLocutor({ impacto: "nuevo_foco", foco: { nombre: "Incendio de Navalacruz", municipio: "Navalacruz" }, geolocalizada: true });
     expect(monte).toMatch(/nunca ladera arriba/);
@@ -703,6 +705,6 @@ describe("comportamiento revisado con las seis llamadas de 19:13-19:51", () => {
       return { impacto: "nuevo_foco" };
     });
     const r = await registrarAvisoDeLlamada({ runId: "run-1913", municipio: "Villanueva de la Cañada", lugar: "calle Real 1", queVe: "incendio", punto: { lat: 40.4509, lon: -4.0066 } }, { esperaMs: 2000 });
-    expect(r.mensajeParaLocutor).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Villanueva de la Cañada y está enviando medios. Aléjese del humo y del edificio, y no vuelva a entrar.");
+    expect(r.mensajeParaLocutor).toBe("Aviso registrado. La sala ha abierto un foco nuevo en Villanueva de la Cañada y lo está verificando. Aléjese del humo y del edificio, y no vuelva a entrar.");
   });
 });

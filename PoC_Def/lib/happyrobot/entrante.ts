@@ -311,7 +311,11 @@ export function textoDeAviso(a: AvisoLlamada): string {
  */
 export function extraccionDeterminista(a: AvisoLlamada): ExtraccionObservacion {
   const tipo = a.tipo ?? normalizarTipo(a.queVe) ?? "otro";
-  const esIncendio = tipo !== "otro" || /humo|fuego|llama|incendio|quema|arde/i.test(a.queVe);
+  // Atalaya coordina incendios forestales. Humo asociado a un coche, edificio
+  // o dirección inequívocamente urbana se registra, pero no abre por sí solo
+  // un foco forestal mientras llega la extracción semántica.
+  const urbano = esAvisoUrbano(a);
+  const esIncendio = !urbano && (tipo !== "otro" || /humo|fuego|llama|incendio|quema|arde/i.test(a.queVe));
   const gravedad: ExtraccionObservacion["gravedad"] = a.personasEnRiesgo ? "critica" : a.viviendasCerca ? "grave" : tipo === "llamas" || tipo === "ambos" ? "moderada" : "leve";
   const fiabilidad = !esIncendio ? 0.2 : a.municipio && a.lugar ? 0.7 : a.municipio || a.lugar ? 0.6 : 0.4;
   const donde = [a.lugar, a.municipio].filter(Boolean).join(", ");
@@ -355,15 +359,15 @@ export function esAvisoUrbano(a: Pick<AvisoLlamada, "queVe" | "lugar">): boolean
 /** Frases cortas, en español, que el agente de voz lee tal cual. Solo hechos del estado. */
 export function mensajeParaLocutor(v: VeredictoLocutor): string {
   const partes: string[] = [];
-  if (v.personasEnRiesgo) partes.push("Los medios ya salen.");
+  if (v.personasEnRiesgo) partes.push("He marcado el aviso como prioritario por posibles personas en riesgo.");
   const lugar = v.foco?.municipio ? ` en ${v.foco.municipio}` : "";
   switch (v.impacto) {
     case "nuevo_foco":
-      partes.push(`Aviso registrado. La sala ha abierto un foco nuevo${lugar} y está enviando medios.`);
+      partes.push(`Aviso registrado. La sala ha abierto un foco nuevo${lugar} y lo está verificando.`);
       break;
     case "confirma":
     case "agrava":
-      partes.push(`Aviso registrado: ese incendio ya lo tenemos localizado${v.foco?.nombre ? ` (${v.foco.nombre})` : ""} y hay medios en camino; su aviso lo confirma.`);
+      partes.push(`Aviso registrado: ese incendio ya lo tenemos localizado${v.foco?.nombre ? ` (${v.foco.nombre})` : ""}; su aviso lo confirma y la sala revisará los medios necesarios.`);
       break;
     case "duplicada":
       partes.push("Aviso registrado: coincide con otro aviso reciente de la misma zona, que la sala ya está atendiendo.");

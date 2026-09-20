@@ -97,13 +97,13 @@ export const obtenerEstado = (signal?: AbortSignal) => pedir<Snapshot>("/api/est
  * que ya se tiene y devuelve `undefined` si el servidor contesta 304. El polling
  * de respaldo así no descarga megas ni repinta cuando no hay novedades.
  */
-export async function obtenerEstadoSiCambio(version: number, signal?: AbortSignal): Promise<Snapshot | undefined> {
+export async function obtenerEstadoSiCambio(version: number, ejecucionId?: string, signal?: AbortSignal): Promise<Snapshot | undefined> {
   const ruta = "/api/estado";
   let respuesta: Response;
   try {
     respuesta = await fetch(ruta, {
       cache: "no-store",
-      headers: version >= 0 ? { "if-none-match": `W/"${version}"` } : undefined,
+      headers: version >= 0 && ejecucionId ? { "if-none-match": `W/"${ejecucionId}:${version}"` } : undefined,
       signal: signal ?? AbortSignal.timeout(15_000),
     });
   } catch (e) {

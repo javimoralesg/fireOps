@@ -220,7 +220,11 @@ function publicar(parcial: Partial<Vista>): void {
 }
 
 function aplicar(s: Snapshot, forzar = false): void {
-  if (!forzar && typeof s.version === "number" && s.version === vista.ultimaVersion) return;
+  // La versión solo es monotónica DENTRO de una ejecución. Tras reiniciar el
+  // servidor puede volver a coincidir con la que conservaba la pestaña; si se
+  // ignora ese primer snapshot, la UI sigue mostrando IDs que ya no existen.
+  const mismaEjecucion = vista.snapshot?.ejecucion?.id === s.ejecucion?.id;
+  if (!forzar && mismaEjecucion && typeof s.version === "number" && s.version === vista.ultimaVersion) return;
   const fundido = fundirSnapshot(s, vista.snapshot);
   publicar({
     snapshot: fundido,
@@ -238,7 +242,7 @@ async function sondear(forzar = false): Promise<void> {
     if (forzar) {
       aplicar(await obtenerEstado(), true);
     } else {
-      const s = await obtenerEstadoSiCambio(vista.ultimaVersion);
+      const s = await obtenerEstadoSiCambio(vista.ultimaVersion, vista.snapshot?.ejecucion?.id);
       if (s) aplicar(s);
       else if (vista.cargando) publicar({ cargando: false });
     }

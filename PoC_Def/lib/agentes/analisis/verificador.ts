@@ -285,15 +285,22 @@ async function verificarUna(
   const suficiente = extraccionFiable || canalFiable || corroboran.length >= 1;
 
   if (!suficiente) {
+    // Un extractor que descarta explícitamente el incendio no debe ser
+    // contradicho por una segunda inferencia ni abrir un foco durante esa
+    // carrera. El aviso permanece auditable como ruido y puede corroborarse
+    // después mediante una nueva observación independiente.
+    if (obs.extraccion?.esIncendio === false) {
+      return {
+        impacto: "ruido",
+        verificacion: `El extractor descarta que sea un incendio (${obs.extraccion.resumen ?? "sin resumen"}).`,
+      };
+    }
     // 4. Duda: se pregunta al modelo rápido con el vecindario como contexto.
     const juicio = await consultarModelo(obs, corroboran, activos, ctx.abortSignal);
     if (!juicio) {
       return {
-        impacto: obs.extraccion?.esIncendio === false ? "ruido" : "registrada",
-        verificacion:
-          obs.extraccion?.esIncendio === false
-            ? `El extractor descarta que sea un incendio (${obs.extraccion?.resumen ?? "sin resumen"}).`
-            : `Señal débil por ${obs.canal} (fiabilidad ${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)}) y sin corroboración: queda registrada a la espera de más fuentes.`,
+        impacto: "registrada",
+        verificacion: `Señal débil por ${obs.canal} (fiabilidad ${(obs.extraccion?.fiabilidad ?? 0).toFixed(2)}) y sin corroboración: queda registrada a la espera de más fuentes.`,
       };
     }
     if (juicio.impacto !== "nuevo_foco") {

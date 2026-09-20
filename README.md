@@ -6,8 +6,8 @@ Atalaya vigila a la vez varias fuentes públicas —satélites, cámaras de carr
 sociales, llamadas al 112, avisos de ciudadanos—, sitúa cada fuego en el mapa y reúne lo que tiene
 alrededor: pueblos, parques de bomberos, hospitales y el viento real. Con eso calcula hacia dónde
 avanza el frente, a qué pueblos llegará y cuándo. Un equipo de agentes propone y ejecuta la
-respuesta: mandar medios por carreteras reales, avisar a los pueblos por SMS, publicar
-comunicados, pedir medios aéreos. Manda una persona: una política define qué puede hacer la
+respuesta: planificar medios por carreteras reales, avisar a los pueblos por SMS, publicar
+comunicados o proponer medios aéreos. Manda una persona: una política define qué puede hacer la
 máquina sola y qué tiene que aprobar un humano, y todo lo que ocurre queda escrito.
 
 Las fuentes y los servicios externos son reales cuando están configurados: FIRMS, Open-Meteo,
@@ -19,6 +19,42 @@ los efectos externos se interceptan expresamente para que ningún aviso salga a 
 real.
 
 Al final de este documento hay [capturas de todo lo que se cuenta aquí](#capturas).
+
+## Para el jurado
+
+### La propuesta en treinta segundos
+
+Atalaya convierte señales dispersas de un incendio en una respuesta coordinada y auditable. No
+se limita a mostrar datos: reúne evidencias, estima la evolución del fuego, propone actuaciones,
+aplica una política de autonomía y deja a una persona la última palabra cuando la decisión es
+sensible. Cinco agentes visibles coordinan dieciséis capacidades especializadas sin ocultar qué
+modelo, fuente o regla intervino en cada paso.
+
+El resultado se puede comprobar de extremo a extremo en una sola interfaz: desde una llamada al
+112 o un foco declarado en el mapa hasta el despliegue simulado de medios, los avisos a población,
+el comunicado público y el expediente de auditoría.
+
+### Qué merece la pena observar
+
+- **Detección multifuente:** satélite, cámaras, prensa y redes, llamada de voz y parte ciudadano.
+- **Contexto real:** meteorología, municipios, servicios de emergencia y rutas por carretera.
+- **Decisión gobernada:** política editable, revisión jurídica, supervisor y aprobación humana.
+- **Ejecución verificable:** cada acción conserva estado, resultado, error y responsable; una
+  decisión con acciones fallidas no se presenta como éxito.
+- **Trazabilidad:** evidencias, razonamiento, fundamentos, cambios de estado, actas e informe vivo.
+- **Degradación explícita:** si un proveedor externo falla, la sala lo enseña y no inventa datos.
+
+### Recorrido de demostración
+
+1. Abrir la sala y comprobar la barra de salud de servicios.
+2. Declarar un foco con `F` sobre el mapa o llamar al número 112 configurado.
+3. Seguir cómo el Observador verifica la señal y el Planificador calcula entorno y propagación.
+4. Revisar una decisión, sus evidencias y fundamentos; aprobarla o denegarla desde la sala.
+5. Abrir el expediente y la auditoría para recorrer la cadena completa de lo ocurrido.
+
+La demostración puede hacerse con efectos externos interceptados y destinos controlados. Las
+rutas, fuentes y respuestas de los proveedores siguen siendo reales; el movimiento de unidades
+se representa dentro de la simulación de Atalaya.
 
 ## Qué hace
 
@@ -38,9 +74,10 @@ confirmado.
 pendiente y el combustible del terreno, y se proyecta a una, tres y seis horas. De ahí sale lo que
 importa: qué pueblos están en la trayectoria y cuánto tarda el fuego en llegar a cada uno.
 
-**Manda medios de verdad.** Las unidades salen de parques de bomberos reales sacados del mapa y
-viajan por carretera real, con su ruta, su distancia y su hora de llegada. La primera salida se
-despacha sola, por doctrina; el resto se propone y se revisa.
+**Planifica el despliegue sobre datos reales.** Las unidades representadas en Atalaya parten de
+parques de bomberos obtenidos del mapa y siguen rutas reales por carretera, con distancia y hora
+de llegada. Su movimiento ocurre dentro de la simulación: la primera salida se despacha sola, por
+doctrina; el resto se propone y se revisa.
 
 **Avisa a la gente.** Cuando un pueblo entra en riesgo se redacta el mensaje —distinto si es aviso
 preventivo, confinamiento o evacuación— y se envía por SMS o Telegram, con su acuse de entrega. En
@@ -55,7 +92,12 @@ explicar por qué, y ese motivo se convierte en una lección que los agentes rec
 IA no esté disponible. Detrás de cada una se puede recorrer la cadena entera: qué vio el agente,
 qué modelo consultó, qué propuso, quién lo aprobó y qué pasó al ejecutarlo.
 
-## Cómo funciona por dentro
+## Extra: planteamiento técnico
+
+<details>
+<summary>Arquitectura, agentes y estructura del repositorio</summary>
+
+### Cómo funciona por dentro
 
 Un solo proceso lleva el mundo en memoria. Cada cinco segundos, un tick mueve el reloj y despierta
 a los agentes que toca, por su cadencia o porque ha pasado algo: entra una observación, gira el
@@ -96,7 +138,7 @@ rompen.
 La pausa, el control humano y los contadores se aplican al agente lógico; cada ciclo continúa
 registrando qué capacidad concreta trabajó y con qué modelo.
 
-## Estructura
+### Estructura
 
 ```
 .
@@ -137,6 +179,8 @@ registrando qué capacidad concreta trabajó y con qué modelo.
 └── .env.example          plantilla de configuración
 ```
 
+</details>
+
 ## Ponerlo en marcha
 
 Hace falta Node 22.12 o superior (está desarrollado con Node 24, que es lo que fija `.nvmrc`) y
@@ -144,7 +188,7 @@ una clave del proveedor de IA. Sin ella arrancan las pantallas y los agentes que
 poco más.
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local   # y rellenar
 npm run sembrar              # indexa la normativa de data/protocolos
 npm run dev                  # http://localhost:3000
@@ -228,14 +272,17 @@ enseña en rojo lo que falte, con el nombre exacto de la variable.
 ### Pruebas
 
 ```bash
-npm test                   # las tres baterías
+npm test                   # las tres baterías; integración y UI requieren servidor vivo en :3100
 npm run test:unit          # deterministas, sin red, rápidas
 npm run test:integracion   # necesita un servidor vivo y claves reales
 npm run test:ui            # recorre las pantallas con un navegador
 npm run test:tipos         # comprueba los tipos de tests y configuración de Vitest
 ```
 
-#### Puertas de convergencia 16 → 5
+#### Extra: puertas de convergencia 16 → 5
+
+<details>
+<summary>Validación interna de la migración de dieciséis a cinco agentes visibles</summary>
 
 La migración se valida en procesos limpios y en este orden:
 
@@ -266,6 +313,8 @@ ATALAYA_URL=http://localhost:3100 AGENT_TOPOLOGY=five \
 Esta prueba exige `ATALAYA_EFECTOS_INTERCEPTADOS=1`, crea un foco ficticio y recorre
 enriquecimiento, decisión, acción y auditoría. La variable es una **compuerta de seguridad**, no
 un simulador de respuestas: el servidor dedicado debe arrancar además sin credenciales operativas.
+
+</details>
 
 ### Despliegue
 

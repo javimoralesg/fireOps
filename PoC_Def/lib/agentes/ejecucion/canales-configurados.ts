@@ -47,10 +47,10 @@ export function emailAccionConfigurado(accion: Accion): boolean {
   return happyrobotDisponible("email") && destinoEmailConfigurado(accion);
 }
 
-const motivoSms = (accion: Accion): string =>
+const motivoSms = (): string =>
   !happyrobotDisponible("sms") ? `SMS no configurado: ${motivoNoDisponible("sms") ?? "canal no disponible"}` : "SMS no configurado: falta teléfono explícito o DESTINO_DEMO/TELEFONO_AVISOS_SMS";
 
-const motivoEmail = (accion: Accion): string =>
+const motivoEmail = (): string =>
   !happyrobotDisponible("email") ? `Correo no configurado: ${motivoNoDisponible("email") ?? "canal no disponible"}` : "Correo no configurado: falta correo explícito o EMAIL_DEMO";
 
 /**
@@ -60,16 +60,16 @@ const motivoEmail = (accion: Accion): string =>
  */
 export function motivoAccionNoConfigurada(accion: Accion): string | undefined {
   if (usaSms(accion.tipo) && !happyrobotDisponible("sms")) {
-    return motivoSms(accion);
+    return motivoSms();
   }
   if (usaSms(accion.tipo) && !destinoSmsConfigurado(accion)) {
-    return motivoSms(accion);
+    return motivoSms();
   }
   if (usaEmail(accion.tipo) && !happyrobotDisponible("email")) {
-    return motivoEmail(accion);
+    return motivoEmail();
   }
   if (usaEmail(accion.tipo) && !destinoEmailConfigurado(accion)) {
-    return motivoEmail(accion);
+    return motivoEmail();
   }
   if (accion.tipo === "enviar_telegram") {
     if (!telegramDisponible()) return "Telegram no configurado: falta TELEGRAM_BOT_TOKEN";
@@ -77,7 +77,7 @@ export function motivoAccionNoConfigurada(accion: Accion): string | undefined {
     if (!chatExplicito && !chatDemo()) return "Telegram no configurado: falta TELEGRAM_CHAT_ID_DEMO";
   }
   if (accion.tipo === "solicitar_medios_aereos" && !smsAccionConfigurado(accion) && !emailAccionConfigurado(accion)) {
-    return `Solicitud no configurada: ${motivoSms(accion)}; ${motivoEmail(accion)}`;
+    return `Solicitud no configurada: ${motivoSms()}; ${motivoEmail()}`;
   }
   return undefined;
 }
